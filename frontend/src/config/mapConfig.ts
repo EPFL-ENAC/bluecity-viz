@@ -242,6 +242,43 @@ export const mapConfig = {
       } as LayerSpecification
     },
     {
+      id: 'lausanne_migration',
+      label: 'Lausanne Migration 2011 2023',
+      unit: '/100m²',
+      info: 'Source: Swiss Federal Office of Topography',
+      source: {
+        type: 'vector',
+        url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023.pmtiles`,
+        minzoom: 5 // Minimum zoom level to display lausanne_migration
+      } as VectorSourceSpecification,
+      layer: {
+        id: 'lausanne_migration-layer',
+        type: 'fill-extrusion',
+        source: 'lausanne_migration',
+        'source-layer': 'lausanne_migration_2011_2023',
+        paint: {
+          'fill-extrusion-height': ['get', 'pop_mean'],
+          'fill-extrusion-color': [
+            'interpolate',
+            ['linear'],
+            ['to-number', ['get', 'immigration_rate']],
+            0,
+            '#FF0000',
+            20,
+            '#FFFF00',
+            100,
+            '#00FF00'
+          ],
+          'fill-extrusion-base': [
+            'case',
+            ['>=', ['get', 'zoom'], 16],
+            ['get', 'render_min_height'],
+            0
+          ]
+        }
+      } as LayerSpecification
+    },
+    {
       id: 'gws_data',
       label: 'Building numbers',
       unit: '/100m²',
