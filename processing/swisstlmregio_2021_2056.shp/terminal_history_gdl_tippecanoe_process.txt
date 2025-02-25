@@ -1,0 +1,55 @@
+1972  cd swissboundaries3d_2023-01_2056_5728.shp/
+ 1973  ls
+ 1974  sudo apt update gdal-bin
+ 1975  sudo apt update
+ 1976  ogrinfo --version
+ 1977  sudo apt-get install gdal-bin
+ 1978  sudo add-apt-repository ppa:ubuntugis/ppa
+ 1979  sudo apt-get install gdal-bin
+ 1980  ls
+ 1981  cd ..
+ 1982  ogr2ogr -t_srs EPSG:4326 cb_2018_us_zcta510_500k.json cb_2018_us_zcta510_500k.shp
+ 1983  cd swissboundaries3d_2023-01_2056_5728.shp/
+ 1984  ls
+ 1985  ogr2ogr -t_srs EPSG:4326 swissBOUNDARIES3D_1_5_TLM_geojson.json swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET.shp 
+ 1986  tippecanoe -zg --projection=EPSG:4326 -o swissBOUNDARIES3D_1_5_TLM_tiles.pmtiles -l swissBOUNDARIES3D_1_5_TLM_geojson.json 
+ 1987  ogr2ogr -f GeoJSON swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET.geojson swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET.shp
+ 1988  tippecanoe -zg -U 2 --read-parallel -o hoheitsgebiet.mbtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET.geojson 
+ 1989  ogr2ogr -f GeoJSON -dim 2 swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET_2D.geojson swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET.geojson
+ 1990  tippecanoe -zg -U 2 --read-parallel -o hoheitsgebiet.mbtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET_2D.geojson
+ 1991  rm hoheitsgebiet.mbtiles 
+ 1992  tippecanoe -zg -U 2 --read-parallel -o hoheitsgebiet.mbtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET_2D.geojson
+ 1993  ogrinfo swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET.shp
+ 1994  tippecanoe -z12 -U 2 --read-parallel -o hoheitsgebiet.mbtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET_2D.geojson
+ 1995  tippecanoe --force -z12 -U 2 --read-parallel -o hoheitsgebiet.mbtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET_2D.geojson
+ 1996  ogr2ogr -t_srs EPSG:4326 swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET_4326.shp swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET.shp
+ 1997  ogr2ogr -f GeoJSON -dim 2 swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET_4326.geojson swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET_4326.shp
+ 1998  tippecanoe --force -z12 -U 2 --read-parallel -o hoheitsgebiet.mbtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET_4326.geojson
+ 1999  martin
+ 2000  martin hoheitsgebiet.mbtiles 
+ 2001  cd dev/utnc-pilot/
+ 2002  cd swissboundaries3d_2023-01_2056_5728.shp/
+ 2003  ls
+ 2004  martin hoheitsgebiet.mbtiles 
+ 2005  tippecanoe --force -z12 -U 2 -o hoheitsgebiet.pmtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping swissBOUNDARIES3D_1_5_TLM_HOHEITSGEBIET_4326.geojson
+ 2006  cd ..
+ 2007  cd swisstlmregio_2021_2056.shp/SHAPEFILE/swissTLMRegio_Product_LV95/Buildings/
+ 2008  ls
+ 2009  ogr2ogr -f GeoJSON -dim 2 buildings_swiss_2.geojson swissTLMRegio_Building.shp
+ 2010  cd ..
+ 2011  cd swissTLMRegio_Product_LV95/
+ 2012  cd Buildings/
+ 2013  ls
+ 2014  tippecanoe --force -z12 -U 2 -o buildings_swiss.pmtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping buildings_swiss.geojson 
+ 2015  ogr2ogr -t_srs EPSG:4326 -f GeoJSON buildings_swiss.geojson swissTLMRegio_Building.shp
+ 2016  tippecanoe --force -z12 -U 2 -o buildings_swiss.pmtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping buildings_swiss.geojson 
+ 2017  tippecanoe --force -zg --read-parallel -U 2 -o buildings_swiss.pmtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping buildings_swiss.geojson 
+ 2018  tippecanoe --force -zg --read-parallel -U 2 -o buildings_swiss.pmtiles buildings_swiss.geojson 
+ 2019  tippecanoe --help
+ 2020  tippecanoe --force -zg --read-parallel -U 2 -o buildings_swiss.pmtiles buildings_swiss.geojson --maximum-zoom=14
+ 2021  tippecanoe --force -zg --read-parallel -U 2 -o buildings_swiss.pmtiles buildings_swiss.geojson --minimum-zoom=5 --maximum-zoom=14
+ 2022  tippecanoe --force -z14 --read-parallel -U 2 -o buildings_swiss.pmtiles buildings_swiss.geojson
+ 2023  logs
+ 2024  history
+pierre@pierrepc:/mnt/data/Documents/Code/utnc-pilot/data_folder/swisstlmregio_2021_2056.shp/SHAPEFILE/swissTLMRegio_Product_LV95/Buildings$ 
+
