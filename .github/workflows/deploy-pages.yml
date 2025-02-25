@@ -29,7 +29,7 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
-          BASE_URL: "/urbes-viz/"
+          BASE_URL: "/bluecity-viz/"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/dist
