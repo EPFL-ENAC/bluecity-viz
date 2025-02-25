@@ -2,3 +2,27 @@ data_folder/
 data_folder/*
 frontend/public/geodata
 
+processing/**/*.csv
+processing/**/*.json
+processing/**/*.geojson
+processing/**/*.shp
+processing/**/*.shx
+processing/**/*.prj
+processing/**/*.dbf
+processing/**/*.zip
+processing/**/*.gdb
+processing/**/*.gpkg
+processing/**/*.gpkg-shm
+processing/**/*.gpkg-wal
+processing/**/*.sqlite
+processing/**/*.docx
+processing/**/*.pdf
+processing/**/*.xlsx
+processing/**/*.txt
+processing/**/*.xls
+processing/**/*.xml
+processing/**/*.lock
+processing/**/*.cpg
+processing/**/*.sbn
+processing/**/*.sbx
+processing/**/*.qgz
