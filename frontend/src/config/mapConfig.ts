@@ -16,7 +16,7 @@ export interface MapLayerConfig {
 
 const baseUrlOptions = {
   dev: '/geodata',
-  prod: 'https://enacit4r-cdn.epfl.ch/urbes-viz'
+  prod: 'https://enacit4r-cdn.epfl.ch/bluecity-viz'
 }
 
 const baseUrl = import.meta.env.DEV ? baseUrlOptions.dev : baseUrlOptions.prod

@@ -24,7 +24,7 @@ import { Protocol } from 'pmtiles'
 
 // Find the base url depending on the environment
 // If dev it should be geodata/
-// If prod it should be https://enacit4r-cdn.epfl.ch/urbes-viz/
+// If prod it should be https://enacit4r-cdn.epfl.ch/bluecity-viz/
 const baseURL = import.meta.env.DEV ? mapConfig.baseUrl.dev : mapConfig.baseUrl.prod
 
 const props = withDefaults(
