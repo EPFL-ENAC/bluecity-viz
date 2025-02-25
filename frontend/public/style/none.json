@@ -1,0 +1,14 @@
+{
+  "version": 8,
+  "id": "51397f0a-5dd0-47d4-b1cc-4e9d3950bf2f",
+  "name": "lightbasemap_v1.17.0",
+  "sources": {},
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "layout": { "visibility": "visible" },
+      "paint": { "background-color": "rgba(10,10,10, 0)" }
+    }
+  ]
+}
