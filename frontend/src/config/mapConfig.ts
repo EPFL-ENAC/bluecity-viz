@@ -1,6 +1,7 @@
 import { baseUrlOptions, type MapLayerConfig } from '@/config/layerTypes'
 import { sp0MigrationLayers } from '@/config/sp0_migration'
 import { sp2MobilityLayers } from '@/config/sp2_mobility'
+import { sp3NatureLayers } from './sp3_nature'
 // Uncomment when you create these files
 // import { sp2ExampleLayers } from './sp2_example'
 // import { sp3ExampleLayers } from './sp3_example'
@@ -11,7 +12,8 @@ export const mapConfig = {
   layers: [
     // Include SP0 migration layers
     ...sp0MigrationLayers,
-    ...sp2MobilityLayers
+    ...sp2MobilityLayers,
+    ...sp3NatureLayers
 
     // Uncomment when you create these files
     // Include SP2 example layers
