@@ -7,6 +7,8 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import LegendMap from '@/components/LegendMap.vue'
 import LayerGroups from '@/components/LayerGroups.vue'
 import { mapConfig } from '@/config/mapConfig'
+import { sp0MigrationLayers } from '@/config/sp0_migration'
+import { sp2MobilityLayers } from '@/config/sp2_mobility'
 
 const map = ref<InstanceType<typeof MapLibreMap>>()
 
@@ -17,27 +19,24 @@ const variableSelected = ref<string>('u10')
 const idxImage = ref<number>(0)
 
 const center = {
-  lat: 46.882,
-  lng: 8.1321
+  lat: 46.52,
+  lng: 6.63
 }
 
-const zoom = 8
+const zoom = 11
 
-// Define layer groups based on naming conventions in your files
 const layerGroups = [
   {
     id: 'sp0_migration',
     label: 'SP0 Migration',
     expanded: false,
-    layers: mapConfig.layers.filter((layer) => layer.id.includes('lausanne_'))
+    layers: sp0MigrationLayers
   },
   {
     id: 'sp2_mobility',
     label: 'SP2 Mobility',
     expanded: false,
-    layers: mapConfig.layers.filter(
-      (layer) => layer.id.includes('access_') || layer.id.includes('ratio_')
-    )
+    layers: sp2MobilityLayers
   }
   // Add other groups as needed
 ]
@@ -71,11 +70,11 @@ const layersVisible = computed(() => {
 })
 
 const syncAllLayersVisibility = (layersSelected: string[]) => {
-  for (let { id: layer } of possibleLayers.value) {
-    if (layersSelected.includes(layer)) {
-      map.value?.setLayerVisibility(layer, true)
+  for (let { id: layerID } of possibleLayers.value) {
+    if (layersSelected.includes(layerID)) {
+      map.value?.setLayerVisibility(layerID, true)
     } else {
-      map.value?.setLayerVisibility(layer, false)
+      map.value?.setLayerVisibility(layerID, false)
     }
   }
 }
@@ -83,8 +82,10 @@ const syncAllLayersVisibility = (layersSelected: string[]) => {
 watch(
   () => layersSelected.value,
   (layersSelected) => {
+    console.log('layersSelected', layersSelected)
     syncAllLayersVisibility(layersSelected)
-  }
+  },
+  { immediate: true }
 )
 
 const vuetifyTheme = useTheme()
@@ -98,9 +99,10 @@ const themes = [
 
 watch(
   () => theme.value,
-  (theme) => {
-    vuetifyTheme.global.name.value = theme === 'style/light.json' ? 'light' : 'dark'
-  }
+  (newTheme) => {
+    vuetifyTheme.global.name.value = newTheme === 'style/light.json' ? 'light' : 'dark'
+  },
+  { immediate: true }
 )
 </script>
 

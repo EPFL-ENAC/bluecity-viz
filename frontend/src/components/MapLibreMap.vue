@@ -18,15 +18,11 @@ import {
   addProtocol
 } from 'maplibre-gl'
 import type { LegendColor } from '@/utils/legendColor'
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 
 import { Protocol } from 'pmtiles'
 import { useApiKeyStore } from '@/stores/apiKey'
 
-// Find the base url depending on the environment
-// If dev it should be geodata/
-// If prod it should be https://enacit4r-cdn.epfl.ch/bluecity/
-const baseURL = import.meta.env.DEV ? mapConfig.baseUrl.dev : mapConfig.baseUrl.prod
 const apiKeyStore = useApiKeyStore()
 
 const props = withDefaults(
@@ -67,24 +63,6 @@ let map: Maplibre | undefined = undefined
 const hasLoaded = ref(false)
 const protocol = new Protocol()
 
-const urlSource = computed(() => {
-  const idx = ~~props.idxImage
-  const id = idx.toLocaleString('en-US', {
-    minimumIntegerDigits: 3,
-    useGrouping: false
-  })
-  return baseURL + `/wrf_${props.variableSelected}/${props.variableSelected}_${id}.png`
-})
-
-const updateWrfUrlSource = (url: string) => {
-  if (map) {
-    const source = map.getSource('wrf') as maplibregl.ImageSource
-    source.updateImage({ url: url })
-  }
-}
-
-watch(urlSource, updateWrfUrlSource)
-
 addProtocol('pmtiles', protocol.tile)
 
 function initMap() {
@@ -101,7 +79,6 @@ function initMap() {
       const apiKey = apiKeyStore.apiKey
 
       if (resourceType === 'Tile' && url.includes('pmtiles://')) {
-        console.log('transformRequest TILE', url, resourceType, apiKey)
         return {
           url: url + '?apikey=' + apiKey,
           // headers: { 'X-Api-Key': apiKey, Authorization: apiKey },
@@ -110,7 +87,6 @@ function initMap() {
       }
 
       if (url.includes('/bluecity/')) {
-        console.log('transformRequest', url, resourceType, apiKey)
         return {
           url: url + '?apikey=' + apiKey,
           // headers: { 'X-Api-Key': apiKey, Authorization: apiKey },
@@ -130,7 +106,6 @@ function initMap() {
       container: document.getElementById('map-time-input-container') ?? undefined
     })
   )
-
   map.on('load', () => {
     // filterLayers(props.filterIds)
     if (!map) return
@@ -143,7 +118,6 @@ function initMap() {
       map?.addSource(id, source)
       map?.addLayer(layer)
     })
-    updateWrfUrlSource(urlSource.value)
 
     function testTilesLoaded() {
       if (map?.areTilesLoaded()) {
@@ -170,9 +144,10 @@ function initMap() {
       if (map) map.getCanvas().classList.remove('hovered-feature')
     })
 
-    if (props.callbackLoaded) props.callbackLoaded()
+    if (props.callbackLoaded) {
+      props.callbackLoaded()
+    }
   })
-  loading.value = false
 }
 
 onMounted(() => {
