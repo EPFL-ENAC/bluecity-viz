@@ -40,7 +40,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { mdiChevronUp, mdiChevronDown } from '@mdi/js'
-import type { MapLayerConfig } from '@/config/mapConfig'
+import type { MapLayerConfig } from '@/config/layerTypes'
 import type { LayerSpecification } from 'maplibre-gl'
 
 type LegendColor = {
