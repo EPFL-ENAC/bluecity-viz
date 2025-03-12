@@ -8,7 +8,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
   // Population Density Layer
   {
     id: 'lausanne_pop_density',
-    label: 'Population Density per Hectare',
+    label: 'Population Density',
     unit: 'people/ha',
     info: 'Total population per hectare in Lausanne (2011-2023)',
     source: {
@@ -22,21 +22,22 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
       source: 'lausanne_pop_density',
       'source-layer': 'lausanne_migration_2011_2023',
       paint: {
-        'fill-extrusion-height': ['get', 'pop_mean'],
+        // Add max function to ensure minimum height of 2
+        'fill-extrusion-height': ['max', 2, ['get', 'pop_mean']],
         'fill-extrusion-color': [
           'interpolate',
           ['linear'],
           ['to-number', ['get', 'pop_mean']],
-          0,
-          '#e3f2fd', // Lightest blue
-          50,
-          '#90caf9', // Light blue
-          100,
-          '#42a5f5', // Medium blue
           200,
-          '#1976d2', // Dark blue
-          500,
-          '#0d47a1' // Darkest blue
+          '#e3f2fd', // Min value: ~200
+          400,
+          '#90caf9',
+          600,
+          '#42a5f5',
+          800,
+          '#1976d2',
+          1140,
+          '#0d47a1' // Max value: ~1140
         ],
         'fill-extrusion-opacity': 0.8,
         'fill-extrusion-base': 0
@@ -47,7 +48,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
   // Birth Rate Layer
   {
     id: 'lausanne_birth_rate',
-    label: 'Birth Rate per 1,000 Population',
+    label: 'Birth Rate',
     unit: 'per 1,000',
     info: 'Birth rate per 1,000 population in Lausanne (2011-2023)',
     source: {
@@ -61,25 +62,22 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
       source: 'lausanne_birth_rate',
       'source-layer': 'lausanne_migration_2011_2023',
       paint: {
-        'fill-extrusion-height': [
-          '*',
-          ['to-number', ['get', 'birth_rate']],
-          10 // Multiplier to make the visualization more visible
-        ],
+        // Add max function to ensure minimum height of 2
+        'fill-extrusion-height': ['max', 2, ['*', ['to-number', ['get', 'birth_rate']], 5]],
         'fill-extrusion-color': [
           'interpolate',
           ['linear'],
           ['to-number', ['get', 'birth_rate']],
-          0,
-          '#e8f5e9', // Lightest green
-          5,
-          '#a5d6a7', // Light green
+          3,
+          '#e8f5e9', // Min value: ~3.5
           10,
-          '#66bb6a', // Medium green
-          15,
-          '#388e3c', // Dark green
+          '#a5d6a7',
           20,
-          '#1b5e20' // Darkest green
+          '#66bb6a',
+          30,
+          '#388e3c',
+          41,
+          '#1b5e20' // Max value: ~41
         ],
         'fill-extrusion-opacity': 0.8,
         'fill-extrusion-base': 0
@@ -90,7 +88,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
   // Death Rate Layer
   {
     id: 'lausanne_death_rate',
-    label: 'Death Rate per 1,000 Population',
+    label: 'Death Rate',
     unit: 'per 1,000',
     info: 'Death rate per 1,000 population in Lausanne (2011-2023)',
     source: {
@@ -104,25 +102,22 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
       source: 'lausanne_death_rate',
       'source-layer': 'lausanne_migration_2011_2023',
       paint: {
-        'fill-extrusion-height': [
-          '*',
-          ['to-number', ['get', 'death_rate']],
-          10 // Multiplier to make the visualization more visible
-        ],
+        // Add max function to ensure minimum height of 2
+        'fill-extrusion-height': ['max', 2, ['*', ['to-number', ['get', 'death_rate']], 2]],
         'fill-extrusion-color': [
           'interpolate',
           ['linear'],
           ['to-number', ['get', 'death_rate']],
-          0,
-          '#f5f5f5', // Lightest gray
-          5,
-          '#e0e0e0', // Light gray
-          10,
-          '#9e9e9e', // Medium gray
-          15,
-          '#616161', // Dark gray
-          20,
-          '#212121' // Darkest gray
+          1,
+          '#f5f5f5', // Min value: ~1.8
+          25,
+          '#e0e0e0',
+          50,
+          '#9e9e9e',
+          75,
+          '#616161',
+          109,
+          '#212121' // Max value: ~109
         ],
         'fill-extrusion-opacity': 0.8,
         'fill-extrusion-base': 0
@@ -133,7 +128,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
   // Internal In-migration Rate Layer
   {
     id: 'lausanne_inmigration_rate',
-    label: 'Internal In-migration Rate per 1,000 Population',
+    label: 'Internal In-migration',
     unit: 'per 1,000',
     info: 'Internal in-migration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
@@ -147,25 +142,22 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
       source: 'lausanne_inmigration_rate',
       'source-layer': 'lausanne_migration_2011_2023',
       paint: {
-        'fill-extrusion-height': [
-          '*',
-          ['to-number', ['get', 'inmigration_rate']],
-          2 // Multiplier to make the visualization more visible
-        ],
+        // Add max function to ensure minimum height of 2
+        'fill-extrusion-height': ['max', 2, ['*', ['to-number', ['get', 'inmigration_rate']], 0.5]],
         'fill-extrusion-color': [
           'interpolate',
           ['linear'],
           ['to-number', ['get', 'inmigration_rate']],
-          0,
-          '#f3e5f5', // Lightest purple
-          25,
-          '#ce93d8', // Light purple
-          50,
-          '#ab47bc', // Medium purple
-          75,
-          '#7b1fa2', // Dark purple
-          100,
-          '#4a148c' // Darkest purple
+          20,
+          '#f3e5f5', // Min value: ~21
+          125,
+          '#ce93d8',
+          250,
+          '#ab47bc',
+          375,
+          '#7b1fa2',
+          505,
+          '#4a148c' // Max value: ~505
         ],
         'fill-extrusion-opacity': 0.8,
         'fill-extrusion-base': 0
@@ -176,7 +168,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
   // Internal Out-migration Rate Layer
   {
     id: 'lausanne_outmigration_rate',
-    label: 'Internal Out-migration Rate per 1,000 Population',
+    label: 'Internal Out-migration',
     unit: 'per 1,000',
     info: 'Internal out-migration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
@@ -190,25 +182,26 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
       source: 'lausanne_outmigration_rate',
       'source-layer': 'lausanne_migration_2011_2023',
       paint: {
+        // Add max function to ensure minimum height of 2
         'fill-extrusion-height': [
-          '*',
-          ['to-number', ['get', 'outmigration_rate']],
-          2 // Multiplier to make the visualization more visible
+          'max',
+          2,
+          ['*', ['to-number', ['get', 'outmigration_rate']], 0.5]
         ],
         'fill-extrusion-color': [
           'interpolate',
           ['linear'],
           ['to-number', ['get', 'outmigration_rate']],
-          0,
-          '#fff3e0', // Lightest orange
-          25,
-          '#ffcc80', // Light orange
-          50,
-          '#ffa726', // Medium orange
-          75,
-          '#f57c00', // Dark orange
-          100,
-          '#e65100' // Darkest orange
+          40,
+          '#fff3e0', // Min value: ~41
+          110,
+          '#ffcc80',
+          180,
+          '#ffa726',
+          250,
+          '#f57c00',
+          337,
+          '#e65100' // Max value: ~337
         ],
         'fill-extrusion-opacity': 0.8,
         'fill-extrusion-base': 0
@@ -219,7 +212,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
   // International Immigration Rate Layer
   {
     id: 'lausanne_immigration_rate',
-    label: 'International Immigration Rate per 1,000 Population',
+    label: 'International Immigration',
     unit: 'per 1,000',
     info: 'International immigration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
@@ -233,25 +226,22 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
       source: 'lausanne_immigration_rate',
       'source-layer': 'lausanne_migration_2011_2023',
       paint: {
-        'fill-extrusion-height': [
-          '*',
-          ['to-number', ['get', 'immigration_rate']],
-          2 // Multiplier to make the visualization more visible
-        ],
+        // Add max function to ensure minimum height of 2
+        'fill-extrusion-height': ['max', 2, ['*', ['to-number', ['get', 'immigration_rate']], 0.2]],
         'fill-extrusion-color': [
           'interpolate',
           ['linear'],
           ['to-number', ['get', 'immigration_rate']],
-          0,
-          '#e0f2f1', // Lightest teal
-          25,
-          '#80cbc4', // Light teal
-          50,
-          '#26a69a', // Medium teal
-          75,
-          '#00796b', // Dark teal
-          100,
-          '#004d40' // Darkest teal
+          2,
+          '#e0f2f1', // Min value: ~2.4
+          250,
+          '#80cbc4',
+          500,
+          '#26a69a',
+          750,
+          '#00796b',
+          1014,
+          '#004d40' // Max value: ~1014
         ],
         'fill-extrusion-opacity': 0.8,
         'fill-extrusion-base': 0
@@ -262,7 +252,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
   // International Emigration Rate Layer
   {
     id: 'lausanne_emigration_rate',
-    label: 'International Emigration Rate per 1,000 Population',
+    label: 'International Emigration',
     unit: 'per 1,000',
     info: 'International emigration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
@@ -276,25 +266,22 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
       source: 'lausanne_emigration_rate',
       'source-layer': 'lausanne_migration_2011_2023',
       paint: {
-        'fill-extrusion-height': [
-          '*',
-          ['to-number', ['get', 'emigration_rate']],
-          2 // Multiplier to make the visualization more visible
-        ],
+        // Add max function to ensure minimum height of 2
+        'fill-extrusion-height': ['max', 2, ['*', ['to-number', ['get', 'emigration_rate']], 0.2]],
         'fill-extrusion-color': [
           'interpolate',
           ['linear'],
           ['to-number', ['get', 'emigration_rate']],
-          0,
-          '#efebe9', // Lightest brown
-          10,
-          '#bcaaa4', // Light brown
-          20,
-          '#8d6e63', // Medium brown
-          30,
-          '#5d4037', // Dark brown
-          40,
-          '#3e2723' // Darkest brown
+          2,
+          '#efebe9', // Min value: ~2.8
+          200,
+          '#bcaaa4',
+          400,
+          '#8d6e63',
+          600,
+          '#5d4037',
+          798,
+          '#3e2723' // Max value: ~798
         ],
         'fill-extrusion-opacity': 0.8,
         'fill-extrusion-base': 0
