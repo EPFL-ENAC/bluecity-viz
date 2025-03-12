@@ -26,3 +26,4 @@ processing/**/*.cpg
 processing/**/*.sbn
 processing/**/*.sbx
 processing/**/*.qgz
+processing/**/*.pmtiles
