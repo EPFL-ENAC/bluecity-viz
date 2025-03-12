@@ -4,13 +4,9 @@ import { useTheme } from 'vuetify'
 
 import type { Parameters } from '@/utils/jsonWebMap'
 import { computed, ref, shallowRef, watch } from 'vue'
-import CustomSlider from '@/components/CustomSlider.vue'
-import InfoTooltip from '@/components/InfoTooltip.vue'
 import LegendMap from '@/components/LegendMap.vue'
+import LayerGroups from '@/components/LayerGroups.vue'
 import { mapConfig } from '@/config/mapConfig'
-// const props = defineProps<{
-//   styleUrl: string
-// }>()
 
 const map = ref<InstanceType<typeof MapLibreMap>>()
 
@@ -27,22 +23,55 @@ const center = {
 
 const zoom = 8
 
-const possibleLayers = mapConfig.layers.map((d) => ({
-  id: d.layer.id,
-  label: d.label,
-  info: d.info
-}))
+// Define layer groups based on naming conventions in your files
+const layerGroups = [
+  {
+    id: 'sp0_migration',
+    label: 'SP0 Migration',
+    expanded: false,
+    layers: mapConfig.layers.filter((layer) => layer.id.includes('lausanne_'))
+  },
+  {
+    id: 'sp2_mobility',
+    label: 'SP2 Mobility',
+    expanded: false,
+    layers: mapConfig.layers.filter(
+      (layer) => layer.id.includes('access_') || layer.id.includes('ratio_')
+    )
+  }
+  // Add other groups as needed
+]
 
-const layersSelected = ref<string[]>(['roads_swiss_statistics-layer'])
+// Expanded state for each group
+const expandedGroups = ref<Record<string, boolean>>(
+  Object.fromEntries(layerGroups.map((group) => [group.id, group.expanded]))
+)
+
+// Toggle group expansion
+const toggleGroup = (groupId: string) => {
+  expandedGroups.value[groupId] = !expandedGroups.value[groupId]
+}
+
+// Flatten all layers for internal use
+const possibleLayers = computed(() => {
+  return layerGroups.flatMap((group) =>
+    group.layers.map((layer) => ({
+      id: layer.layer.id,
+      label: layer.label,
+      info: layer.info,
+      groupId: group.id
+    }))
+  )
+})
+
+const layersSelected = ref<string[]>([])
 
 const layersVisible = computed(() => {
   return mapConfig.layers.filter((layer) => layersSelected.value.includes(layer.layer.id) ?? false)
 })
 
-const isWrfSelected = computed(() => layersSelected.value.includes('wrf-layer'))
-
 const syncAllLayersVisibility = (layersSelected: string[]) => {
-  for (let { id: layer } of possibleLayers) {
+  for (let { id: layer } of possibleLayers.value) {
     if (layersSelected.includes(layer)) {
       map.value?.setLayerVisibility(layer, true)
     } else {
@@ -50,6 +79,7 @@ const syncAllLayersVisibility = (layersSelected: string[]) => {
     }
   }
 }
+
 watch(
   () => layersSelected.value,
   (layersSelected) => {
@@ -77,39 +107,23 @@ watch(
 <template>
   <v-container class="fill-height pa-0 overflow-hidden" fluid>
     <v-row class="fill-height overflow-y-hidden">
-      <v-col cols="2" class="params-col border-e-md overflow-y-auto overflow-x-hidden">
+      <v-col xl="2" cols="3" class="params-col border-e-md overflow-y-auto overflow-x-hidden">
         <v-card flat>
           <v-card-title class="ml-2"> <h2>LAYERS</h2> </v-card-title>
           <v-card-text class="d-flex flex-column">
-            <v-checkbox
-              v-for="(item, index) in possibleLayers"
-              :key="index"
-              v-model="layersSelected"
-              class="py-2"
-              :hide-details="!(isWrfSelected && item.id == 'wrf-layer')"
-              :value="item.id"
-            >
-              <template #label>
-                <h4>{{ item.label.toUpperCase() }}</h4>
-              </template>
-              <template #append>
-                <info-tooltip>{{ item.info }}</info-tooltip>
-              </template>
-              <template v-if="isWrfSelected && item.id == 'wrf-layer'" #details>
-                <v-radio-group
-                  v-if="item.id == 'wrf-layer' && isWrfSelected"
-                  v-model="variableSelected"
-                  hide-details
-                >
-                  <v-radio label="Windspeed" value="u10"></v-radio>
-                  <v-radio label="Temperature" value="t2"></v-radio>
-                </v-radio-group>
-              </template>
-            </v-checkbox>
+            <!-- Use the new LayerGroups component -->
+            <LayerGroups
+              :layer-groups="layerGroups"
+              :expanded-groups="expandedGroups"
+              :layers-selected="layersSelected"
+              :possible-layers="possibleLayers"
+              @update:layers-selected="layersSelected = $event"
+              @toggle-group="toggleGroup"
+            />
           </v-card-text>
         </v-card>
       </v-col>
-      <v-col id="map-time-input-container" cols="10" class="py-0 pl-0 d-flex flex-column">
+      <v-col id="map-time-input-container" xl="10" cols="9" class="py-0 pl-0 d-flex flex-column">
         <MapLibreMap
           :key="theme"
           ref="map"
@@ -144,12 +158,6 @@ watch(
             outlined
           />
         </div>
-        <v-card v-if="isWrfSelected" flat class="mt-auto border-t-md pb-4 px-4">
-          <v-card-title> Time </v-card-title>
-          <v-card-text>
-            <custom-slider v-model="idxImage"> </custom-slider>
-          </v-card-text>
-        </v-card>
       </v-col>
     </v-row>
   </v-container>
