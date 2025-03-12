@@ -21,11 +21,13 @@ import type { LegendColor } from '@/utils/legendColor'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import { Protocol } from 'pmtiles'
+import { useApiKeyStore } from '@/stores/apiKey'
 
 // Find the base url depending on the environment
 // If dev it should be geodata/
-// If prod it should be https://enacit4r-cdn.epfl.ch/bluecity-viz/
+// If prod it should be https://enacit4r-cdn.epfl.ch/bluecity/
 const baseURL = import.meta.env.DEV ? mapConfig.baseUrl.dev : mapConfig.baseUrl.prod
+const apiKeyStore = useApiKeyStore()
 
 const props = withDefaults(
   defineProps<{
@@ -85,8 +87,7 @@ watch(urlSource, updateWrfUrlSource)
 
 addProtocol('pmtiles', protocol.tile)
 
-onMounted(() => {
-  addProtocol('pmtiles', protocol.tile)
+function initMap() {
   map = new Maplibre({
     container: container.value as HTMLDivElement,
     style: props.styleSpec,
@@ -95,7 +96,30 @@ onMounted(() => {
     minZoom: props.minZoom,
     pitch: 40,
     maxZoom: props.maxZoom,
-    attributionControl: false
+    attributionControl: false,
+    transformRequest: function (url, resourceType) {
+      const apiKey = apiKeyStore.apiKey
+
+      if (resourceType === 'Tile' && url.includes('pmtiles://')) {
+        console.log('transformRequest TILE', url, resourceType, apiKey)
+        return {
+          url: url + '?apikey=' + apiKey,
+          // headers: { 'X-Api-Key': apiKey, Authorization: apiKey },
+          credentials: 'include'
+        }
+      }
+
+      if (url.includes('/bluecity/')) {
+        console.log('transformRequest', url, resourceType, apiKey)
+        return {
+          url: url + '?apikey=' + apiKey,
+          // headers: { 'X-Api-Key': apiKey, Authorization: apiKey },
+          credentials: 'include'
+        }
+      }
+
+      return { url: url }
+    }
   })
 
   // map.showTileBoundaries = true
@@ -149,7 +173,21 @@ onMounted(() => {
     if (props.callbackLoaded) props.callbackLoaded()
   })
   loading.value = false
+}
+
+onMounted(() => {
+  addProtocol('pmtiles', protocol.tile)
+  if (apiKeyStore.apiKey) {
+    initMap()
+  }
 })
+
+watch(
+  () => apiKeyStore.apiKey,
+  () => {
+    initMap()
+  }
+)
 
 let throttleTimer = new Map<string, boolean>()
 
