@@ -59,7 +59,7 @@ watch(
 
 const vuetifyTheme = useTheme()
 
-const theme = ref('style/dark.json') // Default theme
+const theme = ref('style/light.json') // Default theme
 const themes = [
   { value: 'style/light.json', label: 'Light' },
   { value: 'style/dark.json', label: 'Dark' },
