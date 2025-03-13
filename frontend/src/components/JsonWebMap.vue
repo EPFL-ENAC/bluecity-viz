@@ -6,10 +6,7 @@ import type { Parameters } from '@/utils/jsonWebMap'
 import { computed, ref, shallowRef, watch } from 'vue'
 import LegendMap from '@/components/LegendMap.vue'
 import LayerGroups from '@/components/LayerGroups.vue'
-import { mapConfig } from '@/config/mapConfig'
-import { sp0MigrationLayers } from '@/config/sp0_migration'
-import { sp2MobilityLayers } from '@/config/sp2_mobility'
-import { sp3NatureLayers } from '@/config/sp3_nature'
+import { mapConfig, layerGroups } from '@/config/mapConfig'
 
 const map = ref<InstanceType<typeof MapLibreMap>>()
 
@@ -25,28 +22,6 @@ const center = {
 }
 
 const zoom = 11
-
-const layerGroups = [
-  {
-    id: 'sp0_migration',
-    label: 'SP0 Migration',
-    expanded: false,
-    layers: sp0MigrationLayers
-  },
-  {
-    id: 'sp2_mobility',
-    label: 'SP2 Mobility',
-    expanded: false,
-    layers: sp2MobilityLayers
-  },
-  {
-    id: 'sp3_nature',
-    label: 'SP3 Nature',
-    expanded: false,
-    layers: sp3NatureLayers
-  }
-  // Add other groups as needed
-]
 
 // Expanded state for each group
 const expandedGroups = ref<Record<string, boolean>>(
