@@ -46,8 +46,8 @@ const toggleGroup = (groupId: string) => {
 }
 
 // Handle layer selection changes
-const updateSelectedLayers = (newValue: string[]) => {
-  emit('update:layers-selected', newValue)
+const updateSelectedLayers = (newValue: string[] | null) => {
+  emit('update:layers-selected', newValue ?? [])
 }
 </script>
 
