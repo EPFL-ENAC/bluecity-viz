@@ -2,15 +2,17 @@ import pandas as pd
 from shapely.geometry import Polygon, Point, box
 import geopandas as gpd
 from pyproj import Transformer, Geod
+import os
 
+# Create output directory if it doesn't exist
+output_dir = "period_data"
+os.makedirs(output_dir, exist_ok=True)
 
 data = pd.read_csv("lausanne_migration_2011_2023.csv", delimiter=",")
-
 
 # Initialize transformers
 transformer_to_wgs84 = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
 geod = Geod(ellps="WGS84")
-
 
 lon, lat = transformer_to_wgs84.transform(
     data["x_coord"].values, data["y_coord"].values
@@ -70,4 +72,20 @@ polygons = [create_square(lat_i, lon_i, size_m=100) for lat_i, lon_i in zip(lat,
 # Create a GeoDataFrame
 gdf = gpd.GeoDataFrame(data, geometry=polygons, crs="EPSG:4326")
 
+# Save the complete dataset
 gdf.to_file("lausanne_migration_2011_2023.geojson", driver="GeoJSON")
+
+# Group by year and export separate files
+years = gdf["year"].unique()
+print(f"Found {len(years)} unique years: {sorted(years)}")
+
+for year in sorted(years):
+    year_gdf = gdf[gdf["year"] == year].copy()
+    output_file = f"lausanne_migration_{year}.geojson"
+    year_gdf.to_file(output_file, driver="GeoJSON")
+    print(f"Exported {output_file} with {len(year_gdf)} features")
+
+    # Also save to the yearly_data directory
+    year_gdf.to_file(os.path.join(output_dir, output_file), driver="GeoJSON")
+
+print("Data processing and export completed!")
