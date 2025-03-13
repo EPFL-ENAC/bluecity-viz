@@ -113,23 +113,22 @@ const toggleGroupVisibility = (event: Event, groupId: string) => {
   <div>
     <div v-for="group in layerGroups" :key="group.id" class="layer-group mb-3">
       <!-- Group Header with Toggle -->
-      <div class="d-flex align-center group-header">
-        <!-- Expand/Collapse Icon -->
-        <v-icon
-          :icon="expandedGroups[group.id] ? mdiChevronDown : mdiChevronRight"
-          size="small"
-          class="mr-2"
-          @click="toggleGroup(group.id)"
-        ></v-icon>
-
+      <div class="d-flex align-center justify-space-between">
         <!-- Group Title -->
-        <h4 class="text-uppercase mb-0" @click="toggleGroup(group.id)">{{ group.label }}</h4>
+        <h4 class="text-uppercase mb-0 flex-grow-1 group-header" @click="toggleGroup(group.id)">
+          <v-icon
+            :icon="expandedGroups[group.id] ? mdiChevronDown : mdiChevronRight"
+            size="small"
+            class="mr-2 d"
+          ></v-icon
+          >{{ group.label }}
+        </h4>
 
         <!-- Visibility Toggle Icon -->
         <v-icon
           :icon="isGroupVisible(group.id) ? mdiEyeOutline : mdiEyeOffOutline"
           size="small"
-          class="ml-auto visibility-toggle"
+          class="visibility-toggle"
           :class="{ active: isGroupVisible(group.id) }"
           @click="(e) => toggleGroupVisibility(e, group.id)"
           :title="isGroupVisible(group.id) ? 'Hide layer group' : 'Show layer group'"
@@ -176,7 +175,7 @@ const toggleGroupVisibility = (event: Event, groupId: string) => {
             >
               <template #label>
                 <div class="d-flex align-center">
-                  <h5 class="text-uppercase mb-0">{{ item.label }}</h5>
+                  <h5 class="text-uppercase flex-grow-1 mb-0">{{ item.label }}</h5>
                   <info-tooltip class="ml-2">{{ item.info }}</info-tooltip>
                 </div>
               </template>
