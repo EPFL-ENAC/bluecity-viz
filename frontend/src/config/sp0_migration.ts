@@ -109,15 +109,15 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
           ['linear'],
           ['to-number', ['get', 'death_rate']],
           1,
-          '#f5f5f5', // Min value: ~1.8
+          '#ffebee', // Min value: ~1.8
           25,
-          '#e0e0e0',
+          '#ef9a9a',
           50,
-          '#9e9e9e',
+          '#e57373',
           75,
-          '#616161',
+          '#c62828',
           109,
-          '#212121' // Max value: ~109
+          '#b71c1c' // Max value: ~109
         ],
         'fill-extrusion-opacity': 0.8,
         'fill-extrusion-base': 0
