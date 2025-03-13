@@ -9,12 +9,12 @@ import { sp7VehicleLayers } from '@/config/sp7'
 export const mapConfig = {
   baseUrl: baseUrlOptions,
   layers: [
-    ...sp0MigrationLayers,
     ...sp2MobilityLayers,
     ...sp3NatureLayers,
     ...sp4WasteLayers,
     ...sp6MaterialsLayers,
-    ...sp7VehicleLayers
+    ...sp7VehicleLayers,    
+    ...sp0MigrationLayers,
   ] as MapLayerConfig[]
 }
 
