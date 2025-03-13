@@ -13,8 +13,8 @@ export const mapConfig = {
     ...sp3NatureLayers,
     ...sp4WasteLayers,
     ...sp6MaterialsLayers,
-    ...sp7VehicleLayers,    
-    ...sp0MigrationLayers,
+    ...sp7VehicleLayers,
+    ...sp0MigrationLayers
   ] as MapLayerConfig[]
 }
 
@@ -23,22 +23,31 @@ export const layerGroups = [
     id: 'sp0_migration',
     label: 'SP0 Migration',
     expanded: false,
+    multiple: false,
     layers: sp0MigrationLayers
   },
   {
     id: 'sp2_mobility',
     label: 'SP2 Mobility',
     expanded: false,
+    multiple: false,
     layers: sp2MobilityLayers
   },
   {
     id: 'sp3_nature',
     label: 'SP3 Nature',
     expanded: false,
+    multiple: false,
     layers: sp3NatureLayers
   },
-  { id: 'sp4_waste', label: 'SP4 Waste', expanded: false, layers: sp4WasteLayers },
-  { id: 'sp6_materials', label: 'SP6 Materials', expanded: false, layers: sp6MaterialsLayers },
-  { id: 'sp7', label: 'SP7 Vehicle', expanded: false, layers: sp7VehicleLayers }
+  { id: 'sp4_waste', label: 'SP4 Waste', expanded: false, multiple: true, layers: sp4WasteLayers },
+  {
+    id: 'sp6_materials',
+    label: 'SP6 Materials',
+    expanded: false,
+    multiple: false,
+    layers: sp6MaterialsLayers
+  },
+  { id: 'sp7', label: 'SP7 Vehicle', expanded: false, multiple: false, layers: sp7VehicleLayers }
   // Add other groups as needed
 ]

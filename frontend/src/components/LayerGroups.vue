@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import InfoTooltip from '@/components/InfoTooltip.vue'
-import { mdiChevronDown, mdiChevronRight } from '@mdi/js'
+import { mdiChevronDown, mdiChevronRight, mdiEyeOutline, mdiEyeOffOutline } from '@mdi/js'
 
 // Define the types
 type LayerItem = {
@@ -14,6 +14,7 @@ type LayerGroup = {
   id: string
   label: string
   expanded?: boolean
+  multiple: boolean // Whether multiple selection is allowed
   layers: any[] // Allow any layer structure
 }
 
@@ -45,9 +46,66 @@ const toggleGroup = (groupId: string) => {
   emit('toggle-group', groupId)
 }
 
-// Handle layer selection changes
+// Handle layer selection changes for checkboxes (multiple selection)
 const updateSelectedLayers = (newValue: string[] | null) => {
   emit('update:layers-selected', newValue ?? [])
+}
+
+// Handle layer selection changes for radio buttons (single selection)
+const updateSingleLayerSelection = (groupId: string, layerId: string) => {
+  // Create a new array without any layers from this group
+  const otherGroupLayers = layersSelected.filter((id) => {
+    const layer = possibleLayers.find((l) => l.id === id)
+    return layer && layer.groupId !== groupId
+  })
+
+  // Add the selected layer and emit the updated array
+  emit('update:layers-selected', [...otherGroupLayers, layerId])
+}
+
+// Helper to check if a radio button should be selected
+const isLayerSelected = (layerId: string): boolean => {
+  return layersSelected.includes(layerId)
+}
+
+// Check if any layer in the group is selected
+const isGroupVisible = (groupId: string): boolean => {
+  return layersSelected.some((id) => {
+    const layer = possibleLayers.find((l) => l.id === id)
+    return layer && layer.groupId === groupId
+  })
+}
+
+// Toggle all layers in a group
+const toggleGroupVisibility = (event: Event, groupId: string) => {
+  event.stopPropagation() // Prevent triggering the group expansion
+
+  const groupLayers = possibleLayers.filter((layer) => layer.groupId === groupId)
+  const groupLayerIds = groupLayers.map((layer) => layer.id)
+
+  // Check if any layer from this group is currently selected
+  const isVisible = isGroupVisible(groupId)
+
+  if (isVisible) {
+    // If visible, remove all layers from this group
+    const filteredLayers = layersSelected.filter((id) => !groupLayerIds.includes(id))
+    emit('update:layers-selected', filteredLayers)
+  } else {
+    // If not visible, add layers according to group's selection mode
+    const group = layerGroups.find((g) => g.id === groupId)
+    if (group?.multiple) {
+      // For multiple selection groups, add all layers
+      const newSelection = [...layersSelected, ...groupLayerIds]
+      emit('update:layers-selected', newSelection)
+    } else if (groupLayers.length > 0) {
+      // For single selection groups, add only the first layer
+      const otherGroupLayers = layersSelected.filter((id) => {
+        const layer = possibleLayers.find((l) => l.id === id)
+        return layer && layer.groupId !== groupId
+      })
+      emit('update:layers-selected', [...otherGroupLayers, groupLayerIds[0]])
+    }
+  }
 }
 </script>
 
@@ -55,32 +113,76 @@ const updateSelectedLayers = (newValue: string[] | null) => {
   <div>
     <div v-for="group in layerGroups" :key="group.id" class="layer-group mb-3">
       <!-- Group Header with Toggle -->
-      <div class="d-flex align-center group-header" @click="toggleGroup(group.id)">
+      <div class="d-flex align-center group-header">
+        <!-- Expand/Collapse Icon -->
         <v-icon
           :icon="expandedGroups[group.id] ? mdiChevronDown : mdiChevronRight"
           size="small"
           class="mr-2"
+          @click="toggleGroup(group.id)"
         ></v-icon>
-        <h4 class="text-uppercase mb-0">{{ group.label }}</h4>
+
+        <!-- Group Title -->
+        <h4 class="text-uppercase mb-0" @click="toggleGroup(group.id)">{{ group.label }}</h4>
+
+        <!-- Visibility Toggle Icon -->
+        <v-icon
+          :icon="isGroupVisible(group.id) ? mdiEyeOutline : mdiEyeOffOutline"
+          size="small"
+          class="ml-auto visibility-toggle"
+          :class="{ active: isGroupVisible(group.id) }"
+          @click="(e) => toggleGroupVisibility(e, group.id)"
+          :title="isGroupVisible(group.id) ? 'Hide layer group' : 'Show layer group'"
+        ></v-icon>
       </div>
 
       <!-- Group Content (Collapsible) -->
       <div v-show="expandedGroups[group.id]" class="mt-2">
-        <v-checkbox
-          v-for="item in possibleLayers.filter((layer) => layer.groupId === group.id)"
-          :key="item.id"
-          :model-value="layersSelected"
-          dense
-          :value="item.id"
-          @update:model-value="updateSelectedLayers"
-        >
-          <template #label>
-            <h5 class="text-uppercase mb-0">{{ item.label }}</h5>
-          </template>
-          <template #append>
-            <info-tooltip>{{ item.info }}</info-tooltip>
-          </template>
-        </v-checkbox>
+        <!-- Use checkbox for multiple selection groups -->
+        <template v-if="group.multiple">
+          <v-checkbox
+            v-for="item in possibleLayers.filter((layer) => layer.groupId === group.id)"
+            :key="item.id"
+            :model-value="layersSelected"
+            dense
+            :value="item.id"
+            @update:model-value="updateSelectedLayers"
+          >
+            <template #label>
+              <h5 class="text-uppercase mb-0">{{ item.label }}</h5>
+            </template>
+            <template #append>
+              <info-tooltip>{{ item.info }}</info-tooltip>
+            </template>
+          </v-checkbox>
+        </template>
+
+        <!-- Use radio buttons for single selection groups -->
+        <template v-else>
+          <v-radio-group
+            :model-value="
+              layersSelected.find((id) => {
+                const layer = possibleLayers.find((l) => l.id === id)
+                return layer && layer.groupId === group.id
+              }) || ''
+            "
+          >
+            <v-radio
+              v-for="item in possibleLayers.filter((layer) => layer.groupId === group.id)"
+              :key="item.id"
+              :value="item.id"
+              dense
+              @change="updateSingleLayerSelection(group.id, item.id)"
+            >
+              <template #label>
+                <div class="d-flex align-center">
+                  <h5 class="text-uppercase mb-0">{{ item.label }}</h5>
+                  <info-tooltip class="ml-2">{{ item.info }}</info-tooltip>
+                </div>
+              </template>
+            </v-radio>
+          </v-radio-group>
+        </template>
       </div>
     </div>
   </div>
@@ -99,6 +201,21 @@ const updateSelectedLayers = (newValue: string[] | null) => {
 
 .group-header:hover {
   background-color: rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.visibility-toggle {
+  opacity: 0.6;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.visibility-toggle:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.visibility-toggle.active {
+  opacity: 1;
+  color: var(--v-theme-primary);
 }
 
 .no-break {
