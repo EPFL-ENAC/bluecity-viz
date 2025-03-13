@@ -141,7 +141,7 @@ const generateOneLayerWithColors = (layer: MapLayerConfig) => {
 
   return {
     ...layer,
-    colors,
+    colors: colors.reverse(),
     isCategorical,
     gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`
   }
