@@ -4,167 +4,197 @@ import { baseUrl } from '@/config/layerTypes'
 import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
 
 export const sp6MaterialsLayers: MapLayerConfig[] = [
-  // Buildings colored by building category
+  // Buildings colored by Era
   {
-    id: 'buildings_by_category',
-    label: 'Buildings by Category',
-    unit: 'category',
-    info: 'Building locations in Vaud colored by their category',
+    id: 'buildings_by_era',
+    label: 'Buildings by Era',
+    unit: 'era',
+    info: 'Buildings in Lausanne colored by construction era',
     source: {
       type: 'vector',
       url: `pmtiles://${baseUrl}/buildings.pmtiles`,
-      minzoom: 12
+      minzoom: 10
     } as VectorSourceSpecification,
     layer: {
-      id: 'buildings_by_category-layer',
-      type: 'circle',
-      source: 'buildings_by_category',
+      id: 'buildings_by_era-layer',
+      type: 'fill',
+      source: 'buildings_by_era',
       'source-layer': 'buildings',
       paint: {
-        // Circle color based on building category
-        'circle-color': [
+        // Fill color based on Era attribute
+        'fill-color': [
           'match',
-          ['get', 'buildingCategory'],
-          1010,
-          '#9C27B0', // Habitation provisoire (Provisional housing)
-          1020,
-          '#1E88E5', // Bâtiment exclusif à usage d'habitation (Exclusively residential)
-          1030,
-          '#43A047', // Autre bâtiment d'habitation (Other residential building)
-          1040,
-          '#F4511E', // Bâtiment partiellement à usage d'habitation (Partially residential)
-          1060,
-          '#8E24AA', // Bâtiment sans usage d'habitation (Non-residential)
-          1080,
-          '#FFB300', // Construction particulière (Special construction)
-          '#757575' // Other/unknown categories
+          ['get', 'Era'],
+          'Before 1919',
+          '#3b0f70',
+          '1920 – 1945',
+          '#5f2e8c',
+          '1946 – 1960',
+          '#7a4a9e',
+          '1961 – 1970',
+          '#9367af',
+          '1971 – 1980',
+          '#ac84bf',
+          '1981 – 1985',
+          '#c3a1cf',
+          '1986 – 1990',
+          '#d9bedf',
+          '1991 – 1995',
+          '#eadbef',
+          '1996 – 2000',
+          '#fde0ef',
+          '2001 – 2005',
+          '#ffbfd3',
+          '2006 - 2010',
+          '#ff9fb5',
+          '2011 – 2015',
+          '#ff7a9a',
+          'After 2015',
+          '#f9484c',
+          '#bdbdbd' // Default color for unknown/null values
         ],
-        // Circle size based on zoom level
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 1, 14, 3, 16, 5],
-        'circle-opacity': 0.8,
-        'circle-stroke-width': 1,
-        'circle-stroke-color': '#ffffff'
-      },
-      // Add a filter to remove any null or 0 values
-      filter: ['>', ['to-number', ['get', 'buildingCategory']], 0]
+        'fill-opacity': 0.8,
+        'fill-outline-color': '#ffffff'
+      }
     } as LayerSpecification
   },
 
-  // Buildings colored by building status
+  // Buildings colored by Function
   {
-    id: 'buildings_by_status',
-    label: 'Buildings by Status',
-    unit: 'status',
-    info: 'Building locations in Vaud colored by their status',
+    id: 'buildings_by_function',
+    label: 'Buildings by Function',
+    unit: 'function',
+    info: 'Buildings in Lausanne colored by their functional use',
     source: {
       type: 'vector',
       url: `pmtiles://${baseUrl}/buildings.pmtiles`,
-      minzoom: 12
+      minzoom: 10
     } as VectorSourceSpecification,
     layer: {
-      id: 'buildings_by_status-layer',
-      type: 'circle',
-      source: 'buildings_by_status',
+      id: 'buildings_by_function-layer',
+      type: 'fill',
+      source: 'buildings_by_function',
       'source-layer': 'buildings',
       paint: {
-        // Circle color based on building status
-        'circle-color': [
+        // Fill color based on Function attribute
+        'fill-color': [
           'match',
-          ['get', 'buildingStatus'],
-          1001,
-          '#4CAF50', // En projet (In planning)
-          1002,
-          '#FFC107', // Autorisé (Authorized)
-          1003,
-          '#FF9800', // En construction (Under construction)
-          1004,
-          '#2196F3', // Existant (Existing)
-          1005,
-          '#9C27B0', // Non utilisable (Not usable)
-          1007,
-          '#F44336', // Démoli (Demolished)
-          1008,
-          '#795548', // Non réalisé (Not realized)
-          '#9E9E9E' // Other/unknown status
+          ['get', 'Function'],
+          'Housing',
+          '#2196F3', // Blue
+          'Business',
+          '#4CAF50', // Green
+          'Industry',
+          '#FF9800', // Orange
+          'Health',
+          '#F44336', // Red
+          'Culture',
+          '#9C27B0', // Purple
+          '#757575' // Default color for unknown/null values
         ],
-        // Circle size based on zoom level
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 1, 14, 3, 16, 5],
-        'circle-opacity': 0.8,
-        'circle-stroke-width': 1,
-        'circle-stroke-color': '#ffffff'
-      },
-      // Add a filter to remove any null or 0 values
-      filter: ['>', ['to-number', ['get', 'buildingStatus']], 0]
+        'fill-opacity': 0.8,
+        'fill-outline-color': '#ffffff'
+      }
     } as LayerSpecification
   },
 
-  // Buildings classified by building class
+  // Buildings colored by Archetype
   {
-    id: 'buildings_by_class',
-    label: 'Buildings by Class',
-    unit: 'class',
-    info: 'Building locations in Vaud colored by their class/type',
+    id: 'buildings_by_archetype',
+    label: 'Buildings by Archetype',
+    unit: 'archetype',
+    info: 'Buildings in Lausanne colored by their architectural archetype',
     source: {
       type: 'vector',
       url: `pmtiles://${baseUrl}/buildings.pmtiles`,
-      minzoom: 12
+      minzoom: 10
     } as VectorSourceSpecification,
     layer: {
-      id: 'buildings_by_class-layer',
-      type: 'circle',
-      source: 'buildings_by_class',
+      id: 'buildings_by_archetype-layer',
+      type: 'fill',
+      source: 'buildings_by_archetype',
       'source-layer': 'buildings',
       paint: {
-        // Circle color based on building class
-        'circle-color': [
+        // Fill color based on Archetype attribute
+        'fill-color': [
           'match',
-          ['get', 'buildingClass'],
-          1110,
-          '#3949AB', // Detached houses
-          1121,
-          '#EF5350', // Semi-detached houses
-          1122,
-          '#EC407A', // Row/terraced houses
-          1130,
-          '#AB47BC', // Apartment buildings
-          1180,
-          '#26A69A', // Buildings with mixed use
-          1220,
-          '#66BB6A', // Hotel, restaurant
-          1230,
-          '#FFA726', // Commercial buildings
-          1240,
-          '#FF7043', // Office buildings
-          1241,
-          '#78909C', // Bank/insurance buildings
-          1250,
-          '#8D6E63', // Retail buildings
-          1260,
-          '#29B6F6', // Educational buildings
-          1271,
-          '#FF4081', // Hospital buildings
-          1272,
-          '#7E57C2', // Care homes
-          1273,
-          '#26C6DA', // Prisons
-          1274,
-          '#D4E157', // Cultural buildings
-          1275,
-          '#FDD835', // Sports facilities
-          1280,
-          '#5E35B1', // Industry/factory
-          1290,
-          '#F44336', // Storage facilities
-          '#BDBDBD' // Other/unknown class
+          ['get', 'Archetype'],
+          // Housing archetypes - blues to purples
+          'Housing before 1919',
+          '#0d47a1',
+          'Housing 1920 - 1945',
+          '#1565c0',
+          'Housing 1946 - 1960',
+          '#1976d2',
+          'Housing 1961 - 1980',
+          '#1e88e5',
+          'Housing 1981 - 1990',
+          '#42a5f5',
+          'Housing 1991 - 2015',
+          '#90caf9',
+          'Housing after 2015',
+          '#bbdefb',
+          'Housing high',
+          '#673ab7',
+
+          // Business archetypes - greens
+          'Bus Large',
+          '#2e7d32',
+          'Bus Small',
+          '#66bb6a',
+
+          // Industry archetypes - oranges
+          'Ind Large',
+          '#e65100',
+          'Ind Small',
+          '#ff9800',
+
+          // Health archetypes - reds
+          'Heal Large',
+          '#b71c1c',
+          'Heal Small',
+          '#ef5350',
+
+          // Culture archetypes - purples/pinks
+          'Cult before 1919',
+          '#6a1b9a',
+          'Cult 1920 - 1990',
+          '#9c27b0',
+          'Cult 1991 - 2024',
+          '#e1bee7',
+
+          '#bdbdbd' // Default color for unknown/null values
         ],
-        // Circle size based on zoom level
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 1, 14, 3, 16, 5],
-        'circle-opacity': 0.8,
-        'circle-stroke-width': 1,
-        'circle-stroke-color': '#ffffff'
+        'fill-opacity': 0.8,
+        'fill-outline-color': '#ffffff'
+      }
+    } as LayerSpecification
+  },
+
+  // Add a buildings outline layer to show building boundaries clearly
+  {
+    id: 'buildings_outline',
+    label: 'Buildings Outline',
+    unit: 'outline',
+    info: 'Outline of all buildings in Lausanne',
+    source: {
+      type: 'vector',
+      url: `pmtiles://${baseUrl}/buildings.pmtiles`,
+      minzoom: 10
+    } as VectorSourceSpecification,
+    layer: {
+      id: 'buildings_outline-layer',
+      type: 'line',
+      source: 'buildings_outline',
+      'source-layer': 'buildings',
+      paint: {
+        'line-color': '#000000',
+        'line-width': 1,
+        'line-opacity': 0.5
       },
-      // Add a filter to remove any null or 0 values
-      filter: ['>', ['to-number', ['get', 'buildingClass']], 0]
+      layout: {
+        visibility: 'visible' // This can be toggled off by default if desired
+      }
     } as LayerSpecification
   }
 ]
