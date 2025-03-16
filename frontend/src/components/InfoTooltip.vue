@@ -5,7 +5,7 @@ import { mdiInformationOutline } from '@mdi/js'
 <template>
   <v-tooltip bottom max-width="512">
     <template #activator="{ props }">
-      <v-icon size="small" v-bind="props" :icon="mdiInformationOutline" />
+      <v-icon size="small" class="opacity-60" v-bind="props" :icon="mdiInformationOutline" />
     </template>
     <slot />
   </v-tooltip>

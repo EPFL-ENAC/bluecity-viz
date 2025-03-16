@@ -166,20 +166,22 @@ const toggleGroupVisibility = (event: Event, groupId: string) => {
               }) || ''
             "
           >
-            <v-radio
+            <div
               v-for="item in possibleLayers.filter((layer) => layer.groupId === group.id)"
               :key="item.id"
-              :value="item.id"
-              dense
-              @change="updateSingleLayerSelection(group.id, item.id)"
+              class="d-flex flex-grow-1 flex-row align-center"
             >
-              <template #label>
-                <div class="d-flex align-center">
+              <v-radio
+                :value="item.id"
+                dense
+                @change="updateSingleLayerSelection(group.id, item.id)"
+              >
+                <template #label>
                   <h5 class="text-uppercase flex-grow-1 mb-0">{{ item.label }}</h5>
-                  <info-tooltip class="ml-2">{{ item.info }}</info-tooltip>
-                </div>
-              </template>
-            </v-radio>
+                </template>
+              </v-radio>
+              <info-tooltip class="ml-2">{{ item.info }}</info-tooltip>
+            </div>
           </v-radio-group>
         </template>
       </div>
