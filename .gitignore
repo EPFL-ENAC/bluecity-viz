@@ -4,6 +4,7 @@ frontend/public/geodata
 
 processing/**/*.csv
 processing/**/*.json
+!processing/**/*config.json
 processing/**/*.geojson
 processing/**/*.shp
 processing/**/*.shx
@@ -26,4 +27,8 @@ processing/**/*.cpg
 processing/**/*.sbn
 processing/**/*.sbx
 processing/**/*.qgz
+processing/**/*.aprx
+processing/**/*.atpx
 processing/**/*.pmtiles
+
+processing/**/BlueCity_Demo2/**
