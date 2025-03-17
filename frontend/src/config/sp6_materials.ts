@@ -26,35 +26,34 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
           'match',
           ['get', 'Era'],
           'Before 1919',
-          '#3b0f70',
+          '#440154',
           '1920 – 1945',
-          '#5f2e8c',
+          '#481f70',
           '1946 – 1960',
-          '#7a4a9e',
+          '#443983',
           '1961 – 1970',
-          '#9367af',
+          '#3b528b',
           '1971 – 1980',
-          '#ac84bf',
+          '#31688e',
           '1981 – 1985',
-          '#c3a1cf',
+          '#287c8e',
           '1986 – 1990',
-          '#d9bedf',
+          '#21918c',
           '1991 – 1995',
-          '#eadbef',
+          '#20a486',
           '1996 – 2000',
-          '#fde0ef',
+          '#35b779',
           '2001 – 2005',
-          '#ffbfd3',
+          '#5ec962',
           '2006 - 2010',
-          '#ff9fb5',
+          '#90d743',
           '2011 – 2015',
-          '#ff7a9a',
+          '#c8e020',
           'After 2015',
-          '#f9484c',
+          '#fde725',
           '#bdbdbd' // Default color for unknown/null values
         ],
-        'fill-opacity': 0.8,
-        'fill-outline-color': '#ffffff'
+        'fill-opacity': 0.8
       }
     } as LayerSpecification
   },
@@ -92,8 +91,7 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
           '#9C27B0', // Purple
           '#757575' // Default color for unknown/null values
         ],
-        'fill-opacity': 0.8,
-        'fill-outline-color': '#ffffff'
+        'fill-opacity': 0.8
       }
     } as LayerSpecification
   },
@@ -165,8 +163,7 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
 
           '#bdbdbd' // Default color for unknown/null values
         ],
-        'fill-opacity': 0.8,
-        'fill-outline-color': '#ffffff'
+        'fill-opacity': 0.8
       }
     } as LayerSpecification
   },
