@@ -48,6 +48,6 @@ export const layerGroups = [
     multiple: false,
     layers: sp6MaterialsLayers
   },
-  { id: 'sp7', label: 'SP7 Vehicle', expanded: false, multiple: false, layers: sp7VehicleLayers }
+  { id: 'sp7', label: 'SP7 Goods', expanded: false, multiple: false, layers: sp7VehicleLayers }
   // Add other groups as needed
 ]
