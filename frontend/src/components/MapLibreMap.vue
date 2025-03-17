@@ -245,8 +245,8 @@ watch(
 
 // Emit changes when local state changes
 watch(
-  () => layersStore.sp0Period,
-  (newPeriod) => {
+  () => [layersStore.sp0Period, layersStore.selectedLayers],
+  ([newPeriod]) => {
     const sp0Group = layersStore.layerGroups.find((group) => group.id === 'sp0_migration')
 
     if (!sp0Group) return
@@ -258,7 +258,8 @@ watch(
         const filter = ['==', ['get', 'year'], newPeriod] as FilterSpecification
         map?.setFilter(layer.layer.id, filter)
       })
-  }
+  },
+  { immediate: true }
 )
 defineExpose({
   getPaintProperty,
