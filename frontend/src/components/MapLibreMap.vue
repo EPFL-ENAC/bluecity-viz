@@ -74,7 +74,6 @@ function initMap() {
     center: props.center,
     zoom: props.zoom,
     minZoom: props.minZoom,
-    pitch: 40,
     maxZoom: props.maxZoom,
     attributionControl: false,
     transformRequest: function (url, resourceType) {
@@ -261,6 +260,19 @@ watch(
   },
   { immediate: true }
 )
+
+watch(
+  () => layersStore.visibleLayers,
+  (visibleLayers) => {
+    const threeDimLayers = visibleLayers.filter((layer) => layer.layer.type === 'fill-extrusion')
+    if (threeDimLayers.length > 0) {
+      map?.easeTo({ pitch: 40, center: map?.getCenter() })
+    } else {
+      map?.easeTo({ pitch: 0, center: map?.getCenter() })
+    }
+  }
+)
+
 defineExpose({
   getPaintProperty,
   update,
