@@ -1,42 +1,3 @@
-<template>
-  <div class="legend">
-    <h4>
-      Legend
-      <v-btn
-        :icon="show ? mdiChevronDown : mdiChevronUp"
-        flat
-        density="compact"
-        @click="show = !show"
-      ></v-btn>
-    </h4>
-    <div v-if="show" class="my-2 d-flex d-row">
-      <div
-        v-for="layer in generatedLayersWithColors"
-        :key="layer?.id"
-        class="layer-legend d-flex flex-column justify-space-between"
-      >
-        <h5>{{ layer.label }} {{ layer.unit ? '(' + layer.unit + ')' : '' }}</h5>
-        <!-- Categorical Color Display -->
-        <div v-if="layer?.isCategorical">
-          <div v-for="item in layer.colors" :key="item.label" class="legend-item">
-            <div class="color-box" :style="{ backgroundColor: item.color }"></div>
-            <div class="label text-body-2">{{ item.label }}</div>
-          </div>
-        </div>
-        <!-- Continuous Color Ramp -->
-        <div v-else class="gradient-ramp">
-          <div class="color-ramp" :style="{ background: layer.gradient }"></div>
-          <div class="ramp-labels">
-            <span>{{ layer.colors[0].label }}</span>
-            <span>{{ layer.colors[~~((layer.colors.length - 1) / 2)].label }}</span>
-            <span>{{ layer.colors[layer.colors.length - 1].label }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { mdiChevronUp, mdiChevronDown } from '@mdi/js'
@@ -62,11 +23,46 @@ const generateLegendColors = (layer: LayerSpecification): LegendColor[] | null =
   if (layer.paint) {
     // Handle fill-extrusion, line-color, or other paint properties
     const paint = layer.paint as any
-    const paintProperty =
+    let paintProperty =
       paint['fill-color'] || paint['line-color'] || paint['fill-extrusion-color'] || null
 
+    if (!paintProperty) return null
+
+    // Handle 'match' expressions for categorical data
+    if (Array.isArray(paintProperty) && paintProperty[0] === 'match') {
+      const property = paintProperty[1]
+      const stops = paintProperty.slice(2)
+      const defaultColor = stops.pop()
+      const legendColors: LegendColor[] = []
+
+      // Process pairs of value-color in match expression
+      for (let i = 0; i < stops.length; i += 2) {
+        const value = stops[i]
+        const color = stops[i + 1]
+
+        // Only include if we have both a label and a color
+        if (value !== undefined && color !== undefined) {
+          legendColors.push({
+            color: color as string,
+            label: Array.isArray(value) ? value.join(', ') : String(value)
+          })
+        }
+      }
+
+      // Add default value if it's a color
+      if (
+        typeof defaultColor === 'string' &&
+        defaultColor !== '#000000' &&
+        defaultColor !== 'transparent'
+      ) {
+        legendColors.push({ color: defaultColor, label: 'Other' })
+      }
+
+      return legendColors
+    }
+
+    // Handle 'interpolate' expressions for continuous data
     if (
-      paintProperty &&
       Array.isArray(paintProperty) &&
       paintProperty[0] === 'interpolate' &&
       paintProperty.length > 3
@@ -86,64 +82,22 @@ const generateLegendColors = (layer: LayerSpecification): LegendColor[] | null =
 }
 
 const generateOneLayerWithColors = (layer: MapLayerConfig) => {
-  console.log(layer)
-  if (layer.id === 'wrf') {
-    let colors: { color: string; label: string }[] = []
-    if (props.variableSelected == 't2') {
-      // Color scale for "t2" variable: ["#0d0887","#41049d","#6a00a8","#8f0da4","#b12a90","#cc4778","#e16462","#f2844b","#fca636","#fcce25","#f0f921"]
-      // Range: 272 K to 292 K
-      colors = [
-        { color: '#0d0887', label: '272 K' },
-        { color: '#41049d', label: '274 K' },
-        { color: '#6a00a8', label: '276 K' },
-        { color: '#8f0da4', label: '278 K' },
-        { color: '#b12a90', label: '280 K' },
-        { color: '#cc4778', label: '282 K' },
-        { color: '#e16462', label: '284 K' },
-        { color: '#f2844b', label: '286 K' },
-        { color: '#fca636', label: '288 K' },
-        { color: '#fcce25', label: '290 K' },
-        { color: '#f0f921', label: '292 K' }
-      ]
-    } else if (props.variableSelected == 'u10') {
-      // Color scale for "u10" variable: ["#440154","#482475","#414487","#355f8d","#2a788e","#21918c","#22a884","#44bf70","#7ad151","#bddf26","#fde725"]
-      // Range: -2 m/s to 3 m/s
-      colors = [
-        { color: '#440154', label: '-2 m/s' },
-        { color: '#482475', label: '-1.5 m/s' },
-        { color: '#414487', label: '-1 m/s' },
-        { color: '#355f8d', label: '-0.5 m/s' },
-        { color: '#2a788e', label: '0 m/s' },
-        { color: '#21918c', label: '0.5 m/s' },
-        { color: '#22a884', label: '1 m/s' },
-        { color: '#44bf70', label: '1.5 m/s' },
-        { color: '#7ad151', label: '2 m/s' },
-        { color: '#bddf26', label: '2.5 m/s' },
-        { color: '#fde725', label: '3 m/s' }
-      ]
-    } else {
-      colors = []
-    }
-    return {
-      ...layer,
-      colors,
-      isCategorical: false,
-      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`
-    }
-  }
-
   const colors = generateLegendColors(layer.layer) || []
   const paint = layer.layer.paint as any
   const paintProperty =
     paint['fill-color'] || paint['line-color'] || paint['fill-extrusion-color'] || null
 
-  const isCategorical = paintProperty ? paintProperty[0] !== 'interpolate' : false
+  // Check if the layer is categorical based on paint property expression
+  const isCategorical =
+    Array.isArray(paintProperty) && (paintProperty[0] === 'match' || paintProperty[0] === 'case')
 
   return {
     ...layer,
-    colors: colors.reverse(),
+    colors: isCategorical ? colors : colors.reverse(),
     isCategorical,
-    gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`
+    gradient: !isCategorical
+      ? `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`
+      : undefined
   }
 }
 
@@ -155,6 +109,48 @@ const generatedLayersWithColors = computed(() => {
 
 const show = ref(true)
 </script>
+
+<template>
+  <div v-if="generatedLayersWithColors.length > 0" class="legend">
+    <h4>
+      Legend
+      <v-btn
+        :icon="show ? mdiChevronDown : mdiChevronUp"
+        flat
+        density="compact"
+        @click="show = !show"
+      ></v-btn>
+    </h4>
+    <div v-if="show" class="my-2 d-flex d-row">
+      <div
+        v-for="layer in generatedLayersWithColors"
+        :key="layer?.id"
+        class="layer-legend d-flex flex-column justify-space-between"
+      >
+        <h5>{{ layer.label }} {{ layer.unit ? '(' + layer.unit + ')' : '' }}</h5>
+        <!-- Categorical Color Display -->
+        <div v-if="layer?.isCategorical" class="categorical-legend">
+          <div v-for="item in layer.colors" :key="item.label" class="legend-item">
+            <div class="color-box" :style="{ backgroundColor: item.color }"></div>
+            <div class="label text-body-2">{{ item.label }}</div>
+          </div>
+        </div>
+        <!-- Continuous Color Ramp -->
+        <div v-else class="gradient-ramp">
+          <div class="color-ramp" :style="{ background: layer.gradient }"></div>
+          <div class="ramp-labels">
+            <span>{{ layer.colors[0].label }}</span>
+            <span v-if="layer.colors.length > 2">{{
+              layer.colors[~~((layer.colors.length - 1) / 2)].label
+            }}</span>
+            <span>{{ layer.colors[layer.colors.length - 1].label }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
 <style scoped>
 .legend {
   position: absolute;
@@ -168,46 +164,64 @@ const show = ref(true)
   flex-direction: column;
   align-items: flex-end;
   color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  max-width: 300px;
+  min-width: 200px;
 }
 
 .layer-legend {
   margin-bottom: 1em;
-  margin-left: 2em;
+  width: 100%;
 }
 
 .layer-legend h5 {
   margin-bottom: 0.5em;
-  max-width: 100px;
+  font-weight: 600;
+  text-align: left;
+  width: 100%;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   width: 100%;
 }
 
 .color-box {
-  width: 40px;
-  height: 25px;
+  width: 24px;
+  height: 24px;
   margin-right: 8px;
+  border-radius: 4px;
 }
 
-.label,
-.code {
+.label {
   margin-right: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.categorical-legend {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .gradient-ramp {
-  display: flex; /* Set display to flex */
-  align-items: center; /* Align items vertically */
-  width: 100%; /* Full width to accommodate labels next to the ramp */
-  height: 150px; /* Adjust height for better gradient visualization */
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 150px;
+  margin-top: 8px;
 }
 
 .color-ramp {
-  width: 40px; /* Fixed width for the color ramp */
+  width: 36px;
   height: 100%;
+  border-radius: 4px;
 }
 
 .ramp-labels {
@@ -215,6 +229,7 @@ const show = ref(true)
   flex-direction: column;
   justify-content: space-between;
   height: 100%;
-  margin-left: 10px; /* Add some spacing between ramp and labels */
+  margin-left: 8px;
+  font-size: 0.85em;
 }
 </style>
