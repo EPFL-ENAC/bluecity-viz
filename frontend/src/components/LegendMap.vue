@@ -236,6 +236,10 @@ const show = ref(true)
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 
+.layer-legend {
+  min-height: 200px;
+}
+
 .layer-legend-header {
   margin-bottom: 0.5em;
   width: 100%;
