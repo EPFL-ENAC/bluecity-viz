@@ -1,5 +1,14 @@
 import type { LayerSpecification, SourceSpecification } from 'maplibre-gl'
 
+export type CustomLayerSpecification = LayerSpecification & { groupId: string }
+
+export type LayerGroup = {
+  id: string
+  label: string
+  expanded: boolean
+  multiple: boolean
+  layers: MapLayerConfig[]
+}
 export interface MapLayerConfig {
   id: string
   label: string

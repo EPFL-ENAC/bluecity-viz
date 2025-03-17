@@ -3,10 +3,10 @@ import MapLibreMap from '@/components/MapLibreMap.vue'
 import { useTheme } from 'vuetify'
 
 import type { Parameters } from '@/utils/jsonWebMap'
-import { computed, ref, shallowRef, watch } from 'vue'
+import { ref, shallowRef, watch } from 'vue'
 import LegendMap from '@/components/LegendMap.vue'
 import LayerGroups from '@/components/LayerGroups.vue'
-import { mapConfig, layerGroups } from '@/config/mapConfig'
+import { useLayersStore } from '@/stores/layers'
 
 const map = ref<InstanceType<typeof MapLibreMap>>()
 
@@ -23,36 +23,11 @@ const center = {
 
 const zoom = 11
 
-// Expanded state for each group
-const expandedGroups = ref<Record<string, boolean>>(
-  Object.fromEntries(layerGroups.map((group) => [group.id, group.expanded]))
-)
+const layersStore = useLayersStore()
 
-// Toggle group expansion
-const toggleGroup = (groupId: string) => {
-  expandedGroups.value[groupId] = !expandedGroups.value[groupId]
-}
-
-// Flatten all layers for internal use
-const possibleLayers = computed(() => {
-  return layerGroups.flatMap((group) =>
-    group.layers.map((layer) => ({
-      id: layer.layer.id,
-      label: layer.label,
-      info: layer.info,
-      groupId: group.id
-    }))
-  )
-})
-
-const layersSelected = ref<string[]>([])
-
-const layersVisible = computed(() => {
-  return mapConfig.layers.filter((layer) => layersSelected.value.includes(layer.layer.id) ?? false)
-})
-
+// Sync layer visibility with the map when the selected layers change
 const syncAllLayersVisibility = (layersSelected: string[]) => {
-  for (let { id: layerID } of possibleLayers.value) {
+  for (let { id: layerID } of layersStore.possibleLayers) {
     if (layersSelected.includes(layerID)) {
       map.value?.setLayerVisibility(layerID, true)
     } else {
@@ -61,14 +36,7 @@ const syncAllLayersVisibility = (layersSelected: string[]) => {
   }
 }
 
-watch(
-  () => layersSelected.value,
-  (layersSelected) => {
-    console.log('layersSelected', layersSelected)
-    syncAllLayersVisibility(layersSelected)
-  },
-  { immediate: true }
-)
+watch(() => layersStore.selectedLayers, syncAllLayersVisibility, { immediate: true, deep: true })
 
 const vuetifyTheme = useTheme()
 
@@ -93,17 +61,10 @@ watch(
     <v-row class="fill-height overflow-y-hidden">
       <v-col xl="2" cols="3" class="params-col border-e-md overflow-y-auto overflow-x-hidden">
         <v-card flat>
-          <v-card-title class="ml-2"> <h2>LAYERS</h2> </v-card-title>
+          <v-card-title class="ml-2"> <h4 class="text-center mb-12 mt-6">LAYERS</h4> </v-card-title>
           <v-card-text class="d-flex flex-column">
             <!-- Use the new LayerGroups component -->
-            <LayerGroups
-              :layer-groups="layerGroups"
-              :expanded-groups="expandedGroups"
-              :layers-selected="layersSelected"
-              :possible-layers="possibleLayers"
-              @update:layers-selected="layersSelected = $event"
-              @toggle-group="toggleGroup"
-            />
+            <LayerGroups />
           </v-card-text>
         </v-card>
       </v-col>
@@ -119,12 +80,12 @@ watch(
           :min-zoom="6"
           :idx-image="idxImage"
           :variable-selected="variableSelected"
-          :callback-loaded="() => syncAllLayersVisibility(layersSelected)"
+          :callback-loaded="() => syncAllLayersVisibility(layersStore.selectedLayers)"
           class="flex-grow-1"
         >
           <template #legend>
             <legend-map
-              :layers="layersVisible"
+              :layers="layersStore.visibleLayers"
               :variable-selected="variableSelected"
               :is-continuous="true"
             ></legend-map>
