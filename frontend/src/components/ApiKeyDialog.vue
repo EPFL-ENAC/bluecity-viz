@@ -43,7 +43,7 @@ async function testApiKey(keyToTest: string): Promise<boolean> {
     if (keyToTest === apiKeyStore.apiKey) {
       errorMessage.value = 'Your saved API key is invalid. Please enter a valid key.'
       // Clear the invalid key from the store
-      apiKeyStore.clearApiKey()
+      if (!import.meta.env.DEV) apiKeyStore.clearApiKey()
     } else {
       errorMessage.value = 'Invalid API key. Please try again.'
     }
@@ -70,6 +70,11 @@ const saveApiKey = async () => {
   // Use the separate test function
   await testApiKey(apiKey.value)
 }
+
+function forceValidate() {
+  apiKeyStore.setApiKey(apiKey.value)
+  dialogOpen.value = false
+}
 </script>
 
 <template>
@@ -77,7 +82,7 @@ const saveApiKey = async () => {
     <v-card>
       <v-card-title class="text-h5">API Key Required</v-card-title>
       <v-card-text>
-        <p class="mb-4" v-if="errorMessage">
+        <p v-if="errorMessage" class="mb-4">
           <v-alert type="warning" density="compact">{{ errorMessage }}</v-alert>
         </p>
         <p class="mb-4">Please enter your API key to access the BlueCity data.</p>
@@ -91,6 +96,7 @@ const saveApiKey = async () => {
       </v-card-text>
       <v-card-actions>
         <v-spacer></v-spacer>
+        <v-btn color="secondary" @click="forceValidate"> Dev-only force validate </v-btn>
         <v-btn color="primary" :loading="isLoading" @click="saveApiKey"> Submit </v-btn>
       </v-card-actions>
     </v-card>
