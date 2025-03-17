@@ -13,7 +13,6 @@ type LegendColor = {
 
 const props = defineProps<{
   layers: MapLayerConfig[]
-  variableSelected: string
 }>()
 
 const store = useLayersStore()

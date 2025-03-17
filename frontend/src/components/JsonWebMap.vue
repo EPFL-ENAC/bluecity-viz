@@ -12,10 +12,6 @@ const map = ref<InstanceType<typeof MapLibreMap>>()
 
 const parameters = shallowRef<Parameters>({})
 
-const variableSelected = ref<string>('u10')
-
-const idxImage = ref<number>(0)
-
 const center = {
   lat: 46.52,
   lng: 6.63
@@ -78,17 +74,11 @@ watch(
           :zoom="zoom"
           :max-zoom="20"
           :min-zoom="6"
-          :idx-image="idxImage"
-          :variable-selected="variableSelected"
           :callback-loaded="() => syncAllLayersVisibility(layersStore.selectedLayers)"
           class="flex-grow-1"
         >
           <template #legend>
-            <legend-map
-              :layers="layersStore.visibleLayers"
-              :variable-selected="variableSelected"
-              :is-continuous="true"
-            ></legend-map>
+            <legend-map :layers="layersStore.visibleLayers"></legend-map>
           </template>
         </MapLibreMap>
         <div class="theme-selector">
