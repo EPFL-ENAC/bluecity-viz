@@ -12,7 +12,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Average round-trip travel time from each cell to the nearest 3 short-term goods shops (groceries, bakeries, etc.).',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
@@ -50,7 +50,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Average round-trip travel time from each cell to the nearest 10 indoor recreational POIs (bars, restaurants, theaters).',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
@@ -88,7 +88,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Round-trip travel time from each cell to the nearest school by e-bike.',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
@@ -126,7 +126,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Round-trip travel time from each cell to the nearest school by car during peak hours.',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
@@ -164,7 +164,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Ratio of travel times (e-bike vs. bike) to the nearest school and back. Lower values indicate e-bike advantage.',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
@@ -202,7 +202,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Ratio of travel times (e-bike vs. car during peak hours) to the nearest school and back. Lower values favor e-bikes.',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
@@ -240,7 +240,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Gravity-based cumulative access from each cell to employment opportunities by e-bike (higher is better).',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
@@ -278,7 +278,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Gravity-based cumulative access from each cell to employment opportunities by public transit (higher is better).',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
@@ -316,7 +316,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Gravity-based cumulative access from each cell to employment opportunities by car during peak hours (higher is better).',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
@@ -354,7 +354,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Ratio of gravity-based scores for access to jobs (transit vs. driving). Lower values indicate driving advantage.',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
@@ -392,7 +392,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     info: 'Ratio of gravity-based scores for access to jobs (e-bike vs. driving). Lower values indicate driving advantage.',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/accessibility_20250220_wgs84.pmtiles`,
+      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
