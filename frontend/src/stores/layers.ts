@@ -1,6 +1,6 @@
 import { layerGroups as configLayerGroups, mapConfig } from '@/config/mapConfig'
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 export const useLayersStore = defineStore('layers', () => {
   // Store the layer groups from config
@@ -14,19 +14,13 @@ export const useLayersStore = defineStore('layers', () => {
     }[]
   >(configLayerGroups)
 
+  const sp0Period = ref<string>('2020-2023')
+
   // Selected layer IDs
   const selectedLayers = ref<string[]>([])
 
   // Store the filtered categories for each layer
   const filteredCategories = ref<Record<string, Record<string, string[]>>>({})
-
-  watch(
-    filteredCategories,
-    (newVal) => {
-      console.log('filteredCategories changed:', newVal)
-    },
-    { deep: true }
-  )
 
   function filterOutCategories(layerId: string, variable: string, categories: string[]) {
     filteredCategories.value[layerId][variable] = categories
@@ -120,6 +114,7 @@ export const useLayersStore = defineStore('layers', () => {
 
   return {
     layerGroups,
+    sp0Period,
     selectedLayers,
     filteredCategories,
     expandedGroups,

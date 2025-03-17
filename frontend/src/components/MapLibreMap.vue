@@ -174,6 +174,10 @@ const setFilter = (
   map?.setFilter(layerId, filter, options)
 }
 
+const getFilter = (layerId: string) => {
+  return map?.getFilter(layerId)
+}
+
 const setPaintProperty = (
   layerId: string,
   name: string,
@@ -239,10 +243,28 @@ watch(
   { deep: true }
 )
 
+// Emit changes when local state changes
+watch(
+  () => layersStore.sp0Period,
+  (newPeriod) => {
+    const sp0Group = layersStore.layerGroups.find((group) => group.id === 'sp0_migration')
+
+    if (!sp0Group) return
+    sp0Group.layers
+      .filter((layer) => {
+        return layersStore.selectedLayers.includes(layer.layer.id)
+      })
+      .forEach((layer) => {
+        const filter = ['==', ['get', 'year'], newPeriod] as FilterSpecification
+        map?.setFilter(layer.layer.id, filter)
+      })
+  }
+)
 defineExpose({
   getPaintProperty,
   update,
   setFilter,
+  getFilter,
   queryFeatures,
   queryRenderedFeatures,
   setPaintProperty,
