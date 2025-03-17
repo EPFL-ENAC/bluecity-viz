@@ -2,17 +2,21 @@
 import { computed, ref } from 'vue'
 import { mdiChevronUp, mdiChevronDown } from '@mdi/js'
 import type { MapLayerConfig } from '@/config/layerTypes'
-import type { LayerSpecification } from 'maplibre-gl'
+import { type LayerSpecification } from 'maplibre-gl'
+import { useLayersStore } from '@/stores/layers'
 
 type LegendColor = {
   color: string
   label: string
+  variable?: string
 }
 
 const props = defineProps<{
   layers: MapLayerConfig[]
   variableSelected: string
 }>()
+
+const store = useLayersStore()
 
 /**
  * Generate legend colors for a given layer's paint property.
@@ -30,7 +34,7 @@ const generateLegendColors = (layer: LayerSpecification): LegendColor[] | null =
 
     // Handle 'match' expressions for categorical data
     if (Array.isArray(paintProperty) && paintProperty[0] === 'match') {
-      const property = paintProperty[1]
+      const variableProperty = paintProperty[1][1]
       const stops = paintProperty.slice(2)
       const defaultColor = stops.pop()
       const legendColors: LegendColor[] = []
@@ -44,6 +48,7 @@ const generateLegendColors = (layer: LayerSpecification): LegendColor[] | null =
         if (value !== undefined && color !== undefined) {
           legendColors.push({
             color: color as string,
+            variable: variableProperty,
             label: Array.isArray(value) ? value.join(', ') : String(value)
           })
         }
@@ -95,6 +100,7 @@ const generateOneLayerWithColors = (layer: MapLayerConfig) => {
     ...layer,
     colors: isCategorical ? colors : colors.reverse(),
     isCategorical,
+    variable: paintProperty[1][1],
     gradient: !isCategorical
       ? `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`
       : undefined
@@ -107,32 +113,81 @@ const generatedLayersWithColors = computed(() => {
     .filter((layer) => layer.colors && layer.colors.length > 0)
 })
 
+// Toggle category selection
+const toggleCategory = (
+  layerId: string,
+  variable: string,
+  category: string,
+  selected: boolean | null
+) => {
+  if (!store.filteredCategories[layerId]) {
+    store.filteredCategories[layerId] = {}
+  }
+  if (!store.filteredCategories[layerId][variable]) {
+    store.filteredCategories[layerId][variable] = []
+  }
+  const layerFilteredCategories = store.filteredCategories[layerId][variable] ?? []
+
+  if (selected) {
+    store.filterOutCategories(
+      layerId,
+      variable,
+      layerFilteredCategories.filter((c) => c !== category)
+    )
+  } else if (!selected) {
+    store.filterOutCategories(layerId, variable, [...layerFilteredCategories, category])
+  }
+}
+
 const show = ref(true)
 </script>
 
 <template>
   <div v-if="generatedLayersWithColors.length > 0" class="legend">
-    <h4>
-      Legend
+    <h5>
+      LEGEND
       <v-btn
         :icon="show ? mdiChevronDown : mdiChevronUp"
         flat
         density="compact"
         @click="show = !show"
       ></v-btn>
-    </h4>
-    <div v-if="show" class="my-2 d-flex d-row">
+    </h5>
+    <div v-if="show" class="my-2 d-flex d-row ga-10">
       <div
         v-for="layer in generatedLayersWithColors"
         :key="layer?.id"
         class="layer-legend d-flex flex-column justify-space-between"
       >
-        <h5>{{ layer.label }} {{ layer.unit ? '(' + layer.unit + ')' : '' }}</h5>
-        <!-- Categorical Color Display -->
+        <div class="layer-legend-header">
+          <h5 class="layer-legend-title">
+            {{ layer.label.toUpperCase() }}
+          </h5>
+          <div v-if="layer.unit" class="layer-legend-unit">{{ layer.unit }}</div>
+        </div>
+        <!-- Categorical Color Display with Checkboxes -->
         <div v-if="layer?.isCategorical" class="categorical-legend">
           <div v-for="item in layer.colors" :key="item.label" class="legend-item">
-            <div class="color-box" :style="{ backgroundColor: item.color }"></div>
-            <div class="label text-body-2">{{ item.label }}</div>
+            <v-checkbox
+              density="compact"
+              hide-details
+              :model-value="
+                !(
+                  store.filteredCategories[layer.layer.id] &&
+                  store.filteredCategories[layer.layer.id][layer.variable] &&
+                  store.filteredCategories[layer.layer.id][layer.variable]?.includes(item.label)
+                )
+              "
+              class="legend-checkbox"
+              @update:model-value="(selected:boolean|null) => toggleCategory(layer.layer.id,layer.variable, item.label,selected)"
+            >
+              <template #label>
+                <div class="d-flex align-center">
+                  <div class="color-box" :style="{ backgroundColor: item.color }"></div>
+                  <div class="label text-body-2">{{ item.label }}</div>
+                </div>
+              </template>
+            </v-checkbox>
           </div>
         </div>
         <!-- Continuous Color Ramp -->
@@ -152,32 +207,50 @@ const show = ref(true)
 </template>
 
 <style scoped>
+:deep(.v-checkbox .v-selection-control) {
+  min-height: fit-content;
+  height: fit-content;
+}
+
 .legend {
   position: absolute;
   bottom: 0.5em;
   background-color: rgb(var(--v-theme-surface));
   padding: 0.6em 1.4em;
-  border-radius: 0.3em;
   z-index: 1000;
   right: 0.5em;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+  /* color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity)); */
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  max-width: 300px;
+  /* max-width: 300px; */
   min-width: 200px;
 }
 
-.layer-legend {
-  margin-bottom: 1em;
+.layer-legend-header {
+  margin-bottom: 0.5em;
   width: 100%;
+  max-width: 200px;
+  text-align: right;
 }
 
-.layer-legend h5 {
-  margin-bottom: 0.5em;
+.layer-legend-title {
   font-weight: 600;
-  text-align: left;
+  margin-bottom: 0;
+  line-height: 1.2;
+}
+
+.layer-legend-unit {
+  font-size: 0.75rem;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+/* Update this style since we now handle margin in layer-legend-header */
+.layer-legend h5 {
+  font-weight: 600;
   width: 100%;
 }
 
@@ -189,10 +262,10 @@ const show = ref(true)
 }
 
 .color-box {
-  width: 24px;
+  width: 34px;
   height: 24px;
   margin-right: 8px;
-  border-radius: 4px;
+  margin-left: 8px;
 }
 
 .label {
@@ -210,18 +283,28 @@ const show = ref(true)
   overflow-y: auto;
 }
 
+.legend-controls {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.legend-checkbox {
+  width: 100%;
+}
+
 .gradient-ramp {
   display: flex;
   align-items: center;
+  justify-content: end;
   width: 100%;
-  height: 150px;
+  height: 100%;
   margin-top: 8px;
 }
 
 .color-ramp {
   width: 36px;
   height: 100%;
-  border-radius: 4px;
 }
 
 .ramp-labels {

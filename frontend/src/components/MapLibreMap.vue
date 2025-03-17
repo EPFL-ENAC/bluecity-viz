@@ -22,8 +22,10 @@ import { onMounted, ref, watch } from 'vue'
 
 import { Protocol } from 'pmtiles'
 import { useApiKeyStore } from '@/stores/apiKey'
+import { useLayersStore } from '@/stores/layers'
 
 const apiKeyStore = useApiKeyStore()
+const layersStore = useLayersStore()
 
 const props = withDefaults(
   defineProps<{
@@ -164,30 +166,12 @@ watch(
   }
 )
 
-let throttleTimer = new Map<string, boolean>()
-
-const throttle = (callback: () => void, id: string, time: number) => {
-  if (throttleTimer.get(id)) {
-    // If currently throttled, exit the function
-    return
-  }
-  // Set the throttle flag
-  throttleTimer.set(id, true)
-  // Clear the throttle flag after the specified time
-  setTimeout(() => {
-    throttleTimer.set(id, false)
-  }, time)
-  callback()
-}
-
 const setFilter = (
   layerId: string,
   filter?: FilterSpecification | null | undefined,
   options?: StyleSetterOptions | undefined
 ) => {
-  if (hasLoaded.value) {
-    throttle(() => map?.setFilter(layerId, filter, options), layerId + '-filter', 100)
-  }
+  map?.setFilter(layerId, filter, options)
 }
 
 const setPaintProperty = (
@@ -196,8 +180,7 @@ const setPaintProperty = (
   value: any,
   options?: StyleSetterOptions | undefined
 ) => {
-  if (hasLoaded.value)
-    throttle(() => map?.setPaintProperty(layerId, name, value, options), layerId + '-paint', 100)
+  map?.setPaintProperty(layerId, name, value, options)
 }
 
 const queryFeatures = (filter: any[]) => {
@@ -233,6 +216,28 @@ const setLayerVisibility = (layerId: string, visibility: boolean) => {
 const getPaintProperty = (layerId: string, name: string) => {
   if (hasLoaded.value) return map?.getPaintProperty(layerId, name)
 }
+
+watch(
+  () => layersStore.filteredCategories,
+  (filteredCategories) => {
+    Object.entries(filteredCategories).forEach(([layerID, variablesRecord]) => {
+      Object.entries(variablesRecord).forEach(([variable, categories]) => {
+        const categoriesListToFilter = [...categories]
+
+        if (categoriesListToFilter.length > 0) {
+          const filter = [
+            '!',
+            ['in', ['get', variable], ['literal', categoriesListToFilter]]
+          ] as FilterSpecification
+          setFilter(layerID, filter)
+        } else if (categoriesListToFilter.length == 0) {
+          setFilter(layerID, null)
+        }
+      })
+    })
+  },
+  { deep: true }
+)
 
 defineExpose({
   getPaintProperty,
