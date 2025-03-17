@@ -144,7 +144,7 @@ const show = ref(true)
 
 <template>
   <div v-if="generatedLayersWithColors.length > 0" class="legend">
-    <h5>
+    <h5 class="legend-title">
       LEGEND
       <v-btn
         :icon="show ? mdiChevronDown : mdiChevronUp"
@@ -228,11 +228,19 @@ const show = ref(true)
   min-width: 200px;
 }
 
+.legend-title {
+  margin-bottom: 1em;
+  text-align: right;
+  padding-bottom: 0.5em;
+  width: 100%;
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
 .layer-legend-header {
   margin-bottom: 0.5em;
   width: 100%;
   max-width: 200px;
-  text-align: right;
+  text-align: left;
 }
 
 .layer-legend-title {
@@ -296,7 +304,6 @@ const show = ref(true)
 .gradient-ramp {
   display: flex;
   align-items: center;
-  justify-content: end;
   width: 100%;
   height: 100%;
   margin-top: 8px;
