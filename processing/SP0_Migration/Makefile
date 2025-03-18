@@ -10,21 +10,16 @@ generate-data:
 
 # Generate PMTiles for each period GeoJSON file
 generate-period-tiles:
-	@echo "Generating PMTiles for period data"
-	@mkdir -p period_data
-	@for file in $$(find period_data -name "*.geojson"); do \
-		basename=$$(basename $$file .geojson); \
-		echo "Processing $$basename"; \
-		tippecanoe --force -zg \
-			--read-parallel \
-			--drop-densest-as-needed \
-			--extend-zooms-if-still-dropping \
-			-l lausanne_migration \
-			-o period_data/$$basename.pmtiles \
-			$$file; \
-		echo "Created period_data/$$basename.pmtiles"; \
-		cp period_data/$$basename.pmtiles ../../frontend/public/geodata/; \
-	done
+	@echo "Generating PMTiles for lausanne_migration_2011_2023"
+	tippecanoe --force -zg \
+		--read-parallel \
+		--drop-densest-as-needed \
+		--extend-zooms-if-still-dropping \
+		-l lausanne_migration \
+		-o lausanne_migration_2011_2023_2.pmtiles \
+		lausanne_migration_2011_2023.geojson
+	echo "Created lausanne_migration_2011_2023_2.pmtiles"; \
+	cp lausanne_migration_2011_2023_2.pmtiles ../../frontend/public/geodata/; \
 		
 	@echo "All period PMTiles generated and copied to frontend"
 

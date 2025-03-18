@@ -79,13 +79,13 @@ gdf.to_file("lausanne_migration_2011_2023.geojson", driver="GeoJSON")
 years = gdf["year"].unique()
 print(f"Found {len(years)} unique years: {sorted(years)}")
 
-for year in sorted(years):
-    year_gdf = gdf[gdf["year"] == year].copy()
-    output_file = f"lausanne_migration_{year}.geojson"
-    year_gdf.to_file(output_file, driver="GeoJSON")
-    print(f"Exported {output_file} with {len(year_gdf)} features")
+# for year in sorted(years):
+#     year_gdf = gdf[gdf["year"] == year].copy()
+#     output_file = f"lausanne_migration_{year}.geojson"
+#     year_gdf.to_file(output_file, driver="GeoJSON")
+#     print(f"Exported {output_file} with {len(year_gdf)} features")
 
-    # Also save to the yearly_data directory
-    year_gdf.to_file(os.path.join(output_dir, output_file), driver="GeoJSON")
+#     # Also save to the yearly_data directory
+#     year_gdf.to_file(os.path.join(output_dir, output_file), driver="GeoJSON")
 
 print("Data processing and export completed!")

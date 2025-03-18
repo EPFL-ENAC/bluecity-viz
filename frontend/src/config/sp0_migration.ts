@@ -13,14 +13,14 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     info: 'Total population per hectare in Lausanne (2011-2023)',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023.pmtiles`,
+      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
       id: 'lausanne_pop_density-layer',
       type: 'fill-extrusion',
       source: 'lausanne_pop_density',
-      'source-layer': 'lausanne_migration_2011_2023',
+      'source-layer': 'lausanne_migration',
       paint: {
         // Add max function to ensure minimum height of 2
         'fill-extrusion-height': ['max', 2, ['get', 'pop_mean']],
@@ -53,14 +53,14 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     info: 'Birth rate per 1,000 population in Lausanne (2011-2023)',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023.pmtiles`,
+      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
       id: 'lausanne_birth_rate-layer',
       type: 'fill-extrusion',
       source: 'lausanne_birth_rate',
-      'source-layer': 'lausanne_migration_2011_2023',
+      'source-layer': 'lausanne_migration',
       paint: {
         // Add max function to ensure minimum height of 2
         'fill-extrusion-height': ['max', 2, ['*', ['to-number', ['get', 'birth_rate']], 5]],
@@ -93,14 +93,14 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     info: 'Death rate per 1,000 population in Lausanne (2011-2023)',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023.pmtiles`,
+      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
       id: 'lausanne_death_rate-layer',
       type: 'fill-extrusion',
       source: 'lausanne_death_rate',
-      'source-layer': 'lausanne_migration_2011_2023',
+      'source-layer': 'lausanne_migration',
       paint: {
         // Add max function to ensure minimum height of 2
         'fill-extrusion-height': ['max', 2, ['*', ['to-number', ['get', 'death_rate']], 2]],
@@ -133,14 +133,14 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     info: 'Internal in-migration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023.pmtiles`,
+      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
       id: 'lausanne_inmigration_rate-layer',
       type: 'fill-extrusion',
       source: 'lausanne_inmigration_rate',
-      'source-layer': 'lausanne_migration_2011_2023',
+      'source-layer': 'lausanne_migration',
       paint: {
         // Add max function to ensure minimum height of 2
         'fill-extrusion-height': ['max', 2, ['*', ['to-number', ['get', 'inmigration_rate']], 0.5]],
@@ -173,14 +173,14 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     info: 'Internal out-migration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023.pmtiles`,
+      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
       id: 'lausanne_outmigration_rate-layer',
       type: 'fill-extrusion',
       source: 'lausanne_outmigration_rate',
-      'source-layer': 'lausanne_migration_2011_2023',
+      'source-layer': 'lausanne_migration',
       paint: {
         // Add max function to ensure minimum height of 2
         'fill-extrusion-height': [
@@ -217,14 +217,14 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     info: 'International immigration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023.pmtiles`,
+      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
       id: 'lausanne_immigration_rate-layer',
       type: 'fill-extrusion',
       source: 'lausanne_immigration_rate',
-      'source-layer': 'lausanne_migration_2011_2023',
+      'source-layer': 'lausanne_migration',
       paint: {
         // Add max function to ensure minimum height of 2
         'fill-extrusion-height': ['max', 2, ['*', ['to-number', ['get', 'immigration_rate']], 0.2]],
@@ -257,14 +257,14 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     info: 'International emigration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023.pmtiles`,
+      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
     layer: {
       id: 'lausanne_emigration_rate-layer',
       type: 'fill-extrusion',
       source: 'lausanne_emigration_rate',
-      'source-layer': 'lausanne_migration_2011_2023',
+      'source-layer': 'lausanne_migration',
       paint: {
         // Add max function to ensure minimum height of 2
         'fill-extrusion-height': ['max', 2, ['*', ['to-number', ['get', 'emigration_rate']], 0.2]],
