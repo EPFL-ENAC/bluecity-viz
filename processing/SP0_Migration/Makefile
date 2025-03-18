@@ -13,8 +13,8 @@ generate-period-tiles:
 	@echo "Generating PMTiles for lausanne_migration_2011_2023"
 	tippecanoe --force -zg \
 		--read-parallel \
-		--drop-densest-as-needed \
 		--extend-zooms-if-still-dropping \
+		--no-tile-size-limit \
 		-l lausanne_migration \
 		-o lausanne_migration_2011_2023_2.pmtiles \
 		lausanne_migration_2011_2023.geojson
