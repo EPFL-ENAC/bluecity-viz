@@ -263,11 +263,17 @@ watch(
 
 watch(
   () => layersStore.visibleLayers,
-  (visibleLayers) => {
+  (visibleLayers, oldVisibleLayers) => {
+    const oldThreeDimLayers = oldVisibleLayers.filter(
+      (layer) => layer.layer.type === 'fill-extrusion'
+    )
     const threeDimLayers = visibleLayers.filter((layer) => layer.layer.type === 'fill-extrusion')
-    if (threeDimLayers.length > 0) {
-      map?.easeTo({ pitch: 40, center: map?.getCenter() })
-    } else {
+    const had3DLayer = oldThreeDimLayers.length > 0
+    const has3DLayer = threeDimLayers.length > 0
+
+    if (!had3DLayer && has3DLayer) {
+      if (map?.getPitch() === 0) map?.easeTo({ pitch: 40, center: map?.getCenter() })
+    } else if (had3DLayer && !has3DLayer) {
       map?.easeTo({ pitch: 0, center: map?.getCenter() })
     }
   }
