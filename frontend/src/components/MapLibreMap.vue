@@ -1,29 +1,28 @@
 <script setup lang="ts">
 import 'maplibre-gl/dist/maplibre-gl.css'
 import LoadingCircle from '@/components/LoadingCircle.vue'
-
 import { mapConfig } from '@/config/mapConfig'
+import { useMapEvents } from '@/composables/useMapEvents'
 
 import {
   FullscreenControl,
-  Map as Maplibre,
+  Map,
   NavigationControl,
-  Popup,
   ScaleControl,
   VectorTileSource,
   type FilterSpecification,
   type LngLatLike,
   type StyleSetterOptions,
   type StyleSpecification,
-  type MapLayerMouseEvent,
   addProtocol
 } from 'maplibre-gl'
 import type { LegendColor } from '@/utils/legendColor'
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, type Ref } from 'vue'
 
 import { Protocol } from 'pmtiles'
 import { useApiKeyStore } from '@/stores/apiKey'
 import { useLayersStore } from '@/stores/layers'
+import type { MapLayerConfig } from '@/config/layerTypes'
 
 const apiKeyStore = useApiKeyStore()
 const layersStore = useLayersStore()
@@ -62,25 +61,18 @@ const props = withDefaults(
 
 const loading = ref(true)
 const container = ref<HTMLDivElement | null>(null)
-let map: Maplibre | undefined = undefined
+const map = ref<any | undefined>(undefined)
 const hasLoaded = ref(false)
 const protocol = new Protocol()
 
-const hoveredFeature = ref<Record<string, any> | null>(null)
-// Create a popup for this layer
-const popup = new Popup({
-  closeButton: false,
-  closeOnClick: false,
-  maxWidth: '500px',
-  className: 'feature-popup'
-})
-const selectedFeatureId = ref<string | undefined>(undefined)
-const clickedPopup = ref<any | null>(null)
+// Use the map events composable
+const mapEventManager = useMapEvents(map as Ref<Map | undefined>)
+const { attachPopupListeners } = mapEventManager
 
 addProtocol('pmtiles', protocol.tile)
 
 function initMap() {
-  map = new Maplibre({
+  const newMap = new Map({
     container: container.value as HTMLDivElement,
     style: props.styleSpec,
     center: props.center,
@@ -94,7 +86,6 @@ function initMap() {
       if (resourceType === 'Tile' && url.includes('pmtiles://')) {
         return {
           url: url + '?apikey=' + apiKey,
-          // headers: { 'X-Api-Key': apiKey, Authorization: apiKey },
           credentials: 'include'
         }
       }
@@ -102,38 +93,41 @@ function initMap() {
       if (url.includes('/bluecity/')) {
         return {
           url: url + '?apikey=' + apiKey,
-          // headers: { 'X-Api-Key': apiKey, Authorization: apiKey },
           credentials: 'include'
         }
       }
 
       return { url: url }
     }
-  })
+  }) as Map
+
+  map.value = newMap
+
+  const mapInstance = map.value as Map
 
   // map.showTileBoundaries = true
-  map.addControl(new NavigationControl({}))
-  map.addControl(new ScaleControl({}))
-  map.addControl(
+  mapInstance.addControl(new NavigationControl({}))
+  mapInstance.addControl(new ScaleControl({}))
+  mapInstance.addControl(
     new FullscreenControl({
       container: document.getElementById('map-time-input-container') ?? undefined
     })
   )
-  map.on('load', () => {
-    // filterLayers(props.filterIds)
-    if (!map) return
+
+  mapInstance.on('load', () => {
+    if (!map.value) return
     hasLoaded.value = true
     loading.value = false
-    map.resize()
+    map.value.resize()
 
     // Add all sources dynamically
     Object.entries(mapConfig.layers).forEach(([, { id, source, layer }]) => {
-      map?.addSource(id, source)
-      map?.addLayer(layer)
+      map.value?.addSource(id, source)
+      map.value?.addLayer(layer)
     })
 
     function testTilesLoaded() {
-      if (map?.areTilesLoaded()) {
+      if (map.value?.areTilesLoaded()) {
         loading.value = false
       } else {
         loading.value = true
@@ -142,155 +136,24 @@ function initMap() {
     }
 
     function handleDataEvent() {
-      if (map?.areTilesLoaded()) {
+      if (map.value?.areTilesLoaded()) {
         loading.value = false
       } else {
         testTilesLoaded()
       }
     }
 
+    // Attach popup listeners to each layer using our composable
     mapConfig.layers.forEach((layer) => attachPopupListeners(layer.layer.id, layer.label))
 
-    map.on('sourcedata', handleDataEvent)
-
-    map.on('sourcedataloading', handleDataEvent)
+    mapInstance.on('sourcedata', handleDataEvent)
+    mapInstance.on('sourcedataloading', handleDataEvent)
 
     filterSP0Period(layersStore.sp0Period)
 
     if (props.callbackLoaded) {
       props.callbackLoaded()
     }
-  })
-}
-
-function formatPopupContent(properties: Record<string, any> | null, label: string): string {
-  if (!properties) return 'No data available'
-
-  // Create HTML table to display all properties
-  let content = `<div class="popup-content"><h3>${label}</h3><table class="popup-table">`
-
-  // Filter out null/undefined values and internal properties
-  Object.entries(properties)
-    .filter(
-      ([key, value]) =>
-        value !== null && value !== undefined && !key.startsWith('_') && key !== 'id' // Skip internal keys
-    )
-    .forEach(([key, value]) => {
-      // Format the property key to be more readable
-      const formattedKey = key
-        .replace(/_/g, ' ')
-        .replace(/([A-Z])/g, ' $1')
-        .toLowerCase()
-        .split(' ')
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ')
-
-      // Format the value based on its type
-      let formattedValue = value
-      if (typeof value === 'number') {
-        // Format numbers with up to 2 decimal places
-        formattedValue = Math.round(value * 100) / 100
-      }
-
-      content += `
-        <tr>
-          <td class="property-name">${formattedKey}</td>
-          <td class="property-value">${formattedValue}</td>
-        </tr>
-      `
-    })
-
-  content += '</table></div>'
-  return content
-}
-
-// Function to attach popup listeners for a specific layer
-function attachPopupListeners(layerId: string, layerLabel: string) {
-  if (!map) return
-
-  // Track the current feature to avoid duplicate popups
-  let currentFeatureId: string | undefined = undefined
-
-  // Add click event for this layer
-  map.on('click', layerId, (e: MapLayerMouseEvent) => {
-    if (!e.features || e.features.length === 0 || !map) return
-
-    const feature = e.features[0]
-
-    // Generate unique ID for clicked feature
-    const featureId =
-      feature.id?.toString() ||
-      JSON.stringify(feature.properties) +
-        (feature.geometry.type === 'Point'
-          ? feature.geometry.coordinates.toString()
-          : e.lngLat.toString())
-
-    // Remove existing clicked popup if any
-    if (clickedPopup.value) {
-      clickedPopup.value.remove()
-      clickedPopup.value = null
-    }
-
-    // Save this as the selected feature
-    selectedFeatureId.value = featureId
-    hoveredFeature.value = feature.properties
-
-    // Create a new persistent popup
-    const persistentPopup = new Popup({
-      closeButton: true,
-      closeOnClick: false,
-      maxWidth: '500px',
-      className: 'feature-popup persistent-popup'
-    })
-
-    // Format popup content
-    const popupContent = formatPopupContent(feature.properties, layerLabel)
-
-    // Add popup to the map
-    persistentPopup.setLngLat(e.lngLat).setHTML(popupContent).addTo(map)
-    clickedPopup.value = persistentPopup as any
-
-    // Remove the normal hover popup
-    popup.remove()
-
-    // Stop event propagation to prevent map click from closing it immediately
-    e.preventDefault()
-  })
-
-  // Add mousemove event for this layer
-  map.on('mousemove', layerId, (e: MapLayerMouseEvent) => {
-    if (!e.features || e.features.length === 0) return
-    if (!map) return
-    const feature = e.features[0]
-    map.getCanvas().style.cursor = 'pointer'
-
-    // Generate a unique ID for this feature
-    const featureId =
-      feature.id?.toString() ||
-      JSON.stringify(feature.properties) +
-        (feature.geometry.type === 'Point'
-          ? feature.geometry.coordinates.toString()
-          : e.lngLat.toString())
-
-    // Only update if we've moved to a different feature
-    if (currentFeatureId !== featureId) {
-      currentFeatureId = featureId
-      hoveredFeature.value = feature.properties
-
-      // Format popup content
-      const popupContent = formatPopupContent(feature.properties, layerLabel)
-
-      popup.setLngLat(e.lngLat).setHTML(popupContent).addTo(map)
-    }
-  })
-
-  map.on('mouseleave', layerId, () => {
-    if (!map) return
-    map.getCanvas().style.cursor = ''
-    currentFeatureId = undefined
-
-    popup.remove()
-    hoveredFeature.value = null
   })
 }
 
@@ -313,11 +176,11 @@ const setFilter = (
   filter?: FilterSpecification | null | undefined,
   options?: StyleSetterOptions | undefined
 ) => {
-  map?.setFilter(layerId, filter, options)
+  map.value?.setFilter(layerId, filter, options)
 }
 
 const getFilter = (layerId: string) => {
-  return map?.getFilter(layerId)
+  return map.value?.getFilter(layerId)
 }
 
 const setPaintProperty = (
@@ -326,11 +189,11 @@ const setPaintProperty = (
   value: any,
   options?: StyleSetterOptions | undefined
 ) => {
-  map?.setPaintProperty(layerId, name, value, options)
+  map.value?.setPaintProperty(layerId, name, value, options)
 }
 
 const queryFeatures = (filter: any[]) => {
-  return map?.querySourceFeatures('trajectories', {
+  return map.value?.querySourceFeatures('trajectories', {
     sourceLayer: 'trajectories',
     filter: filter as FilterSpecification,
     validate: false
@@ -338,29 +201,29 @@ const queryFeatures = (filter: any[]) => {
 }
 
 const queryRenderedFeatures = () => {
-  return map?.queryRenderedFeatures()
+  return map.value?.queryRenderedFeatures()
 }
 
 const onZoom = (callback: () => void) => {
-  map?.on('zoom', callback)
+  map.value?.on('zoom', callback)
 }
 
 const changeSourceTilesUrl = (sourceId: string, url: string) => {
-  const source = map?.getSource(sourceId) as VectorTileSource
+  const source = map.value?.getSource(sourceId) as VectorTileSource
   source.setUrl(url)
 }
 
 const getSourceTilesUrl = (sourceId: string) => {
-  const source = map?.getSource(sourceId) as VectorTileSource
+  const source = map.value?.getSource(sourceId) as VectorTileSource
   if (source && source.url) return source.url
   else return ''
 }
 const setLayerVisibility = (layerId: string, visibility: boolean) => {
-  map?.setLayoutProperty(layerId, 'visibility', visibility ? 'visible' : 'none')
+  map.value?.setLayoutProperty(layerId, 'visibility', visibility ? 'visible' : 'none')
 }
 
 const getPaintProperty = (layerId: string, name: string) => {
-  if (hasLoaded.value) return map?.getPaintProperty(layerId, name)
+  if (hasLoaded.value) return map.value?.getPaintProperty(layerId, name)
 }
 
 // Filter categorical layers by categories
@@ -396,7 +259,7 @@ function filterSP0Period(period: string) {
     })
     .forEach((layer) => {
       const filter = ['==', ['get', 'year'], period] as FilterSpecification
-      map?.setFilter(layer.layer.id, filter)
+      map.value?.setFilter(layer.layer.id, filter)
     })
 }
 
@@ -419,16 +282,16 @@ watch(
     const has3DLayer = threeDimLayers.length > 0
 
     if (!had3DLayer && has3DLayer) {
-      if (map?.getPitch() === 0) map?.easeTo({ pitch: 40, center: map?.getCenter() })
+      if (map.value?.getPitch() === 0)
+        map.value?.easeTo({ pitch: 40, center: map.value?.getCenter() })
     } else if (had3DLayer && !has3DLayer) {
-      map?.easeTo({ pitch: 0, center: map?.getCenter() })
+      map.value?.easeTo({ pitch: 0, center: map.value?.getCenter() })
     }
   }
 )
 
 defineExpose({
   getPaintProperty,
-  update,
   setFilter,
   getFilter,
   queryFeatures,
@@ -437,73 +300,16 @@ defineExpose({
   onZoom,
   changeSourceTilesUrl,
   setLayerVisibility,
-  getSourceTilesUrl,
-  filterLayers
+  getSourceTilesUrl
 })
 
 watch(
   () => props.styleSpec,
   (styleSpec) => {
-    map?.setStyle(styleSpec)
+    map.value?.setStyle(styleSpec)
   },
   { immediate: true }
 )
-
-watch(
-  () => props.popupLayerIds,
-  (popupLayerIds) => {
-    popupLayerIds.forEach((layerId) => {
-      const popup = new Popup({
-        closeButton: false,
-        closeOnClick: false
-      })
-      map?.on('mouseenter', layerId, function () {
-        if (map) {
-          map.getCanvas().style.cursor = 'pointer'
-        }
-      })
-
-      map?.on('mouseleave', layerId, function () {
-        if (map) {
-          map.getCanvas().style.cursor = ''
-        }
-        popup.remove()
-      })
-    })
-  },
-  { immediate: true }
-)
-watch(
-  () => props.filterIds,
-  (filterIds) => {
-    filterLayers(filterIds)
-  },
-  { immediate: true }
-)
-
-function update(center?: LngLatLike, zoom?: number) {
-  if (center !== undefined) {
-    map?.setCenter(center)
-  }
-  if (zoom !== undefined) {
-    map?.setZoom(zoom)
-  }
-}
-
-function filterLayers(filterIds?: string[]) {
-  if (filterIds && map !== undefined && map.isStyleLoaded()) {
-    map
-      .getStyle()
-      .layers.filter((layer) => !layer.id.startsWith('gl-draw'))
-      .forEach((layer) => {
-        map?.setLayoutProperty(
-          layer.id,
-          'visibility',
-          filterIds.includes(layer.id) ? 'visible' : 'none'
-        )
-      })
-  }
-}
 </script>
 
 <template>
