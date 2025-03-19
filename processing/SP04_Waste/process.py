@@ -11,13 +11,21 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+WASTE_TYPE_MAPPING = {
+    "DV": "Organic Waste",
+    "DI": "Household Waste",
+    "PC": "Paper & Cardboard",
+    "VE": "Glass",
+}
+
 
 def process_file(file_path):
     """Load GeoJSON file and add 'type' field based on filename."""
     logging.info(f"Processing file: {file_path}")
 
     # Extract the type from the filename (first two letters)
-    file_type = os.path.basename(file_path)[:2]
+    file_type_code = os.path.basename(file_path)[:2]
+    file_type = WASTE_TYPE_MAPPING.get(file_type_code)
     logging.info(f"Extracted type: {file_type}")
 
     try:

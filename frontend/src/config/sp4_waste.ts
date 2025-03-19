@@ -24,13 +24,13 @@ export const sp4WasteLayers: MapLayerConfig[] = [
         'line-color': [
           'match',
           ['get', 'type'],
-          'DV',
+          'Organic Waste',
           '#FF8C00', // Orange - Organic waste (Déchets verts)
-          'DI',
+          'Household Waste',
           '#2E8B57', // Green - Household waste (Déchets incinérables)
-          'PC',
+          'Paper & Cardboard',
           '#8A2BE2', // Purple - Paper & Cardboard (Papier/Carton)
-          'VE',
+          'Glass',
           '#1E90FF', // Blue - Glass (Verre)
           '#757575' // Gray - default for any other type
         ],
