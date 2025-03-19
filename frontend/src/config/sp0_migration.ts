@@ -12,6 +12,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     unit: 'people/ha',
     info: 'Total population per hectare in Lausanne (2011-2023)',
     source: {
+      attribution: 'https://www.bfs.admin.ch/',
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
@@ -52,6 +53,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     unit: 'per 1,000',
     info: 'Birth rate per 1,000 population in Lausanne (2011-2023)',
     source: {
+      attribution: 'https://www.bfs.admin.ch/',
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
@@ -92,6 +94,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     unit: 'per 1,000',
     info: 'Death rate per 1,000 population in Lausanne (2011-2023)',
     source: {
+      attribution: 'https://www.bfs.admin.ch/',
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
@@ -132,6 +135,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     unit: 'per 1,000',
     info: 'Internal in-migration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
+      attribution: 'https://www.bfs.admin.ch/',
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
@@ -172,6 +176,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     unit: 'per 1,000',
     info: 'Internal out-migration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
+      attribution: 'https://www.bfs.admin.ch/',
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
@@ -216,6 +221,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     unit: 'per 1,000',
     info: 'International immigration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
+      attribution: 'https://www.bfs.admin.ch/',
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5
@@ -256,6 +262,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     unit: 'per 1,000',
     info: 'International emigration rate per 1,000 population in Lausanne (2011-2023)',
     source: {
+      attribution: 'https://www.bfs.admin.ch/',
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
       minzoom: 5

@@ -38,6 +38,7 @@ export const useLayersStore = defineStore('layers', () => {
         id: layer.layer.id, // Extract the layer ID correctly
         label: layer.label,
         info: layer.info,
+        attribution: layer.source.attribution,
         groupId: group.id
       }))
     )

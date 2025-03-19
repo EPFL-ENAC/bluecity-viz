@@ -56,7 +56,10 @@ const layersStore = useLayersStore()
               <h5 class="text-uppercase mb-0">{{ item.label }}</h5>
             </template>
             <template #append>
-              <info-tooltip>{{ item.info }}</info-tooltip>
+              <info-tooltip
+                >{{ item.info }}
+                {{ item.attribution ? 'Source: ' + item.attribution : '' }}</info-tooltip
+              >
             </template>
           </v-checkbox>
         </template>
@@ -87,7 +90,10 @@ const layersStore = useLayersStore()
                   <h5 class="text-uppercase flex-grow-1 mb-0">{{ item.label }}</h5>
                 </template>
               </v-radio>
-              <info-tooltip class="ml-2">{{ item.info }}</info-tooltip>
+              <info-tooltip class="ml-2">
+                <div>{{ item.info }}</div>
+                <div v-if="item.attribution">Source: {{ item.attribution }}</div>
+              </info-tooltip>
             </div>
           </v-radio-group>
         </template>
