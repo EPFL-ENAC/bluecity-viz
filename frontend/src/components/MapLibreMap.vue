@@ -15,6 +15,7 @@ import {
   type LngLatLike,
   type StyleSetterOptions,
   type StyleSpecification,
+  type MapLayerMouseEvent,
   addProtocol
 } from 'maplibre-gl'
 import type { LegendColor } from '@/utils/legendColor'
@@ -64,6 +65,17 @@ const container = ref<HTMLDivElement | null>(null)
 let map: Maplibre | undefined = undefined
 const hasLoaded = ref(false)
 const protocol = new Protocol()
+
+const hoveredFeature = ref<Record<string, any> | null>(null)
+// Create a popup for this layer
+const popup = new Popup({
+  closeButton: false,
+  closeOnClick: false,
+  maxWidth: '500px',
+  className: 'feature-popup'
+})
+const selectedFeatureId = ref<string | undefined>(undefined)
+const clickedPopup = ref<Popup | null>(null)
 
 addProtocol('pmtiles', protocol.tile)
 
@@ -137,17 +149,148 @@ function initMap() {
       }
     }
 
+    mapConfig.layers.forEach((layer) => attachPopupListeners(layer.layer.id, layer.label))
+
     map.on('sourcedata', handleDataEvent)
 
     map.on('sourcedataloading', handleDataEvent)
 
-    map.on('mouseleave', 'trajectories', () => {
-      if (map) map.getCanvas().classList.remove('hovered-feature')
-    })
+    filterSP0Period(layersStore.sp0Period)
 
     if (props.callbackLoaded) {
       props.callbackLoaded()
     }
+  })
+}
+
+function formatPopupContent(properties: Record<string, any> | null, label: string): string {
+  if (!properties) return 'No data available'
+
+  // Create HTML table to display all properties
+  let content = `<div class="popup-content"><h3>${label}</h3><table class="popup-table">`
+
+  // Filter out null/undefined values and internal properties
+  Object.entries(properties)
+    .filter(
+      ([key, value]) =>
+        value !== null && value !== undefined && !key.startsWith('_') && key !== 'id' // Skip internal keys
+    )
+    .forEach(([key, value]) => {
+      // Format the property key to be more readable
+      const formattedKey = key
+        .replace(/_/g, ' ')
+        .replace(/([A-Z])/g, ' $1')
+        .toLowerCase()
+        .split(' ')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+
+      // Format the value based on its type
+      let formattedValue = value
+      if (typeof value === 'number') {
+        // Format numbers with up to 2 decimal places
+        formattedValue = Math.round(value * 100) / 100
+      }
+
+      content += `
+        <tr>
+          <td class="property-name">${formattedKey}</td>
+          <td class="property-value">${formattedValue}</td>
+        </tr>
+      `
+    })
+
+  content += '</table></div>'
+  return content
+}
+
+// Function to attach popup listeners for a specific layer
+function attachPopupListeners(layerId: string, layerLabel: string) {
+  if (!map) return
+
+  // Track the current feature to avoid duplicate popups
+  let currentFeatureId: string | undefined = undefined
+
+  // Add click event for this layer
+  map.on('click', layerId, (e: MapLayerMouseEvent) => {
+    if (!e.features || e.features.length === 0 || !map) return
+
+    const feature = e.features[0]
+
+    // Generate unique ID for clicked feature
+    const featureId =
+      feature.id?.toString() ||
+      JSON.stringify(feature.properties) +
+        (feature.geometry.type === 'Point'
+          ? feature.geometry.coordinates.toString()
+          : e.lngLat.toString())
+
+    // Remove existing clicked popup if any
+    if (clickedPopup.value) {
+      clickedPopup.value.remove()
+      clickedPopup.value = null
+    }
+
+    // Save this as the selected feature
+    selectedFeatureId.value = featureId
+    hoveredFeature.value = feature.properties
+
+    // Create a new persistent popup
+    const persistentPopup = new Popup({
+      closeButton: true,
+      closeOnClick: false,
+      maxWidth: '500px',
+      className: 'feature-popup persistent-popup'
+    })
+
+    // Format popup content
+    const popupContent = formatPopupContent(feature.properties, layerLabel)
+
+    // Add popup to the map
+    persistentPopup.setLngLat(e.lngLat).setHTML(popupContent).addTo(map)
+    clickedPopup.value = persistentPopup
+
+    // Remove the normal hover popup
+    popup.remove()
+
+    // Stop event propagation to prevent map click from closing it immediately
+    e.preventDefault()
+  })
+
+  // Add mousemove event for this layer
+  map.on('mousemove', layerId, (e: MapLayerMouseEvent) => {
+    if (!e.features || e.features.length === 0) return
+    if (!map) return
+    const feature = e.features[0]
+    map.getCanvas().style.cursor = 'pointer'
+
+    // Generate a unique ID for this feature
+    const featureId =
+      feature.id?.toString() ||
+      JSON.stringify(feature.properties) +
+        (feature.geometry.type === 'Point'
+          ? feature.geometry.coordinates.toString()
+          : e.lngLat.toString())
+
+    // Only update if we've moved to a different feature
+    if (currentFeatureId !== featureId) {
+      currentFeatureId = featureId
+      hoveredFeature.value = feature.properties
+
+      // Format popup content
+      const popupContent = formatPopupContent(feature.properties, layerLabel)
+
+      popup.setLngLat(e.lngLat).setHTML(popupContent).addTo(map)
+    }
+  })
+
+  map.on('mouseleave', layerId, () => {
+    if (!map) return
+    map.getCanvas().style.cursor = ''
+    currentFeatureId = undefined
+
+    popup.remove()
+    hoveredFeature.value = null
   })
 }
 
@@ -220,6 +363,7 @@ const getPaintProperty = (layerId: string, name: string) => {
   if (hasLoaded.value) return map?.getPaintProperty(layerId, name)
 }
 
+// Filter categorical layers by categories
 watch(
   () => layersStore.filteredCategories,
   (filteredCategories) => {
@@ -242,25 +386,28 @@ watch(
   { deep: true }
 )
 
-// Emit changes when local state changes
+function filterSP0Period(period: string) {
+  const sp0Group = layersStore.layerGroups.find((group) => group.id === 'sp0_migration')
+
+  if (!sp0Group) return
+  sp0Group.layers
+    .filter((layer) => {
+      return layersStore.selectedLayers.includes(layer.layer.id)
+    })
+    .forEach((layer) => {
+      const filter = ['==', ['get', 'year'], period] as FilterSpecification
+      map?.setFilter(layer.layer.id, filter)
+    })
+}
+
+// Filter SP0 migration layers by period
 watch(
   () => [layersStore.sp0Period, layersStore.selectedLayers],
-  ([newPeriod]) => {
-    const sp0Group = layersStore.layerGroups.find((group) => group.id === 'sp0_migration')
-
-    if (!sp0Group) return
-    sp0Group.layers
-      .filter((layer) => {
-        return layersStore.selectedLayers.includes(layer.layer.id)
-      })
-      .forEach((layer) => {
-        const filter = ['==', ['get', 'year'], newPeriod] as FilterSpecification
-        map?.setFilter(layer.layer.id, filter)
-      })
-  },
+  ([newPeriod]) => filterSP0Period(newPeriod as string),
   { immediate: true }
 )
 
+// Automatic pitch change when 3D layers are added or removed
 watch(
   () => layersStore.visibleLayers,
   (visibleLayers, oldVisibleLayers) => {
@@ -377,5 +524,48 @@ function filterLayers(filterIds?: string[]) {
 
 .map:deep(.hovered-feature) {
   cursor: pointer !important;
+}
+</style>
+
+<style>
+/* Global styles for the popup (not scoped) */
+.feature-popup .maplibregl-popup-content {
+  background: rgba(255, 255, 255, 0.95);
+  padding: 10px;
+  font-family: inherit;
+  overflow-y: auto;
+  max-height: 500px;
+}
+
+.popup-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.popup-content > h3 {
+  margin-bottom: 1rem;
+}
+
+.popup-table tr:nth-child(even) {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.popup-table td {
+  padding: 4px 6px;
+  font-size: small;
+}
+
+.property-name {
+  font-weight: bold;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+  font-size: smaller;
+}
+
+.property-value {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
