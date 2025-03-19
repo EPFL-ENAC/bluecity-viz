@@ -1,3 +1,5 @@
+.PHONY: generate-data
+
 generate-data:
 	@echo "Generating data for SP03 Nature"
 	python process.py
@@ -28,4 +30,27 @@ generate-data:
 		cp lausanne_temperature_monthly.pmtiles ../../frontend/public/geodata/; \
 	fi
 		
+	# Process species observation data
+	@if [ -f lausanne_species.geojson ]; then \
+		echo "Creating PMTiles for species observation data"; \
+		tippecanoe --force -zg --read-parallel \
+			--no-simplification-of-shared-nodes \
+			--extend-zooms-if-still-dropping \
+			--drop-densest-as-needed \
+			-l species_observations \
+			-o lausanne_species.pmtiles lausanne_species.geojson; \
+		cp lausanne_species.pmtiles ../../frontend/public/geodata/; \
+		echo "Species observation PMTiles file created and copied to frontend/public/geodata/"; \
+	else \
+		echo "Warning: lausanne_species.geojson not found"; \
+	fi
+		
 	@echo "Data generated for SP03 Nature"
+
+clean:
+	@echo "Cleaning up intermediate files..."
+	rm -f lausanne_aqi_*.geojson 2>/dev/null || true
+	rm -f lausanne_temperature_*.geojson 2>/dev/null || true
+	rm -f lausanne_species.geojson 2>/dev/null || true
+	rm -f *.pmtiles 2>/dev/null || true
+	@echo "Cleanup complete"

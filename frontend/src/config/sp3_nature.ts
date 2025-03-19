@@ -92,5 +92,121 @@ export const sp3NatureLayers: MapLayerConfig[] = [
         'fill-opacity': 0.8
       }
     } as LayerSpecification
+  },
+
+  // Species Observations by Group
+  {
+    id: 'species_observations_by_group',
+    label: 'Species Observations (by Group)',
+    unit: 'group',
+    info: 'Wildlife species observations in Lausanne area, colored by taxonomic group.',
+    source: {
+      type: 'vector',
+      url: `pmtiles://${baseUrl}/lausanne_species.pmtiles`
+    } as VectorSourceSpecification,
+    layer: {
+      id: 'species_observations_by_group-layer',
+      type: 'circle',
+      source: 'species_observations_by_group',
+      'source-layer': 'species_observations',
+      // filter: [
+      //   'all',
+      //   ['has', 'Group'],
+      //   ['>=', ['to-number', ['get', 'Year']], 2023],
+      //   ['<=', ['to-number', ['get', 'Year']], 2024]
+      // ] as FilterSpecification,
+      paint: {
+        // Color by species group
+        'circle-color': [
+          'match',
+          ['get', 'Group'],
+          'Fish',
+          '#3ca0d3', // Blue for fish (aquatic)
+          'Amphibian',
+          '#9c27b0', // Purple for amphibians
+          'Mammal',
+          '#d16b30', // Orange/brown for mammals
+          'Reptile',
+          '#2e7d32', // Dark green for reptiles
+          'Bird',
+          '#e91e63', // Pink for birds
+          '#aaaaaa' // Default grey
+        ],
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10,
+          3, // Small at low zoom
+          14,
+          6, // Medium at middle zoom
+          16,
+          8 // Larger at high zoom
+        ],
+        'circle-stroke-width': 1,
+        'circle-stroke-color': '#ffffff',
+        'circle-opacity': 0.8
+      }
+    } as LayerSpecification
+  },
+
+  // Species Observations by Red List Category (Conservation Status)
+  {
+    id: 'species_observations_by_redlist',
+    label: 'Species Observations (by Red List Status)',
+    unit: 'status',
+    info: 'Wildlife species observations in Lausanne area, colored by conservation status (Red List category).',
+    source: {
+      type: 'vector',
+      url: `pmtiles://${baseUrl}/lausanne_species.pmtiles`
+    } as VectorSourceSpecification,
+    layer: {
+      id: 'species_observations_by_redlist-layer',
+      type: 'circle',
+      source: 'species_observations_by_redlist',
+      'source-layer': 'species_observations',
+      // filter: [
+      //   'all',
+      //   ['has', 'Red List'],
+      //   ['>=', ['to-number', ['get', 'Year']], 2023],
+      //   ['<=', ['to-number', ['get', 'Year']], 2024]
+      // ],
+      paint: {
+        // Color by Red List category (darker = more threatened)
+        'circle-color': [
+          'match',
+          ['get', 'Red List'],
+          'Critically Endangered',
+          '#bd0026', // Darkest red
+          'Endangered',
+          '#f03b20', // Dark red
+          'Vulnerable',
+          '#fd8d3c', // Orange
+          'Near Threatened',
+          '#fecc5c', // Yellow-orange
+          'Least Concern',
+          '#ffffb2', // Light yellow
+          'Data Deficient',
+          '#999999', // Grey
+          'Not Evaluated',
+          '#cccccc', // Light Grey
+          '#cccccc' // Default - Light Grey
+        ],
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10,
+          3, // Small at low zoom
+          14,
+          6, // Medium at middle zoom
+          16,
+          8 // Larger at high zoom
+        ],
+        'circle-stroke-width': 1,
+        'circle-stroke-color': '#ffffff',
+        'circle-opacity': 0.8
+      }
+    } as LayerSpecification
   }
 ]

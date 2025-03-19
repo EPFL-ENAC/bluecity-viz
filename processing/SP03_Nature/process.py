@@ -3,7 +3,7 @@ import os
 import glob
 from shapely.geometry import Polygon, Point
 import geopandas as gpd
-from pyproj import Transformer, Geod
+from pyproj import Transformer, Geod, CRS
 import pandas as pd
 import logging
 
@@ -171,6 +171,103 @@ def process_directory(input_dir, output_prefix):
     return success
 
 
+def process_species_data(input_file, output_file):
+    """
+    Process species observation CSV file into a GeoJSON point file
+    with coordinates transformed from CH1903+/LV95 to WGS84
+    """
+    logging.info(f"Processing species data from {input_file} to {output_file}")
+
+    # Define mapping for Red List status codes to full names
+    RED_LIST_MAPPING = {
+        "CR": "Critically Endangered",
+        "EN": "Endangered",
+        "VU": "Vulnerable",
+        "NT": "Near Threatened",
+        "LC": "Least Concern",
+        "DD": "Data Deficient",
+        "NE": "Not Evaluated",
+    }
+
+    try:
+        # Check if input file exists
+        if not os.path.exists(input_file):
+            logging.error(f"Input file not found: {input_file}")
+            return False
+
+        # Read CSV file
+        df = pd.read_csv(input_file)
+        logging.info(f"Loaded {len(df)} species observations from CSV")
+
+        # Log the first few entries for verification
+        logging.info(f"First few records: \n{df.head()}")
+
+        # Check for missing coordinate values
+        if df["Longitude"].isnull().any() or df["Latitude"].isnull().any():
+            logging.warning("Missing coordinate values found in the data")
+            # Remove rows with missing coordinates
+            df = df.dropna(subset=["Longitude", "Latitude"])
+            logging.info(f"After dropping missing coordinates: {len(df)} records")
+
+        # Create transformer from CH1903+/LV95 (EPSG:2056) to WGS84 (EPSG:4326)
+        transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
+
+        # Apply coordinate transformation
+        logging.info("Transforming coordinates from CH1903+/LV95 to WGS84...")
+
+        # Create geometry points after transformation
+        geometry = []
+        for idx, row in df.iterrows():
+            try:
+                # Transform coordinates (note the order: x=longitude, y=latitude in LV95)
+                lon, lat = transformer.transform(row["Longitude"], row["Latitude"])
+                geometry.append(Point(lon, lat))
+            except Exception as e:
+                logging.error(f"Error transforming coordinates at row {idx}: {e}")
+                geometry.append(None)
+
+        # Create GeoDataFrame
+        gdf = gpd.GeoDataFrame(df, geometry=geometry, crs="EPSG:4326")
+
+        # Drop rows with invalid geometry
+        if gdf.geometry.isna().any():
+            logging.warning("Found rows with invalid geometry")
+            gdf = gdf.dropna(subset=["geometry"])
+            logging.info(f"After dropping invalid geometry: {len(gdf)} records")
+
+        # Apply the Red List mapping to add a full label column
+        if "Red List" in gdf.columns:
+            # First, keep the original code
+            gdf["Red List Code"] = gdf["Red List"]
+
+            # Then create a new column with the full label
+            gdf["Red List"] = gdf["Red List Code"].apply(
+                lambda code: (
+                    RED_LIST_MAPPING.get(code, "Unknown")
+                    if pd.notnull(code)
+                    else "Unknown"
+                )
+            )
+
+            # Log the mapping results
+            status_counts = gdf["Red List"].value_counts()
+            logging.info(f"Red List status distribution: \n{status_counts}")
+        else:
+            logging.warning("Red List column not found in the data")
+
+        # Save to GeoJSON
+        gdf.to_file(output_file, driver="GeoJSON")
+        logging.info(f"Created GeoJSON file: {output_file} with {len(gdf)} features")
+        return True
+
+    except Exception as e:
+        logging.error(f"Error processing species data: {str(e)}")
+        import traceback
+
+        logging.error(traceback.format_exc())
+        return False
+
+
 def main():
     logging.info("Starting SP03 Nature data processing")
 
@@ -184,8 +281,17 @@ def main():
     temp_success = process_directory("temperature_output_json", "lausanne_temperature")
     logging.info(f"Temperature processing {'successful' if temp_success else 'failed'}")
 
+    # Process species observation data
+    logging.info("===== Processing species observation data =====")
+    species_input = os.path.join("species_observations_csv", "data_species.csv")
+    species_output = "lausanne_species.geojson"
+    species_success = process_species_data(species_input, species_output)
+    logging.info(
+        f"Species data processing {'successful' if species_success else 'failed'}"
+    )
+
     # Check if any data was processed successfully
-    if aqi_success or temp_success:
+    if aqi_success or temp_success or species_success:
         logging.info("Processing completed with some success")
     else:
         logging.error("No data was processed successfully")
