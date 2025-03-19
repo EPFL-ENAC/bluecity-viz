@@ -1,4 +1,4 @@
-import type { Map as MapLibre, MapLayerMouseEvent, Popup } from 'maplibre-gl'
+import type { Map as MapLibre, MapLayerMouseEvent } from 'maplibre-gl'
 import { Popup as MapLibrePopup } from 'maplibre-gl'
 import { onUnmounted, ref, type Ref } from 'vue'
 
@@ -73,7 +73,7 @@ export function useMapEvents(
   // State refs exposed by the composable
   const hoveredFeature = ref<Record<string, any> | null>(null)
   const selectedFeatureId = ref<string | undefined>(undefined)
-  const clickedPopup = ref<Popup | null>(null)
+  const clickedPopup = ref<any | null>(null)
 
   // Private state
   const currentFeatureId = ref<string | undefined>(undefined)

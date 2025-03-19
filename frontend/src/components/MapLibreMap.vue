@@ -22,7 +22,6 @@ import { onMounted, ref, watch, type Ref } from 'vue'
 import { Protocol } from 'pmtiles'
 import { useApiKeyStore } from '@/stores/apiKey'
 import { useLayersStore } from '@/stores/layers'
-import type { MapLayerConfig } from '@/config/layerTypes'
 
 const apiKeyStore = useApiKeyStore()
 const layersStore = useLayersStore()
