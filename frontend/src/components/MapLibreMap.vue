@@ -75,7 +75,7 @@ const popup = new Popup({
   className: 'feature-popup'
 })
 const selectedFeatureId = ref<string | undefined>(undefined)
-const clickedPopup = ref<Popup | null>(null)
+const clickedPopup = ref<any | null>(null)
 
 addProtocol('pmtiles', protocol.tile)
 
@@ -248,7 +248,7 @@ function attachPopupListeners(layerId: string, layerLabel: string) {
 
     // Add popup to the map
     persistentPopup.setLngLat(e.lngLat).setHTML(popupContent).addTo(map)
-    clickedPopup.value = persistentPopup
+    clickedPopup.value = persistentPopup as any
 
     // Remove the normal hover popup
     popup.remove()
