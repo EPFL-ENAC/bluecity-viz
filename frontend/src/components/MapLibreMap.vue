@@ -67,7 +67,6 @@ const protocol = new Protocol()
 
 // Use the map events composable
 const mapEventManager = useMapEvents(map as Ref<Map | undefined>)
-const { attachPopupListeners } = mapEventManager
 
 addProtocol('pmtiles', protocol.tile)
 
@@ -144,7 +143,7 @@ function initMap() {
     }
 
     // Attach popup listeners to each layer using our composable
-    mapConfig.layers.forEach((layer) => attachPopupListeners(layer.layer.id, layer.label))
+    // mapConfig.layers.forEach((layer) => attachPopupListeners(layer.layer.id, layer.label))
 
     mapInstance.on('sourcedata', handleDataEvent)
     mapInstance.on('sourcedataloading', handleDataEvent)
@@ -219,6 +218,9 @@ const getSourceTilesUrl = (sourceId: string) => {
   else return ''
 }
 const setLayerVisibility = (layerId: string, visibility: boolean) => {
+  const layerLabel = mapConfig.layers.find((layer) => layer.layer.id === layerId)?.label
+  if (visibility) mapEventManager.attachPopupListeners(layerId, layerLabel ?? '')
+  else mapEventManager.detachPopupListeners(layerId)
   map.value?.setLayoutProperty(layerId, 'visibility', visibility ? 'visible' : 'none')
 }
 
