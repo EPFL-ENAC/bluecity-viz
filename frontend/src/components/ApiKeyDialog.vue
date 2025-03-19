@@ -72,7 +72,7 @@ const saveApiKey = async () => {
 }
 
 function forceValidate() {
-  apiKeyStore.setApiKey(apiKey.value)
+  apiKeyStore.setApiKey('dev-api-key')
   dialogOpen.value = false
 }
 </script>
