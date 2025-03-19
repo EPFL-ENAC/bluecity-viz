@@ -11,8 +11,7 @@ export const sp4WasteLayers: MapLayerConfig[] = [
     info: 'Waste collection routes in Lausanne with frequency counts (2023)',
     source: {
       type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_waste_routes.pmtiles`,
-      minzoom: 10
+      url: `pmtiles://${baseUrl}/lausanne_waste_routes_2.pmtiles`
     } as VectorSourceSpecification,
     layer: {
       id: 'lausanne_waste_routes-layer',
@@ -69,6 +68,42 @@ export const sp4WasteLayers: MapLayerConfig[] = [
           10000,
           1 // Maximum width
         ]
+      }
+    } as LayerSpecification
+  },
+  {
+    id: 'lausanne_waste_centroids',
+    label: 'Waste Collection Clusters',
+    unit: 'cluster',
+    info: 'Clusters of waste collection points in Lausanne by waste type (2023)',
+    source: {
+      type: 'vector',
+      url: `pmtiles://${baseUrl}/lausanne_waste_centroids.pmtiles`
+    } as VectorSourceSpecification,
+    layer: {
+      id: 'lausanne_waste_centroids-layer',
+      type: 'circle',
+      source: 'lausanne_waste_centroids',
+      'source-layer': 'waste_centroids',
+      paint: {
+        // Circle color based on waste collection type
+        'circle-color': [
+          'match',
+          ['get', 'type'],
+          'Organic Waste',
+          '#FF8C00', // Orange - Organic waste (Déchets verts)
+          'Household Waste',
+          '#2E8B57', // Green - Household waste (Déchets incinérables)
+          'Paper & Cardboard',
+          '#8A2BE2', // Purple - Paper & Cardboard (Papier/Carton)
+          'Glass',
+          '#1E90FF', // Blue - Glass (Verre)
+          '#757575' // Gray - default for any other type
+        ],
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 3, 12, 4, 14, 6, 16, 8],
+        'circle-stroke-width': 1,
+        'circle-stroke-color': '#FFFFFF',
+        'circle-opacity': 0.8
       }
     } as LayerSpecification
   }

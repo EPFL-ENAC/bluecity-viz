@@ -27,7 +27,11 @@ const generateLegendColors = (layer: LayerSpecification): LegendColor[] | null =
     // Handle fill-extrusion, line-color, or other paint properties
     const paint = layer.paint as any
     let paintProperty =
-      paint['fill-color'] || paint['line-color'] || paint['fill-extrusion-color'] || null
+      paint['fill-color'] ||
+      paint['line-color'] ||
+      paint['fill-extrusion-color'] ||
+      paint['circle-color'] ||
+      null
 
     if (!paintProperty) return null
 
@@ -89,7 +93,11 @@ const generateOneLayerWithColors = (layer: MapLayerConfig) => {
   const colors = generateLegendColors(layer.layer) || []
   const paint = layer.layer.paint as any
   const paintProperty =
-    paint['fill-color'] || paint['line-color'] || paint['fill-extrusion-color'] || null
+    paint['fill-color'] ||
+    paint['line-color'] ||
+    paint['fill-extrusion-color'] ||
+    paint['circle-color'] ||
+    null
 
   // Check if the layer is categorical based on paint property expression
   const isCategorical =
