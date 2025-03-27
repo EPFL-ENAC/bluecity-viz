@@ -12,19 +12,19 @@ const localCorrColorScale: DataDrivenPropertyValueSpecification<ColorSpecificati
   ['linear'],
   ['to-number', ['get', 'local_corr']],
   -1,
-  '#2166ac', // Negative correlation (dark blue)
+  '#d53e4f', // Strong negative correlation (dark red)
   -0.66,
-  '#67a9cf', // Medium negative correlation (medium blue)
+  '#fc8d59', // Medium negative correlation (orange-red)
   -0.33,
-  '#d1e5f0', // Slight negative correlation (light blue)
+  '#fee08b', // Slight negative correlation (yellow-orange)
   0,
-  '#f7f7f7', // No correlation (white)
+  '#ffffbf', // No correlation (light yellow)
   0.33,
-  '#fddbc7', // Slight positive correlation (light red)
+  '#e6f598', // Slight positive correlation (light green)
   0.66,
-  '#ef8a62', // Medium positive correlation (medium red)
+  '#99d594', // Medium positive correlation (medium green)
   1,
-  '#b2182b' // Positive correlation (dark red)
+  '#3288bd' // Strong positive correlation (dark blue)
 ]
 
 const similarityColorScale: DataDrivenPropertyValueSpecification<ColorSpecification> = [
@@ -32,19 +32,19 @@ const similarityColorScale: DataDrivenPropertyValueSpecification<ColorSpecificat
   ['linear'],
   ['to-number', ['get', 'similarity']],
   0,
-  '#2166ac', // Very different (dark blue)
+  '#002051', // Very dissimilar (dark blue)
   0.2,
-  '#67a9cf', // Quite different (medium blue)
+  '#1f3e6e', // Strongly dissimilar (medium blue)
   0.4,
-  '#d1e5f0', // Slightly different (light blue)
+  '#575c6e', // Moderately dissimilar (blue-gray)
   0.5,
-  '#f7f7f7', // Neutral (white)
+  '#7f7c75', // Neutral similarity (gray)
   0.6,
-  '#fddbc7', // Slightly similar (light red)
+  '#a49d78', // Moderately similar (tan)
   0.8,
-  '#ef8a62', // Quite similar (medium red)
+  '#d5c164', // Strongly similar (gold)
   1,
-  '#b2182b' // Very similar (dark red)
+  '#fdea45' // Very similar (bright yellow)
 ]
 
 // Accessibility attributes used in filenames and for filtering
