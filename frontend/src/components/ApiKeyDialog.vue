@@ -10,6 +10,7 @@ const apiKey = ref('')
 const errorMessage = ref('')
 const isLoading = ref(false)
 const dialogOpen = ref(true) // Start with dialog open
+const isDev = import.meta.env.DEV
 
 // Separate function to test API key validity
 async function testApiKey(keyToTest: string): Promise<boolean> {
@@ -96,7 +97,9 @@ function forceValidate() {
       </v-card-text>
       <v-card-actions>
         <v-spacer></v-spacer>
-        <v-btn color="secondary" @click="forceValidate"> Dev-only force validate </v-btn>
+        <v-btn v-if="isDev" color="secondary" @click="forceValidate">
+          Dev-only force validate
+        </v-btn>
         <v-btn color="primary" :loading="isLoading" @click="saveApiKey"> Submit </v-btn>
       </v-card-actions>
     </v-card>
