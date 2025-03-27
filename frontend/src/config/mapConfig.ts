@@ -1,3 +1,4 @@
+import { allCorrelationLayers, correlationLayerGroups } from '@/config/correlation'
 import { baseUrlOptions, type MapLayerConfig } from '@/config/layerTypes'
 import { sp0MigrationLayers } from '@/config/sp0_migration'
 import { sp2MobilityLayers } from '@/config/sp2_mobility'
@@ -14,6 +15,7 @@ export const mapConfig = {
     ...sp4WasteLayers,
     ...sp6MaterialsLayers,
     ...sp7VehicleLayers,
+    ...allCorrelationLayers,
     ...sp0MigrationLayers
   ] as MapLayerConfig[]
 }
@@ -48,6 +50,7 @@ export const layerGroups = [
     multiple: false,
     layers: sp6MaterialsLayers
   },
-  { id: 'sp7', label: 'SP7 Goods', expanded: false, multiple: false, layers: sp7VehicleLayers }
+  { id: 'sp7', label: 'SP7 Goods', expanded: false, multiple: false, layers: sp7VehicleLayers },
+  ...correlationLayerGroups
   // Add other groups as needed
 ]
