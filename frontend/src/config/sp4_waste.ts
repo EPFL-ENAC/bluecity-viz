@@ -11,6 +11,7 @@ export const sp4WasteLayers: MapLayerConfig[] = [
     info: 'Waste collection routes in Lausanne with frequency counts (2023)',
     source: {
       type: 'vector',
+      attribution: 'Ville de Lausanne',
       url: `pmtiles://${baseUrl}/lausanne_waste_routes_2.pmtiles`
     } as VectorSourceSpecification,
     layer: {
@@ -78,6 +79,7 @@ export const sp4WasteLayers: MapLayerConfig[] = [
     info: 'Clusters of waste collection points in Lausanne by waste type (2023)',
     source: {
       type: 'vector',
+      attribution: 'Ville de Lausanne',
       url: `pmtiles://${baseUrl}/lausanne_waste_centroids.pmtiles`
     } as VectorSourceSpecification,
     layer: {
