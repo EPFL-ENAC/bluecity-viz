@@ -12,6 +12,8 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
     info: 'Buildings in Lausanne colored by construction era',
     source: {
       type: 'vector',
+      attribution:
+        'Registre fédéral des bâtiments et des logements (RegBL), Office Fédéral de la Statistique (OFS); Swiss Map Vector 10, Federal Office of Topography swisstopo',
       url: `pmtiles://${baseUrl}/buildings.pmtiles`,
       minzoom: 10
     } as VectorSourceSpecification,
@@ -66,6 +68,8 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
     info: 'Buildings in Lausanne colored by their functional use',
     source: {
       type: 'vector',
+      attribution:
+        'Registre fédéral des bâtiments et des logements (RegBL), Office Fédéral de la Statistique (OFS); Swiss Map Vector 10, Federal Office of Topography swisstopo',
       url: `pmtiles://${baseUrl}/buildings.pmtiles`,
       minzoom: 10
     } as VectorSourceSpecification,
@@ -104,6 +108,8 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
     info: 'Buildings in Lausanne colored by their architectural archetype',
     source: {
       type: 'vector',
+      attribution:
+        'Registre fédéral des bâtiments et des logements (RegBL), Office Fédéral de la Statistique (OFS); Swiss Map Vector 10, Federal Office of Topography swisstopo; own calculations',
       url: `pmtiles://${baseUrl}/buildings.pmtiles`,
       minzoom: 10
     } as VectorSourceSpecification,
@@ -176,6 +182,7 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
     info: 'Outline of all buildings in Lausanne',
     source: {
       type: 'vector',
+      attribution: 'Swiss Map Vector 10, Federal Office of Topography swisstopo',
       url: `pmtiles://${baseUrl}/buildings.pmtiles`,
       minzoom: 10
     } as VectorSourceSpecification,
