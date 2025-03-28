@@ -12,6 +12,7 @@ export const sp3NatureLayers: MapLayerConfig[] = [
     info: 'Annual average temperature across Lausanne using 200m x 200m grid cells.',
     source: {
       type: 'vector',
+      attribution: 'Sparrow Analytics SA',
       url: `pmtiles://${baseUrl}/lausanne_temperature_yearly.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
@@ -54,6 +55,7 @@ export const sp3NatureLayers: MapLayerConfig[] = [
     info: 'Annual average air quality index across Lausanne using 200m x 200m grid cells.',
     source: {
       type: 'vector',
+      attribution: 'Sparrow Analytics SA',
       url: `pmtiles://${baseUrl}/lausanne_aqi_yearly.pmtiles`,
       minzoom: 5
     } as VectorSourceSpecification,
@@ -101,6 +103,7 @@ export const sp3NatureLayers: MapLayerConfig[] = [
     unit: 'group',
     info: 'Animal species observations in Lausanne area, colored by taxonomic group.',
     source: {
+      attribution: 'info fauna, National Data and Information Centre on Wildlife in Switzerland',
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_species.pmtiles`
     } as VectorSourceSpecification,
@@ -157,6 +160,7 @@ export const sp3NatureLayers: MapLayerConfig[] = [
     unit: 'status',
     info: 'Animal species observations in Lausanne area, colored by conservation status (Red List category).',
     source: {
+      attribution: 'info fauna, National Data and Information Centre on Wildlife in Switzerland',
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_species.pmtiles`
     } as VectorSourceSpecification,
