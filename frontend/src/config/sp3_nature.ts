@@ -99,7 +99,7 @@ export const sp3NatureLayers: MapLayerConfig[] = [
     id: 'species_observations_by_group',
     label: 'Species Observations (by Group)',
     unit: 'group',
-    info: 'Wildlife species observations in Lausanne area, colored by taxonomic group.',
+    info: 'Animal species observations in Lausanne area, colored by taxonomic group.',
     source: {
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_species.pmtiles`
@@ -155,7 +155,7 @@ export const sp3NatureLayers: MapLayerConfig[] = [
     id: 'species_observations_by_redlist',
     label: 'Species Observations (by Red List Status)',
     unit: 'status',
-    info: 'Wildlife species observations in Lausanne area, colored by conservation status (Red List category).',
+    info: 'Animal species observations in Lausanne area, colored by conservation status (Red List category).',
     source: {
       type: 'vector',
       url: `pmtiles://${baseUrl}/lausanne_species.pmtiles`
