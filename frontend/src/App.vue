@@ -4,8 +4,8 @@ import ApiKeyDialog from './components/ApiKeyDialog.vue'
 </script>
 
 <template>
-  <v-app>
-    <v-main>
+  <v-app class="fill-height">
+    <v-main class="fill-height">
       <ApiKeyDialog />
       <RouterView />
     </v-main>
