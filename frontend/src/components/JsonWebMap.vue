@@ -6,6 +6,7 @@ import type { Parameters } from '@/utils/jsonWebMap'
 import { ref, shallowRef, watch } from 'vue'
 import LegendMap from '@/components/LegendMap.vue'
 import LayerGroups from '@/components/LayerGroups.vue'
+import BuildingDistributionChart from '@/components/BuildingDistributionChart.vue'
 import { useLayersStore } from '@/stores/layers'
 
 const map = ref<InstanceType<typeof MapLibreMap>>()
@@ -61,6 +62,16 @@ watch(
           <v-card-text class="d-flex flex-column">
             <!-- Use the new LayerGroups component -->
             <LayerGroups />
+          </v-card-text>
+        </v-card>
+
+        <!-- Building Distribution Chart -->
+        <v-card flat class="mt-4">
+          <v-card-title class="ml-2">
+            <h4 class="text-center mb-4">BUILDING DISTRIBUTION</h4>
+          </v-card-title>
+          <v-card-text>
+            <BuildingDistributionChart />
           </v-card-text>
         </v-card>
       </v-col>

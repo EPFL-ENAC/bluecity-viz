@@ -22,9 +22,11 @@ import { onMounted, ref, watch, type Ref } from 'vue'
 import { Protocol } from 'pmtiles'
 import { useApiKeyStore } from '@/stores/apiKey'
 import { useLayersStore } from '@/stores/layers'
+import { useBuildingsStore } from '@/stores/buildings'
 
 const apiKeyStore = useApiKeyStore()
 const layersStore = useLayersStore()
+const buildingsStore = useBuildingsStore()
 
 const props = withDefaults(
   defineProps<{
@@ -60,12 +62,67 @@ const props = withDefaults(
 
 const loading = ref(true)
 const container = ref<HTMLDivElement | null>(null)
-const map = ref<any | undefined>(undefined)
+const map = ref<Map | undefined>(undefined)
 const hasLoaded = ref(false)
 const protocol = new Protocol()
+const updateBuildingsTimeout = ref<number | null>(null)
 
 // Use the map events composable
 const mapEventManager = useMapEvents(map as Ref<Map | undefined>)
+
+function updateBuildingsData() {
+  // Clear any existing timeout
+  if (updateBuildingsTimeout.value !== null) {
+    clearTimeout(updateBuildingsTimeout.value)
+  }
+
+  // Set a new timeout to execute the actual update
+  updateBuildingsTimeout.value = setTimeout(() => {
+    updateBuildingsTimeout.value = null
+    if (!map.value) return
+
+    // Only query if buildings layer is visible and at appropriate zoom level
+    const zoom = map.value.getZoom()
+    console.log('Map zoom level:', zoom)
+    if (zoom < 15) return // Increased minimum zoom to reduce feature count
+
+    // Check if buildings layer is actually visible
+    const layerVisibility = map.value.getLayoutProperty('buildings_by_function-layer', 'visibility')
+    if (layerVisibility === 'none') return
+
+    // Query only buildings layer with filters to limit results
+    const features = map.value.queryRenderedFeatures(
+      undefined, // Query entire viewport
+      {
+        layers: ['buildings_by_function-layer']
+        // Add filter to reduce dataset size - only larger buildings
+      }
+    )
+
+    console.log(`Found ${features.length} building features at zoom ${zoom}`)
+
+    // Limit the number of features processed to prevent performance issues
+    const maxFeatures = 1000
+    const limitedFeatures =
+      features.length > maxFeatures ? features.slice(0, maxFeatures) : features
+
+    if (limitedFeatures.length > 0) {
+      console.log(`Processing ${limitedFeatures.length} features (limited from ${features.length})`)
+
+      // Use requestIdleCallback for non-blocking processing if available
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(() => {
+          buildingsStore.updateRenderedBuildings(limitedFeatures)
+        })
+      } else {
+        // Fallback: process in next tick
+        setTimeout(() => {
+          buildingsStore.updateRenderedBuildings(limitedFeatures)
+        }, 0)
+      }
+    }
+  }, 500) // Increased debounce time to reduce frequency
+}
 
 addProtocol('pmtiles', protocol.tile)
 
@@ -101,7 +158,7 @@ function initMap() {
 
   map.value = newMap
 
-  const mapInstance = map.value as Map
+  const mapInstance = newMap
 
   // map.showTileBoundaries = true
   mapInstance.addControl(new NavigationControl({}))
@@ -146,7 +203,8 @@ function initMap() {
 
     mapInstance.on('sourcedata', handleDataEvent)
     mapInstance.on('sourcedataloading', handleDataEvent)
-
+    mapInstance.on('moveend', updateBuildingsData)
+    mapInstance.on('zoomend', updateBuildingsData)
     filterSP0Period(layersStore.sp0Period)
 
     if (props.callbackLoaded) {

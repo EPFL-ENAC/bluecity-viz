@@ -15,6 +15,7 @@
     "schema": "typescript-json-schema --esModuleInterop -o schema/parameters.schema.json src/utils/*.ts Parameters"
   },
   "dependencies": {
+    "echarts": "^5.6.0",
     "lodash": "^4.17.21",
     "maplibre-gl": "^4.3.2",
     "mdi": "^2.2.43",
