@@ -1,17 +1,19 @@
-import type { MapLayerConfig } from '@/config/layerTypes'
+import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
 import { baseUrl } from '@/config/layerTypes'
 
-import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
+import type { LayerSpecification } from 'maplibre-gl'
 
 // Shared source configuration for all SP0 migration layers
-const migrationSource: VectorSourceSpecification = {
-  attribution: 'https://www.bfs.admin.ch/',
+const migrationSource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'lausanne_migration',
+  label: 'Lausanne Migration Data - SP0',
+  attribution: 'https://www.bfs.admin.ch/',
   url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
   minzoom: 5
 }
 
-export const sp0MigrationSources: VectorSourceSpecification[] = [migrationSource]
+export const sp0MigrationSources: CustomSourceSpecification[] = [migrationSource]
 
 export const sp0MigrationLayers: MapLayerConfig[] = [
   // SPO MIGRATION LAYERS

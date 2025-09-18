@@ -1,17 +1,19 @@
-import type { MapLayerConfig } from '@/config/layerTypes'
+import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
 import { baseUrl } from '@/config/layerTypes'
 
-import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
+import type { LayerSpecification } from 'maplibre-gl'
 
 // Shared source configuration for all SP2 mobility layers
-const mobilitySource: VectorSourceSpecification = {
+const mobilitySource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'accessibility_atlas',
+  label: 'Urban Accessibility Atlas - SP2',
   attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
   url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
   minzoom: 5
 }
 
-export const sp2MobilitySources: VectorSourceSpecification[] = [mobilitySource]
+export const sp2MobilitySources: CustomSourceSpecification[] = [mobilitySource]
 
 export const sp2MobilityLayers: MapLayerConfig[] = [
   // Access to food shops (walk)

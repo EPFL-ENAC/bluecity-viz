@@ -1,15 +1,17 @@
-import type { MapLayerConfig } from '@/config/layerTypes'
+import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
 import { baseUrl } from '@/config/layerTypes'
 
-import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
+import type { LayerSpecification } from 'maplibre-gl'
 
-const vehicleTracksSource: VectorSourceSpecification = {
+const vehicleTracksSource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'vehicle_tracks',
+  label: 'Vehicle Tracking - SP7',
   url: `pmtiles://${baseUrl}/vehicle_tracks.pmtiles`,
   minzoom: 8
 }
 
-export const sp7VehicleSources: VectorSourceSpecification[] = [vehicleTracksSource]
+export const sp7VehicleSources: CustomSourceSpecification[] = [vehicleTracksSource]
 
 export const sp7VehicleLayers: MapLayerConfig[] = [
   {

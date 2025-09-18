@@ -1,10 +1,9 @@
-import type { MapLayerConfig } from '@/config/layerTypes'
+import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
 import { baseUrl } from '@/config/layerTypes'
 import type {
   ColorSpecification,
   DataDrivenPropertyValueSpecification,
-  LayerSpecification,
-  VectorSourceSpecification
+  LayerSpecification
 } from 'maplibre-gl'
 
 const localCorrColorScale: DataDrivenPropertyValueSpecification<ColorSpecification> = [
@@ -75,6 +74,34 @@ const accessLabels = [
   'Job access ratio (Transit vs Car)'
 ]
 
+// Shared source configurations for correlation data
+const wastePopCorrelationSource: CustomSourceSpecification = {
+  type: 'vector',
+  id: 'corr_waste_pop',
+  label: 'Population & Waste Correlation Data',
+  url: `pmtiles://${baseUrl}/lausanne_corr_waste_pop.pmtiles`
+}
+
+const popAccessCorrelationSource: CustomSourceSpecification = {
+  type: 'vector',
+  id: 'corr_pop_access',
+  label: 'Population & Accessibility Correlation Data',
+  url: `pmtiles://${baseUrl}/lausanne_corr_pop_access.pmtiles`
+}
+
+const wasteAccessCorrelationSource: CustomSourceSpecification = {
+  type: 'vector',
+  id: 'corr_waste_access',
+  label: 'Waste & Accessibility Correlation Data',
+  url: `pmtiles://${baseUrl}/lausanne_corr_waste_access.pmtiles`
+}
+
+export const correlationSources: CustomSourceSpecification[] = [
+  wastePopCorrelationSource,
+  popAccessCorrelationSource,
+  wasteAccessCorrelationSource
+]
+
 // Generate correlation layers - Population & Waste
 export const wastePopCorrelationLayers: MapLayerConfig[] = [
   // Local Correlation (Pearson)
@@ -83,10 +110,7 @@ export const wastePopCorrelationLayers: MapLayerConfig[] = [
     label: 'Population & Waste (Local Correlation)',
     unit: 'correlation (-1 to 1)',
     info: 'Local Pearson correlation between population density and waste collection routes. Blue = negative correlation, Red = positive correlation.',
-    source: {
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_corr_waste_pop.pmtiles`
-    } as VectorSourceSpecification,
+    source: wastePopCorrelationSource,
     layer: {
       id: 'waste_pop_localcorr-layer',
       type: 'fill',
@@ -106,10 +130,7 @@ export const wastePopCorrelationLayers: MapLayerConfig[] = [
     label: 'Population & Waste (Similarity)',
     unit: 'similarity (0-1)',
     info: 'Similarity between population density and waste collection routes. Blue = different, Red = similar.',
-    source: {
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_corr_waste_pop.pmtiles`
-    } as VectorSourceSpecification,
+    source: wastePopCorrelationSource,
     layer: {
       id: 'waste_pop_similarity-layer',
       type: 'fill',
@@ -135,10 +156,7 @@ export const popAccessCorrelationLayers: MapLayerConfig[] = [
     info: `Local Pearson correlation between population density and ${accessLabels[
       index
     ].toLowerCase()}. Blue = negative correlation, Red = positive correlation.`,
-    source: {
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_corr_pop_access.pmtiles`
-    } as VectorSourceSpecification,
+    source: popAccessCorrelationSource,
     layer: {
       id: `pop_access_localcorr_${index}-layer`,
       type: 'fill',
@@ -164,10 +182,7 @@ export const popAccessCorrelationLayers: MapLayerConfig[] = [
     info: `Similarity between population density and ${accessLabels[
       index
     ].toLowerCase()}. Blue = different, Red = similar.`,
-    source: {
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_corr_pop_access.pmtiles`
-    } as VectorSourceSpecification,
+    source: popAccessCorrelationSource,
     layer: {
       id: `pop_access_similarity_${index}-layer`,
       type: 'fill',
@@ -197,10 +212,7 @@ export const wasteAccessCorrelationLayers: MapLayerConfig[] = [
     info: `Local Pearson correlation between waste collection density and ${accessLabels[
       index
     ].toLowerCase()}. Blue = negative correlation, Red = positive correlation.`,
-    source: {
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_corr_waste_access.pmtiles`
-    } as VectorSourceSpecification,
+    source: wasteAccessCorrelationSource,
     layer: {
       id: `waste_access_localcorr_${index}-layer`,
       type: 'fill',
@@ -226,10 +238,7 @@ export const wasteAccessCorrelationLayers: MapLayerConfig[] = [
     info: `Similarity between waste collection density and ${accessLabels[
       index
     ].toLowerCase()}. Blue = different, Red = similar.`,
-    source: {
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_corr_waste_access.pmtiles`
-    } as VectorSourceSpecification,
+    source: wasteAccessCorrelationSource,
     layer: {
       id: `waste_access_similarity_${index}-layer`,
       type: 'fill',

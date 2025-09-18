@@ -1,34 +1,40 @@
-import type { MapLayerConfig } from '@/config/layerTypes'
+import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
 import { baseUrl } from '@/config/layerTypes'
 
-import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
+import type { LayerSpecification } from 'maplibre-gl'
 
 // Shared source configuration for SP6 materials layers
-const buildingsSource: VectorSourceSpecification = {
+const buildingsEraSource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'buildings_era',
+  label: 'Buildings Era - SP6',
   attribution:
     'Registre fédéral des bâtiments et des logements (RegBL), Office Fédéral de la Statistique (OFS); Swiss Map Vector 10, Federal Office of Topography swisstopo',
   url: `pmtiles://${baseUrl}/buildings.pmtiles`,
   minzoom: 10
 }
 
-const buildingsArchetypeSource: VectorSourceSpecification = {
+const buildingsArchetypeSource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'buildings_archetype',
+  label: 'Buildings Archetype - SP6',
   attribution:
     'Registre fédéral des bâtiments et des logements (RegBL), Office Fédéral de la Statistique (OFS); Swiss Map Vector 10, Federal Office of Topography swisstopo; own calculations',
   url: `pmtiles://${baseUrl}/buildings.pmtiles`,
   minzoom: 10
 }
 
-const buildingsOutlineSource: VectorSourceSpecification = {
+const buildingsOutlineSource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'buildings_outline',
+  label: 'Buildings Outline - SP6',
   attribution: 'Swiss Map Vector 10, Federal Office of Topography swisstopo',
   url: `pmtiles://${baseUrl}/buildings.pmtiles`,
   minzoom: 10
 }
 
-export const sp6MaterialsSources: VectorSourceSpecification[] = [
-  buildingsSource,
+export const sp6MaterialsSources: CustomSourceSpecification[] = [
+  buildingsEraSource,
   buildingsArchetypeSource,
   buildingsOutlineSource
 ]
@@ -40,7 +46,7 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
     label: 'Buildings by Era',
     unit: 'era',
     info: 'Buildings in Lausanne colored by construction era',
-    source: buildingsSource,
+    source: buildingsEraSource,
     layer: {
       id: 'buildings_by_era-layer',
       type: 'fill',
@@ -90,7 +96,7 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
     label: 'Buildings by Function',
     unit: 'function',
     info: 'Buildings in Lausanne colored by their functional use',
-    source: buildingsSource,
+    source: buildingsEraSource,
     layer: {
       id: 'buildings_by_function-layer',
       type: 'fill',

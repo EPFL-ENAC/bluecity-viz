@@ -1,22 +1,26 @@
-import type { MapLayerConfig } from '@/config/layerTypes'
+import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
 import { baseUrl } from '@/config/layerTypes'
 
-import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
+import type { LayerSpecification } from 'maplibre-gl'
 
 // Shared source configuration for SP4 waste layers
-const wasteRoutesSource: VectorSourceSpecification = {
+const wasteRoutesSource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'waste_routes',
+  label: 'Waste Collection Routes - SP4',
   attribution: 'Ville de Lausanne',
   url: `pmtiles://${baseUrl}/lausanne_waste_routes_2.pmtiles`
 }
 
-const wasteCentroidsSource: VectorSourceSpecification = {
+const wasteCentroidsSource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'waste_centroids',
+  label: 'Waste Collection Centroids - SP4',
   attribution: 'Ville de Lausanne',
   url: `pmtiles://${baseUrl}/lausanne_waste_centroids.pmtiles`
 }
 
-export const sp4WasteSources: VectorSourceSpecification[] = [
+export const sp4WasteSources: CustomSourceSpecification[] = [
   wasteRoutesSource,
   wasteCentroidsSource
 ]

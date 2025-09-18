@@ -1,31 +1,37 @@
-import type { MapLayerConfig } from '@/config/layerTypes'
+import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
 import { baseUrl } from '@/config/layerTypes'
 
-import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
+import type { LayerSpecification } from 'maplibre-gl'
 
-// Shared source configuration for all SP3 nature layers
-const temperatureYearlySource: VectorSourceSpecification = {
+// Shared source configuration for SP3 nature layers
+const temperatureYearlySource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'lausanne_temperature',
+  label: 'Temperature Data - SP3',
   attribution: 'Sparrow Analytics SA',
   url: `pmtiles://${baseUrl}/lausanne_temperature_yearly.pmtiles`,
   minzoom: 5
 }
 
-const aqiYearlySource: VectorSourceSpecification = {
+const aqiYearlySource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'lausanne_aqi',
+  label: 'Air Quality Index - SP3',
   attribution: 'Sparrow Analytics SA',
   url: `pmtiles://${baseUrl}/lausanne_aqi_yearly.pmtiles`,
   minzoom: 5
 }
 
-const speciesObservationSource: VectorSourceSpecification = {
+const speciesObservationSource: CustomSourceSpecification = {
   type: 'vector',
+  id: 'lausanne_species',
+  label: 'Species Observations - SP3',
   attribution: 'info fauna, National Data and Information Centre on Wildlife in Switzerland',
   url: `pmtiles://${baseUrl}/lausanne_species.pmtiles`,
   minzoom: 5
 }
 
-export const sp3NatureSources: VectorSourceSpecification[] = [
+export const sp3NatureSources: CustomSourceSpecification[] = [
   temperatureYearlySource,
   aqiYearlySource,
   speciesObservationSource

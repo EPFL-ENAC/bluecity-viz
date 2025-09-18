@@ -1,11 +1,16 @@
-import { allCorrelationLayers, correlationLayerGroups } from '@/config/correlation'
+import {
+  allCorrelationLayers,
+  correlationLayerGroups,
+  correlationSources
+} from '@/config/correlation'
+import type { CustomSourceSpecification } from '@/config/layerTypes'
 import { baseUrlOptions, type MapLayerConfig } from '@/config/layerTypes'
-import { sp0MigrationLayers } from '@/config/sp0_migration'
-import { sp2MobilityLayers } from '@/config/sp2_mobility'
-import { sp3NatureLayers } from '@/config/sp3_nature'
-import { sp4WasteLayers } from '@/config/sp4_waste'
-import { sp6MaterialsLayers } from '@/config/sp6_materials'
-import { sp7VehicleLayers } from '@/config/sp7'
+import { sp0MigrationLayers, sp0MigrationSources } from '@/config/sp0_migration'
+import { sp2MobilityLayers, sp2MobilitySources } from '@/config/sp2_mobility'
+import { sp3NatureLayers, sp3NatureSources } from '@/config/sp3_nature'
+import { sp4WasteLayers, sp4WasteSources } from '@/config/sp4_waste'
+import { sp6MaterialsLayers, sp6MaterialsSources } from '@/config/sp6_materials'
+import { sp7VehicleLayers, sp7VehicleSources } from '@/config/sp7'
 
 export const mapConfig = {
   baseUrl: baseUrlOptions,
@@ -17,7 +22,16 @@ export const mapConfig = {
     ...sp7VehicleLayers,
     ...allCorrelationLayers,
     ...sp0MigrationLayers
-  ] as MapLayerConfig[]
+  ] as MapLayerConfig[],
+  sources: [
+    ...sp2MobilitySources,
+    ...sp3NatureSources,
+    ...sp4WasteSources,
+    ...sp6MaterialsSources,
+    ...sp7VehicleSources,
+    ...sp0MigrationSources,
+    ...correlationSources
+  ] as CustomSourceSpecification[]
 }
 
 export const layerGroups = [

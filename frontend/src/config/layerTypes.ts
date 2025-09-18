@@ -1,6 +1,10 @@
-import type { LayerSpecification, SourceSpecification } from 'maplibre-gl'
+import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
 
 export type CustomLayerSpecification = LayerSpecification & { groupId: string }
+export type CustomSourceSpecification = VectorSourceSpecification & {
+  id: string
+  label?: string
+}
 
 export type LayerGroup = {
   id: string
@@ -14,7 +18,7 @@ export interface MapLayerConfig {
   label: string
   unit: string
   info: string
-  source: SourceSpecification
+  source: CustomSourceSpecification
   layer: LayerSpecification
 }
 
