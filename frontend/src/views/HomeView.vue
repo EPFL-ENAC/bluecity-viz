@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import CollectionsPanel from '@/components/CollectionsPanel.vue'
-import VisualizationsPanel from '@/components/VisualizationsPanel.vue'
-import ResourcesPanel from '@/components/ResourcesPanel.vue'
+import CollectionsPanel from '@/components/panels/CollectionsPanel.vue'
+import VisualizationsPanel from '@/components/panels/VisualizationsPanel.vue'
+import ResourcesPanel from '@/components/panels/ResourcesPanel.vue'
 </script>
 
 <template>
