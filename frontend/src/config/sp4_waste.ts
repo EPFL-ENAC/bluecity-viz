@@ -3,17 +3,31 @@ import { baseUrl } from '@/config/layerTypes'
 
 import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
 
+// Shared source configuration for SP4 waste layers
+const wasteRoutesSource: VectorSourceSpecification = {
+  type: 'vector',
+  attribution: 'Ville de Lausanne',
+  url: `pmtiles://${baseUrl}/lausanne_waste_routes_2.pmtiles`
+}
+
+const wasteCentroidsSource: VectorSourceSpecification = {
+  type: 'vector',
+  attribution: 'Ville de Lausanne',
+  url: `pmtiles://${baseUrl}/lausanne_waste_centroids.pmtiles`
+}
+
+export const sp4WasteSources: VectorSourceSpecification[] = [
+  wasteRoutesSource,
+  wasteCentroidsSource
+]
+
 export const sp4WasteLayers: MapLayerConfig[] = [
   {
     id: 'lausanne_waste_routes',
     label: 'Waste Collection Routes',
     unit: 'count',
     info: 'Waste collection routes in Lausanne with frequency counts (2023)',
-    source: {
-      type: 'vector',
-      attribution: 'Ville de Lausanne',
-      url: `pmtiles://${baseUrl}/lausanne_waste_routes_2.pmtiles`
-    } as VectorSourceSpecification,
+    source: wasteRoutesSource,
     layer: {
       id: 'lausanne_waste_routes-layer',
       type: 'line',
@@ -77,11 +91,7 @@ export const sp4WasteLayers: MapLayerConfig[] = [
     label: 'Waste Collection Clusters',
     unit: 'cluster',
     info: 'Clusters of waste collection points in Lausanne by waste type (2023)',
-    source: {
-      type: 'vector',
-      attribution: 'Ville de Lausanne',
-      url: `pmtiles://${baseUrl}/lausanne_waste_centroids.pmtiles`
-    } as VectorSourceSpecification,
+    source: wasteCentroidsSource,
     layer: {
       id: 'lausanne_waste_centroids-layer',
       type: 'circle',

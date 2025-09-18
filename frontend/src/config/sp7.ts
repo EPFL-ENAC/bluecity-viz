@@ -3,17 +3,21 @@ import { baseUrl } from '@/config/layerTypes'
 
 import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
 
+const vehicleTracksSource: VectorSourceSpecification = {
+  type: 'vector',
+  url: `pmtiles://${baseUrl}/vehicle_tracks.pmtiles`,
+  minzoom: 8
+}
+
+export const sp7VehicleSources: VectorSourceSpecification[] = [vehicleTracksSource]
+
 export const sp7VehicleLayers: MapLayerConfig[] = [
   {
     id: 'vehicle_tracks',
     label: 'Vehicle Tracking Routes',
     unit: 'tracks',
     info: 'Vehicle tracking data showing routes taken by vehicles on different dates',
-    source: {
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/vehicle_tracks.pmtiles`,
-      minzoom: 8
-    } as VectorSourceSpecification,
+    source: vehicleTracksSource,
     layer: {
       id: 'vehicle_tracks-layer',
       type: 'line',
@@ -63,11 +67,7 @@ export const sp7VehicleLayers: MapLayerConfig[] = [
     label: 'Vehicle Tracks by Date',
     unit: 'date',
     info: 'Vehicle tracking routes colored by date of travel',
-    source: {
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/vehicle_tracks.pmtiles`,
-      minzoom: 8
-    } as VectorSourceSpecification,
+    source: vehicleTracksSource,
     layer: {
       id: 'vehicle_tracks_by_date-layer',
       type: 'line',

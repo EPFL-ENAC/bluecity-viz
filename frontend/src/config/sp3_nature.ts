@@ -3,6 +3,34 @@ import { baseUrl } from '@/config/layerTypes'
 
 import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
 
+// Shared source configuration for all SP3 nature layers
+const temperatureYearlySource: VectorSourceSpecification = {
+  type: 'vector',
+  attribution: 'Sparrow Analytics SA',
+  url: `pmtiles://${baseUrl}/lausanne_temperature_yearly.pmtiles`,
+  minzoom: 5
+}
+
+const aqiYearlySource: VectorSourceSpecification = {
+  type: 'vector',
+  attribution: 'Sparrow Analytics SA',
+  url: `pmtiles://${baseUrl}/lausanne_aqi_yearly.pmtiles`,
+  minzoom: 5
+}
+
+const speciesObservationSource: VectorSourceSpecification = {
+  type: 'vector',
+  attribution: 'info fauna, National Data and Information Centre on Wildlife in Switzerland',
+  url: `pmtiles://${baseUrl}/lausanne_species.pmtiles`,
+  minzoom: 5
+}
+
+export const sp3NatureSources: VectorSourceSpecification[] = [
+  temperatureYearlySource,
+  aqiYearlySource,
+  speciesObservationSource
+]
+
 export const sp3NatureLayers: MapLayerConfig[] = [
   // Temperature Layer
   {
@@ -10,12 +38,7 @@ export const sp3NatureLayers: MapLayerConfig[] = [
     label: 'Temperature (Annual Average)',
     unit: '°C',
     info: 'Annual average temperature across Lausanne using 200m x 200m grid cells.',
-    source: {
-      type: 'vector',
-      attribution: 'Sparrow Analytics SA',
-      url: `pmtiles://${baseUrl}/lausanne_temperature_yearly.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: temperatureYearlySource,
     layer: {
       id: 'lausanne_temperature-layer',
       type: 'fill',
@@ -53,12 +76,7 @@ export const sp3NatureLayers: MapLayerConfig[] = [
     label: 'Air Quality Index (Annual)',
     unit: 'AQI',
     info: 'Annual average air quality index across Lausanne using 200m x 200m grid cells.',
-    source: {
-      type: 'vector',
-      attribution: 'Sparrow Analytics SA',
-      url: `pmtiles://${baseUrl}/lausanne_aqi_yearly.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: aqiYearlySource,
     layer: {
       id: 'lausanne_aqi-layer',
       type: 'fill',
@@ -102,11 +120,7 @@ export const sp3NatureLayers: MapLayerConfig[] = [
     label: 'Species Observations (by Group)',
     unit: 'group',
     info: 'Animal species observations in Lausanne area, colored by taxonomic group.',
-    source: {
-      attribution: 'info fauna, National Data and Information Centre on Wildlife in Switzerland',
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_species.pmtiles`
-    } as VectorSourceSpecification,
+    source: speciesObservationSource,
     layer: {
       id: 'species_observations_by_group-layer',
       type: 'circle',
@@ -159,11 +173,7 @@ export const sp3NatureLayers: MapLayerConfig[] = [
     label: 'Species Observations (by Red List Status)',
     unit: 'status',
     info: 'Animal species observations in Lausanne area, colored by conservation status (Red List category).',
-    source: {
-      attribution: 'info fauna, National Data and Information Centre on Wildlife in Switzerland',
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_species.pmtiles`
-    } as VectorSourceSpecification,
+    source: speciesObservationSource,
     layer: {
       id: 'species_observations_by_redlist-layer',
       type: 'circle',

@@ -3,6 +3,36 @@ import { baseUrl } from '@/config/layerTypes'
 
 import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
 
+// Shared source configuration for SP6 materials layers
+const buildingsSource: VectorSourceSpecification = {
+  type: 'vector',
+  attribution:
+    'Registre fédéral des bâtiments et des logements (RegBL), Office Fédéral de la Statistique (OFS); Swiss Map Vector 10, Federal Office of Topography swisstopo',
+  url: `pmtiles://${baseUrl}/buildings.pmtiles`,
+  minzoom: 10
+}
+
+const buildingsArchetypeSource: VectorSourceSpecification = {
+  type: 'vector',
+  attribution:
+    'Registre fédéral des bâtiments et des logements (RegBL), Office Fédéral de la Statistique (OFS); Swiss Map Vector 10, Federal Office of Topography swisstopo; own calculations',
+  url: `pmtiles://${baseUrl}/buildings.pmtiles`,
+  minzoom: 10
+}
+
+const buildingsOutlineSource: VectorSourceSpecification = {
+  type: 'vector',
+  attribution: 'Swiss Map Vector 10, Federal Office of Topography swisstopo',
+  url: `pmtiles://${baseUrl}/buildings.pmtiles`,
+  minzoom: 10
+}
+
+export const sp6MaterialsSources: VectorSourceSpecification[] = [
+  buildingsSource,
+  buildingsArchetypeSource,
+  buildingsOutlineSource
+]
+
 export const sp6MaterialsLayers: MapLayerConfig[] = [
   // Buildings colored by Era
   {
@@ -10,13 +40,7 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
     label: 'Buildings by Era',
     unit: 'era',
     info: 'Buildings in Lausanne colored by construction era',
-    source: {
-      type: 'vector',
-      attribution:
-        'Registre fédéral des bâtiments et des logements (RegBL), Office Fédéral de la Statistique (OFS); Swiss Map Vector 10, Federal Office of Topography swisstopo',
-      url: `pmtiles://${baseUrl}/buildings.pmtiles`,
-      minzoom: 10
-    } as VectorSourceSpecification,
+    source: buildingsSource,
     layer: {
       id: 'buildings_by_era-layer',
       type: 'fill',
@@ -66,13 +90,7 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
     label: 'Buildings by Function',
     unit: 'function',
     info: 'Buildings in Lausanne colored by their functional use',
-    source: {
-      type: 'vector',
-      attribution:
-        'Registre fédéral des bâtiments et des logements (RegBL), Office Fédéral de la Statistique (OFS); Swiss Map Vector 10, Federal Office of Topography swisstopo',
-      url: `pmtiles://${baseUrl}/buildings.pmtiles`,
-      minzoom: 10
-    } as VectorSourceSpecification,
+    source: buildingsSource,
     layer: {
       id: 'buildings_by_function-layer',
       type: 'fill',
@@ -106,13 +124,7 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
     label: 'Buildings by Archetype',
     unit: 'archetype',
     info: 'Buildings in Lausanne colored by their architectural archetype',
-    source: {
-      type: 'vector',
-      attribution:
-        'Registre fédéral des bâtiments et des logements (RegBL), Office Fédéral de la Statistique (OFS); Swiss Map Vector 10, Federal Office of Topography swisstopo; own calculations',
-      url: `pmtiles://${baseUrl}/buildings.pmtiles`,
-      minzoom: 10
-    } as VectorSourceSpecification,
+    source: buildingsArchetypeSource,
     layer: {
       id: 'buildings_by_archetype-layer',
       type: 'fill',
@@ -180,12 +192,7 @@ export const sp6MaterialsLayers: MapLayerConfig[] = [
     label: 'Buildings Outline',
     unit: 'outline',
     info: 'Outline of all buildings in Lausanne',
-    source: {
-      type: 'vector',
-      attribution: 'Swiss Map Vector 10, Federal Office of Topography swisstopo',
-      url: `pmtiles://${baseUrl}/buildings.pmtiles`,
-      minzoom: 10
-    } as VectorSourceSpecification,
+    source: buildingsOutlineSource,
     layer: {
       id: 'buildings_outline-layer',
       type: 'line',

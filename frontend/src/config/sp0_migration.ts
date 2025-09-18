@@ -3,6 +3,16 @@ import { baseUrl } from '@/config/layerTypes'
 
 import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
 
+// Shared source configuration for all SP0 migration layers
+const migrationSource: VectorSourceSpecification = {
+  attribution: 'https://www.bfs.admin.ch/',
+  type: 'vector',
+  url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
+  minzoom: 5
+}
+
+export const sp0MigrationSources: VectorSourceSpecification[] = [migrationSource]
+
 export const sp0MigrationLayers: MapLayerConfig[] = [
   // SPO MIGRATION LAYERS
   // Population Density Layer
@@ -11,12 +21,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     label: 'Population Density',
     unit: 'people/ha',
     info: 'Total population per hectare in Lausanne (2011-2023)',
-    source: {
-      attribution: 'https://www.bfs.admin.ch/',
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: migrationSource,
     layer: {
       id: 'lausanne_pop_density-layer',
       type: 'fill-extrusion',
@@ -52,12 +57,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     label: 'Birth Rate',
     unit: 'per 1,000',
     info: 'Birth rate per 1,000 population in Lausanne (2011-2023)',
-    source: {
-      attribution: 'https://www.bfs.admin.ch/',
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: migrationSource,
     layer: {
       id: 'lausanne_birth_rate-layer',
       type: 'fill-extrusion',
@@ -93,12 +93,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     label: 'Death Rate',
     unit: 'per 1,000',
     info: 'Death rate per 1,000 population in Lausanne (2011-2023)',
-    source: {
-      attribution: 'https://www.bfs.admin.ch/',
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: migrationSource,
     layer: {
       id: 'lausanne_death_rate-layer',
       type: 'fill-extrusion',
@@ -134,12 +129,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     label: 'Internal In-migration',
     unit: 'per 1,000',
     info: 'Internal in-migration rate per 1,000 population in Lausanne (2011-2023)',
-    source: {
-      attribution: 'https://www.bfs.admin.ch/',
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: migrationSource,
     layer: {
       id: 'lausanne_inmigration_rate-layer',
       type: 'fill-extrusion',
@@ -175,12 +165,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     label: 'Internal Out-migration',
     unit: 'per 1,000',
     info: 'Internal out-migration rate per 1,000 population in Lausanne (2011-2023)',
-    source: {
-      attribution: 'https://www.bfs.admin.ch/',
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: migrationSource,
     layer: {
       id: 'lausanne_outmigration_rate-layer',
       type: 'fill-extrusion',
@@ -220,12 +205,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     label: 'International Immigration',
     unit: 'per 1,000',
     info: 'International immigration rate per 1,000 population in Lausanne (2011-2023)',
-    source: {
-      attribution: 'https://www.bfs.admin.ch/',
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: migrationSource,
     layer: {
       id: 'lausanne_immigration_rate-layer',
       type: 'fill-extrusion',
@@ -261,12 +241,7 @@ export const sp0MigrationLayers: MapLayerConfig[] = [
     label: 'International Emigration',
     unit: 'per 1,000',
     info: 'International emigration rate per 1,000 population in Lausanne (2011-2023)',
-    source: {
-      attribution: 'https://www.bfs.admin.ch/',
-      type: 'vector',
-      url: `pmtiles://${baseUrl}/lausanne_migration_2011_2023_2.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: migrationSource,
     layer: {
       id: 'lausanne_emigration_rate-layer',
       type: 'fill-extrusion',

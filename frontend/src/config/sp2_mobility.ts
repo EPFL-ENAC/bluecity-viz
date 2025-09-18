@@ -3,6 +3,16 @@ import { baseUrl } from '@/config/layerTypes'
 
 import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
 
+// Shared source configuration for all SP2 mobility layers
+const mobilitySource: VectorSourceSpecification = {
+  type: 'vector',
+  attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
+  url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
+  minzoom: 5
+}
+
+export const sp2MobilitySources: VectorSourceSpecification[] = [mobilitySource]
+
 export const sp2MobilityLayers: MapLayerConfig[] = [
   // Access to food shops (walk)
   {
@@ -10,12 +20,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to food shops (walk)',
     unit: 'seconds',
     info: 'Average round-trip travel time from each cell to the nearest 3 short-term goods shops (groceries, bakeries, etc.).',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'access_food_shops_walk-layer',
       type: 'fill',
@@ -49,12 +54,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to recreational POIs (walk)',
     unit: 'seconds',
     info: 'Average round-trip travel time from each cell to the nearest 10 indoor recreational POIs (bars, restaurants, theaters).',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'access_recreation_pois_walk-layer',
       type: 'fill',
@@ -88,12 +88,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to nearest school (e-bike)',
     unit: 'seconds',
     info: 'Round-trip travel time from each cell to the nearest school by e-bike.',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'access_school_ebike-layer',
       type: 'fill',
@@ -127,12 +122,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to nearest school (car, peak hours)',
     unit: 'seconds',
     info: 'Round-trip travel time from each cell to the nearest school by car during peak hours.',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'access_school_car_peak-layer',
       type: 'fill',
@@ -166,12 +156,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to schools: e-bikes vs bikes',
     unit: 'ratio',
     info: 'Ratio of travel times (e-bike vs. bike) to the nearest school and back. Lower values indicate e-bike advantage.',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'ratio_schools_ebike_bike-layer',
       type: 'fill',
@@ -205,12 +190,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to schools: e-bikes vs cars',
     unit: 'ratio',
     info: 'Ratio of travel times (e-bike vs. car during peak hours) to the nearest school and back. Lower values favor e-bikes.',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'ratio_schools_ebike_car-layer',
       type: 'fill',
@@ -244,12 +224,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to jobs (score) by e-bike',
     unit: 'score',
     info: 'Gravity-based cumulative access from each cell to employment opportunities by e-bike (higher is better).',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'access_jobs_ebike-layer',
       type: 'fill',
@@ -283,12 +258,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to jobs (score) by transit',
     unit: 'score',
     info: 'Gravity-based cumulative access from each cell to employment opportunities by public transit (higher is better).',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'access_jobs_transit-layer',
       type: 'fill',
@@ -322,12 +292,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to jobs (score) by car',
     unit: 'score',
     info: 'Gravity-based cumulative access from each cell to employment opportunities by car during peak hours (higher is better).',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'access_jobs_car-layer',
       type: 'fill',
@@ -361,12 +326,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to jobs: transit vs car',
     unit: 'ratio',
     info: 'Ratio of gravity-based scores for access to jobs (transit vs. driving). Lower values indicate driving advantage.',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'ratio_jobs_transit_car-layer',
       type: 'fill',
@@ -400,12 +360,7 @@ export const sp2MobilityLayers: MapLayerConfig[] = [
     label: 'Access to jobs: e-bikes vs cars',
     unit: 'ratio',
     info: 'Ratio of gravity-based scores for access to jobs (e-bike vs. driving). Lower values indicate driving advantage.',
-    source: {
-      type: 'vector',
-      attribution: 'Urban Accessibility Atlas (ETH/ESD), based on OpenStreetMap',
-      url: `pmtiles://${baseUrl}/accessibility_20250220.pmtiles`,
-      minzoom: 5
-    } as VectorSourceSpecification,
+    source: mobilitySource,
     layer: {
       id: 'ratio_jobs_ebike_car-layer',
       type: 'fill',
