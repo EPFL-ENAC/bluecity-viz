@@ -2,6 +2,7 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point, LineString
 import os
+import json
 import logging
 from datetime import datetime
 from collections import defaultdict
@@ -82,7 +83,18 @@ def process_csv_to_linestrings(input_file, output_file):
 
         # Save to GeoJSON
         gdf.to_file(output_file, driver="GeoJSON")
-        logging.info(f"Created GeoJSON with {len(gdf)} linestrings: {output_file}")
+
+        # Validate the JSON file
+        try:
+            with open(output_file, "r") as f:
+                json.load(f)
+            logging.info(
+                f"Created valid GeoJSON with {len(gdf)} linestrings: {output_file}"
+            )
+        except json.JSONDecodeError as e:
+            logging.error(f"Generated GeoJSON is invalid: {e}")
+            return False
+
         return True
 
     except Exception as e:
@@ -104,20 +116,26 @@ def analyze_vehicle_data(gdf):
     # Get average points per track
     avg_points = gdf["point_count"].mean()
 
-    # Get total distance (assuming WGS84)
-    gdf["length"] = gdf.geometry.length
-    total_length = gdf["length"].sum()
+    # Get total distance by converting to a projected CRS (Swiss LV95 for Swiss data)
+    # Convert to Swiss coordinate system for accurate distance calculation
+    gdf_projected = gdf.to_crs("EPSG:2056")  # Swiss LV95
+    gdf_projected["length"] = gdf_projected.geometry.length
+    total_length_meters = gdf_projected["length"].sum()
+    total_length_km = total_length_meters / 1000
 
     logging.info(f"Data spans {unique_dates} unique dates")
     logging.info(f"Data contains {unique_vehicles} unique vehicles")
     logging.info(f"Average points per track: {avg_points:.1f}")
-    logging.info(f"Approximate total distance: {total_length:.2f} degrees")
+    logging.info(
+        f"Total distance: {total_length_km:.2f} km ({total_length_meters:.0f} meters)"
+    )
 
     return {
         "unique_dates": unique_dates,
         "unique_vehicles": unique_vehicles,
         "avg_points": avg_points,
-        "total_length": total_length,
+        "total_length_km": total_length_km,
+        "total_length_meters": total_length_meters,
     }
 
 
