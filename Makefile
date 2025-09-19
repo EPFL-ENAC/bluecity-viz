@@ -1,11 +1,24 @@
-dev:
+# BlueCity Viz - Root Makefile
+
+.PHONY: help dev build install clean upload-frontend-geodata list-geodata check-bucket-env check-geodata clean-geodata
+
+help: ## Show this help message
+	@echo "BlueCity Viz - Available commands:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+dev: ## Start frontend development server
 	cd frontend && npm run dev
 
-build:
+build: ## Build frontend for production
 	cd frontend && npm run build
 
-install:
+install: ## Install all dependencies
 	cd frontend && npm install
+	cd processing && uv sync
+
+
+
+
 
 # Check if BUCKET_NAME is defined
 check-bucket-env:
@@ -26,7 +39,7 @@ check-geodata:
 	fi
 
 # Upload geodata with improved features
-upload-frontend-geodata: check-bucket-env check-geodata
+upload-frontend-geodata: check-bucket-env check-geodata ## Upload geodata files to S3 bucket
 	@echo "Starting upload of geodata files to s3://${BUCKET_NAME}/bluecity/..."
 	@s3cmd put --recursive --acl-public --guess-mime-type \
 		--preserve --no-encrypt --check-md5 --progress \
@@ -36,14 +49,12 @@ upload-frontend-geodata: check-bucket-env check-geodata
 	@echo "Files are available at: https://${BUCKET_NAME}/bluecity/"
 
 # List all files uploaded to S3
-list-geodata: check-bucket-env
+list-geodata: check-bucket-env ## List geodata files in S3 bucket
 	@echo "Listing files in s3://${BUCKET_NAME}/bluecity/..."
 	@s3cmd ls s3://${BUCKET_NAME}/bluecity/
 
 # Clean up the geodata folder (optional)
-clean-geodata:
+clean-geodata: ## Clean temporary files from geodata directory
 	@echo "Cleaning temporary files from frontend/public/geodata/..."
-	@find frontend/public/geodata -name "*.tmp" -delete
-	@find frontend/public/geodata -name "*.bak" -delete
-
-.PHONY: dev build install upload-frontend-geodata list-geodata check-bucket-env check-geodata clean-geodata
+	@find frontend/public/geodata -name "*.tmp" -delete 2>/dev/null || true
+	@find frontend/public/geodata -name "*.bak" -delete 2>/dev/null || true

@@ -1,76 +1,128 @@
-# MapLibre Vue Application
+# BlueCity Viz
 
-This repository contains a Vue.js application designed to display geospatial data using MapLibre. It includes tools for rendering maps with various data layers and a pipeline for processing datasets into PMTiles format for efficient usage in the application.
+A Vue.js application designed to visualize geospatial data using MapLibre, with integrated data processing tools for urban analytics and sustainability metrics.
 
 ## Features
 
-- **Map Display**: Integrates MapLibre to visualize geospatial data interactively.
-- **Layer Management**: Allows toggling between different data layers.
-- **Data Processing**: Includes tools to convert shapefiles, CSV, and other formats into PMTiles.
-- **Scalable Design**: Optimized for rendering large datasets.
+- **Interactive Map Visualization**: Built with MapLibre for smooth geospatial data rendering
+- **Layer Management**: Toggle between different data layers and visualizations
+- **Data Processing Pipeline**: Convert shapefiles, CSV, and other formats into PMTiles
+- **Urban Analytics**: Specialized tools for analyzing city data and sustainability metrics
+- **Responsive Design**: Optimized for both desktop and mobile viewing
 
 ## Getting Started
 
 ### Prerequisites
 
-Ensure you have the following installed:
+- **Node.js** (v20 or later)
+- **Python** (3.11 or later)
+- **uv** (Python package manager)
+- **npm**
 
-- Node.js (v20 or later)
-- npm or yarn
-- Docker (optional, for deployment)
+### Quick Start
 
-### Installation
-
-1. Clone the repository:
-
-   ```bash
-   git clone <repository-url>
-   cd <repository-name>/frontend
-   ```
-
-2. Install dependencies:
+1. **Clone the repository:**
 
    ```bash
-   npm install
+   git clone https://github.com/EPFL-ENAC/bluecity-viz.git
+   cd bluecity-viz
    ```
 
-3. Start the development server:
+2. **Install all dependencies:**
 
    ```bash
-   npm run dev
+   make install
    ```
 
-   The application should be accessible at `http://localhost:5173`.
+3. **Start the development server:**
+
+   ```bash
+   make dev
+   ```
+
+   The application will be available at `http://localhost:5173`
+
+### Available Commands
+
+- `make help` - Show all available commands
+- `make dev` - Start development server
+- `make build` - Build for production
+- `make install` - Install all dependencies
+- `make clean` - Clean temporary files
+- `make notebook` - Start Jupyter notebook for data processing
 
 ## Project Structure
 
-- **frontend**: Contains the Vue.js application code.
+```
+bluecity-viz/
+├── frontend/          # Vue.js application
+│   ├── src/           # Source code
+│   │   ├── components/  # Vue components
+│   │   ├── views/       # Application views
+│   │   ├── stores/      # Pinia state management
+│   │   └── utils/       # Utility functions
+│   ├── public/        # Static assets
+│   │   └── geodata/     # Geospatial data files
+│   └── schema/        # JSON schemas
+├── processing/        # Python data processing tools
+│   ├── Correlation/   # Correlation analysis
+│   ├── SP0*/          # Statistical processing modules
+│   └── pyproject.toml # Python dependencies
+└── Makefile          # Build automation
+```
 
-  - **src**: Application source files.
-    - `components`: Vue components for map rendering and interaction.
-    - `utils`: Utility functions for data handling.
-    - `views`: Application views (e.g., home, about pages).
-  - **public**: Static files, including configuration and style files.
-  - `.vscode`: Recommended settings for development.
+### Key Directories
 
-- **data_processing**: Scripts for preparing datasets. For detailed instructions, see [Updating Datasets for the Application](ADD_DATASET.md).
+- **`frontend/`**: Vue.js application with MapLibre integration
+- **`processing/`**: Python tools for data analysis and processing
+- **`frontend/public/geodata/`**: Processed geospatial data in PMTiles format
+
+For detailed dataset management instructions, see [ADD_DATASET.md](ADD_DATASET.md).
+
+## Development
+
+### Frontend Development
+
+The frontend is built with:
+
+- **Vue 3** with Composition API
+- **TypeScript** for type safety
+- **Vuetify** for UI components
+- **MapLibre GL** for map rendering
+- **PMTiles** for efficient geospatial data loading
+
+### Data Processing
+
+The processing module uses:
+
+- **Python 3.11+** with modern tooling
+- **uv** for fast dependency management
+- **GeoPandas** for geospatial data manipulation
+- **Jupyter** for interactive analysis
+
+### Deployment
+
+- Automated deployment via GitHub Actions
+- S3 integration for geodata hosting
+- Static site generation for GitHub Pages
 
 ## Contributing
 
-Contributions are welcome! Please follow these steps:
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feat/your-feature`
+3. Make your changes and commit: `git commit -m "feat: add your feature"`
+4. Push to your fork: `git push origin feat/your-feature`
+5. Create a Pull Request
 
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix.
-3. Commit your changes and push to your fork.
-4. Submit a pull request.
+Please follow the [conventional commits](https://conventionalcommits.org/) format.
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0. See the LICENSE file for details.
+This project is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- [MapLibre](https://maplibre.org/) for the open-source map rendering library.
-- [PMTiles](https://github.com/protomaps/PMTiles) for the efficient storage format for geospatial data.
-
-For further questions or support, feel free to contact the repository maintainers.
+- [MapLibre](https://maplibre.org/) - Open-source map rendering
+- [PMTiles](https://github.com/protomaps/PMTiles) - Efficient geospatial data format
+- [Vue.js](https://vuejs.org/) - Progressive JavaScript framework
+- [EPFL ENAC](https://www.epfl.ch/schools/enac/) - School of Architecture, Civil and Environmental Engineering
