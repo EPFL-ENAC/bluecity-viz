@@ -18,10 +18,7 @@ const addVisualizationsDialog = ref(false)
 
 <template>
   <v-card flat class="d-flex flex-column">
-    <v-card-title class="flex-shrink-0 text-center pa-2">
-      <h6 class="w-100">RESOURCES</h6>
-    </v-card-title>
-    <v-card-text class="flex-grow-1 d-flex flex-column overflow-hidden">
+    <v-card-text class="flex-grow-1 d-flex flex-column overflow-hidden pa-2">
       <!-- Data Sets Section -->
       <div class="mb-4 flex-shrink-0">
         <!-- Data Sets Header with Add Button -->
@@ -246,3 +243,10 @@ const addVisualizationsDialog = ref(false)
     <AddSourceDialog v-model="addSourceDialog" />
   </v-card>
 </template>
+
+<style scoped>
+.panel-header {
+  background-color: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+}
+</style>

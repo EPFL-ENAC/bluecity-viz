@@ -11,12 +11,17 @@ layersStore.initializeInvestigations()
 const showShareDialog = ref(false)
 const shareUrl = ref('')
 const copySuccess = ref(false)
+const investigationToShare = ref<string | null>(null)
 
-function handleShare() {
+function handleShare(investigationId: string) {
+  // Switch to the investigation first to ensure it's active
+  layersStore.switchToInvestigation(investigationId)
+
   if (!layersStore.activeInvestigation) {
     return
   }
 
+  investigationToShare.value = investigationId
   shareUrl.value = layersStore.generateShareableUrl()
   showShareDialog.value = true
   copySuccess.value = false
@@ -48,22 +53,7 @@ async function copyToClipboard() {
 
 <template>
   <v-card flat class="d-flex flex-column">
-    <v-card-title class="flex-shrink-0 text-center pa-2 pb-6">
-      <div class="d-flex align-center justify-space-between w-100">
-        <div></div>
-        <!-- Spacer -->
-        <h6>COLLECTIONS</h6>
-        <v-btn
-          :icon="mdiShare"
-          size="small"
-          variant="text"
-          :disabled="!layersStore.activeInvestigation"
-          @click="handleShare"
-        >
-        </v-btn>
-      </div>
-    </v-card-title>
-    <v-card-text class="flex-grow-1 overflow-y-auto">
+    <v-card-text class="flex-grow-1 overflow-y-auto pa-2">
       <!-- Projects List -->
       <div v-for="project in layersStore.projects" :key="project.id" class="mb-2">
         <v-card variant="flat">
@@ -114,16 +104,26 @@ async function copyToClipboard() {
                           {{ investigation.selectedLayers.length }} layers
                         </div>
                       </div>
+                      <div class="d-flex align-center">
+                        <v-btn
+                          :icon="mdiShare"
+                          size="x-small"
+                          variant="text"
+                          density="compact"
+                          class="mr-1"
+                          @click.stop="handleShare(investigation.id)"
+                        >
+                        </v-btn>
+                        <v-btn
+                          :icon="mdiClose"
+                          size="x-small"
+                          variant="text"
+                          density="compact"
+                          @click.stop="layersStore.removeInvestigation(investigation.id)"
+                        >
+                        </v-btn>
+                      </div>
                     </div>
-                    <v-btn
-                      :icon="mdiClose"
-                      size="x-small"
-                      variant="text"
-                      density="compact"
-                      class="ml-2"
-                      @click.stop="layersStore.removeInvestigation(investigation.id)"
-                    >
-                    </v-btn>
                   </template>
                 </v-radio>
               </v-radio-group>
@@ -139,8 +139,9 @@ async function copyToClipboard() {
         <v-card-title class="text-h6">Share Investigation</v-card-title>
         <v-card-text>
           <p class="mb-4">
-            Share your current investigation "{{ layersStore.activeInvestigation?.name }}" with
-            others using this URL:
+            Share investigation "{{
+              investigationToShare ? layersStore.findInvestigation(investigationToShare)?.name : ''
+            }}" with others using this URL:
           </p>
           <v-text-field
             v-model="shareUrl"
@@ -177,3 +178,10 @@ async function copyToClipboard() {
     </v-dialog>
   </v-card>
 </template>
+
+<style scoped>
+.panel-header {
+  background-color: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+}
+</style>

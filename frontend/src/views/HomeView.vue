@@ -2,32 +2,80 @@
 import CollectionsPanel from '@/components/panels/CollectionsPanel.vue'
 import VisualizationsPanel from '@/components/panels/VisualizationsPanel.vue'
 import ResourcesPanel from '@/components/panels/ResourcesPanel.vue'
+import { ref } from 'vue'
+import { mdiMenu, mdiMenuOpen, mdiClose } from '@mdi/js'
+
+// Navigation drawer states
+const collectionsDrawer = ref(true)
+const resourcesDrawer = ref(true)
 </script>
 
 <template>
-  <v-container class="fill-height pa-0" fluid>
-    <v-row class="fill-height pa-0 ma-0">
-      <!-- Collections Column (Left) -->
-      <v-col cols="2" class="fill-height overflow-y-auto collections-col border-e-md">
+  <v-layout class="fill-height">
+    <!-- Top App Bar -->
+    <v-app-bar class="border-b-sm" color="white" density="compact" flat>
+      <!-- Collections Section (300px width to match drawer) -->
+      <div class="collections-header border-e-sm">
+        <v-btn
+          :icon="collectionsDrawer ? mdiMenuOpen : mdiMenu"
+          variant="text"
+          @click="collectionsDrawer = !collectionsDrawer"
+        />
+        <span class="text-subtitle-1">COLLECTIONS</span>
+      </div>
+      <!-- Main Content Area (flexible) -->
+      <div class="main-header">
+        <div class="app-title">
+          <span class="text-subtitle-1">BLUECITY VIZ</span>
+        </div>
+      </div>
+
+      <!-- Resources Section (300px width to match drawer) -->
+      <div class="resources-header border-s-sm">
+        <span class="text-subtitle-1">RESOURCES</span>
+        <v-btn
+          :icon="resourcesDrawer ? mdiMenuOpen : mdiMenu"
+          variant="text"
+          @click="resourcesDrawer = !resourcesDrawer"
+        />
+      </div>
+    </v-app-bar>
+
+    <!-- Collections Navigation Drawer (Left) -->
+    <v-navigation-drawer v-model="collectionsDrawer" location="start" width="300" permanent>
+      <div class="pa-2">
         <CollectionsPanel />
-      </v-col>
+      </div>
+    </v-navigation-drawer>
 
-      <!-- Visualizations Column (Center) -->
-      <v-col cols="7" class="fill-height visualizations-col pa-0">
-        <VisualizationsPanel />
-      </v-col>
-
-      <!-- Resources Column (Right) -->
-      <v-col cols="3" class="fill-height overflow-y-auto resources-col border-s-md">
+    <!-- Resources Navigation Drawer (Right) -->
+    <v-navigation-drawer v-model="resourcesDrawer" location="end" width="300" permanent>
+      <div class="pa-2">
         <ResourcesPanel />
-      </v-col>
-    </v-row>
-  </v-container>
+      </div>
+    </v-navigation-drawer>
+
+    <!-- Main Content Area -->
+    <v-main>
+      <VisualizationsPanel />
+    </v-main>
+  </v-layout>
 </template>
 
 <style scoped>
-.collections-col,
-.resources-col {
-  max-height: 100vh;
+.collections-header,
+.resources-header {
+  width: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.main-header {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>
