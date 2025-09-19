@@ -151,16 +151,7 @@ const show = ref(true)
 
 <template>
   <div v-if="generatedLayersWithColors.length > 0" class="legend">
-    <h5 class="legend-title">
-      LEGEND
-      <v-btn
-        :icon="show ? mdiChevronDown : mdiChevronUp"
-        flat
-        density="compact"
-        @click="show = !show"
-      ></v-btn>
-    </h5>
-    <div v-if="show" class="my-2 d-flex d-row ga-10">
+    <div v-if="show" class="legend-content d-flex d-row ga-10">
       <div
         v-for="layer in generatedLayersWithColors"
         :key="layer?.id"
@@ -210,6 +201,17 @@ const show = ref(true)
         </div>
       </div>
     </div>
+
+    <div class="legend-title" :class="{ 'with-divider': show }">
+      <span>LEGEND</span>
+      <v-btn
+        :icon="show ? mdiChevronDown : mdiChevronUp"
+        variant="text"
+        density="compact"
+        size="small"
+        @click="show = !show"
+      />
+    </div>
   </div>
 </template>
 
@@ -223,24 +225,40 @@ const show = ref(true)
   position: absolute;
   bottom: 0.5em;
   background-color: rgb(var(--v-theme-surface));
-  padding: 0.6em 1.4em;
+  padding: 16px;
   z-index: 1000;
   right: 0.5em;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  /* color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity)); */
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  /* max-width: 300px; */
   min-width: 200px;
+  transition: all 0.2s ease;
+}
+
+.legend:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .legend-title {
-  margin-bottom: 1em;
-  text-align: right;
-  padding-bottom: 0.5em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
-  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  font-size: 0.875rem;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.legend-title.with-divider {
+  padding-top: 12px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.legend-content {
+  margin-bottom: 12px;
 }
 
 .layer-legend {
@@ -255,9 +273,10 @@ const show = ref(true)
 }
 
 .layer-legend-title {
-  font-weight: 600;
+  font-weight: normal;
   margin-bottom: 0;
   line-height: 1.2;
+  font-size: small;
 }
 
 .layer-legend-unit {
@@ -265,12 +284,6 @@ const show = ref(true)
   color: rgba(var(--v-theme-on-surface), 0.7);
   font-weight: 400;
   margin-top: 2px;
-}
-
-/* Update this style since we now handle margin in layer-legend-header */
-.layer-legend h5 {
-  font-weight: 600;
-  width: 100%;
 }
 
 .legend-item {
