@@ -8,7 +8,10 @@ import {
   mdiClose,
   mdiShare,
   mdiRadioboxMarked,
-  mdiRadioboxBlank
+  mdiRadioboxBlank,
+  mdiPencil,
+  mdiCheck,
+  mdiCancel
 } from '@mdi/js'
 
 // Use the layers store
@@ -20,6 +23,12 @@ const showShareDialog = ref(false)
 const shareUrl = ref('')
 const copySuccess = ref(false)
 const investigationToShare = ref<string | null>(null)
+
+// Edit functionality
+const editingProject = ref<string | null>(null)
+const editingInvestigation = ref<string | null>(null)
+const editProjectName = ref('')
+const editInvestigationName = ref('')
 
 function handleShare(investigationId: string) {
   // Switch to the investigation first to ensure it's active
@@ -57,6 +66,49 @@ async function copyToClipboard() {
     }, 2000)
   }
 }
+
+// Edit functions
+function startEditingProject(projectId: string, currentName: string) {
+  editingProject.value = projectId
+  editProjectName.value = currentName
+}
+
+function cancelProjectEdit() {
+  editingProject.value = null
+  editProjectName.value = ''
+}
+
+function saveProjectEdit() {
+  if (editingProject.value && editProjectName.value.trim()) {
+    const project = layersStore.projects.find((p) => p.id === editingProject.value)
+    if (project) {
+      project.name = editProjectName.value.trim()
+    }
+    editingProject.value = null
+    editProjectName.value = ''
+  }
+}
+
+function startEditingInvestigation(investigationId: string, currentName: string) {
+  editingInvestigation.value = investigationId
+  editInvestigationName.value = currentName
+}
+
+function cancelInvestigationEdit() {
+  editingInvestigation.value = null
+  editInvestigationName.value = ''
+}
+
+function saveInvestigationEdit() {
+  if (editingInvestigation.value && editInvestigationName.value.trim()) {
+    const investigation = layersStore.findInvestigation(editingInvestigation.value)
+    if (investigation) {
+      investigation.name = editInvestigationName.value.trim()
+    }
+    editingInvestigation.value = null
+    editInvestigationName.value = ''
+  }
+}
 </script>
 
 <template>
@@ -67,24 +119,69 @@ async function copyToClipboard() {
         <v-card variant="flat">
           <!-- Project Header -->
           <div class="d-flex align-center justify-space-between">
-            <div
-              class="d-flex align-center flex-grow-1"
-              style="cursor: pointer"
-              @click="layersStore.toggleProject(project.id)"
-            >
-              <v-icon class="mr-1">
+            <div class="d-flex align-center flex-grow-1">
+              <v-icon
+                class="mr-1"
+                style="cursor: pointer"
+                @click="layersStore.toggleProject(project.id)"
+              >
                 {{ project.expanded ? mdiChevronDown : mdiChevronRight }}
               </v-icon>
-              <span class="text-subtitle-1 font-weight-medium">{{ project.name }}</span>
+
+              <!-- Project Name - Editable -->
+              <div v-if="editingProject === project.id" class="d-flex align-center flex-grow-1">
+                <v-text-field
+                  v-model="editProjectName"
+                  variant="outlined"
+                  density="compact"
+                  hide-details
+                  class="mr-2"
+                  @keyup.enter="saveProjectEdit"
+                  @keyup.escape="cancelProjectEdit"
+                />
+                <v-btn
+                  :icon="mdiCheck"
+                  size="x-small"
+                  variant="text"
+                  color="success"
+                  @click="saveProjectEdit"
+                />
+                <v-btn
+                  :icon="mdiCancel"
+                  size="x-small"
+                  variant="text"
+                  color="error"
+                  @click="cancelProjectEdit"
+                />
+              </div>
+
+              <!-- Project Name - Display -->
+              <span
+                v-else
+                class="text-subtitle-1 font-weight-medium flex-grow-1"
+                style="cursor: pointer"
+                @click="layersStore.toggleProject(project.id)"
+              >
+                {{ project.name }}
+              </span>
             </div>
-            <v-btn
-              :icon="mdiPlus"
-              size="small"
-              variant="text"
-              class="ml-1"
-              @click="layersStore.saveCurrentState(project.id)"
-            >
-            </v-btn>
+
+            <div class="d-flex align-center">
+              <v-btn
+                v-if="editingProject !== project.id"
+                :icon="mdiPencil"
+                size="small"
+                variant="text"
+                class="mr-1"
+                @click="startEditingProject(project.id, project.name)"
+              />
+              <v-btn
+                :icon="mdiPlus"
+                size="small"
+                variant="text"
+                @click="layersStore.saveCurrentState(project.id)"
+              />
+            </div>
           </div>
 
           <!-- Investigations List -->
@@ -119,8 +216,45 @@ async function copyToClipboard() {
                         "
                       />
                       <div class="flex-grow-1">
-                        <div class="text-body-2 font-weight-medium">{{ investigation.name }}</div>
-                        <div class="text-caption text-medium-emphasis">
+                        <!-- Investigation Name - Editable -->
+                        <div
+                          v-if="editingInvestigation === investigation.id"
+                          class="d-flex align-center"
+                        >
+                          <v-text-field
+                            v-model="editInvestigationName"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            class="mr-2 investigation-edit-field"
+                            @keyup.enter="saveInvestigationEdit"
+                            @keyup.escape="cancelInvestigationEdit"
+                          />
+                          <v-btn
+                            :icon="mdiCheck"
+                            size="x-small"
+                            variant="text"
+                            color="success"
+                            @click="saveInvestigationEdit"
+                          />
+                          <v-btn
+                            :icon="mdiCancel"
+                            size="x-small"
+                            variant="text"
+                            color="error"
+                            @click="cancelInvestigationEdit"
+                          />
+                        </div>
+
+                        <!-- Investigation Name - Display -->
+                        <div v-else class="text-body-2 font-weight-medium">
+                          {{ investigation.name }}
+                        </div>
+
+                        <div
+                          v-if="editingInvestigation !== investigation.id"
+                          class="text-caption text-medium-emphasis"
+                        >
                           {{ investigation.selectedSources.length }} sources,
                           {{ investigation.selectedLayers.length }} layers
                         </div>
@@ -132,10 +266,21 @@ async function copyToClipboard() {
                         size="x-small"
                         variant="text"
                         density="compact"
-                        class="mr-1"
+                        class="mr-3"
                         @click.stop="handleShare(investigation.id)"
                       >
                       </v-btn>
+                      <v-btn
+                        v-if="editingInvestigation !== investigation.id"
+                        :icon="mdiPencil"
+                        size="x-small"
+                        variant="text"
+                        density="compact"
+                        class="mr-3"
+                        @click.stop="
+                          startEditingInvestigation(investigation.id, investigation.name)
+                        "
+                      />
                       <v-btn
                         :icon="mdiClose"
                         size="x-small"
@@ -221,5 +366,11 @@ async function copyToClipboard() {
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+.investigation-edit-field :deep(.v-field__input) {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
 }
 </style>
