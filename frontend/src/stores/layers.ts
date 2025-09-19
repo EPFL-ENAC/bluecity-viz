@@ -317,19 +317,19 @@ export const useLayersStore = defineStore('layers', () => {
     persistedState.projects || [
       {
         id: 'project-1',
-        name: 'Urban Mobility Analysis',
+        name: 'Project 1',
         expanded: true,
         investigations: [
           {
             id: 'inv-1',
-            name: 'Population Distribution',
+            name: 'Investigation 1',
             selectedSources: ['lausanne_migration'],
             selectedLayers: ['lausanne_pop_density-layer'],
             createdAt: new Date('2024-01-01')
           },
           {
             id: 'inv-2',
-            name: 'Temperature Analysis',
+            name: 'Investigation 2',
             selectedSources: ['lausanne_temperature'],
             selectedLayers: ['lausanne_temperature-layer'],
             createdAt: new Date('2024-01-02')
@@ -338,12 +338,12 @@ export const useLayersStore = defineStore('layers', () => {
       },
       {
         id: 'project-2',
-        name: 'Environmental Impact',
+        name: 'Project 2',
         expanded: false,
         investigations: [
           {
             id: 'inv-3',
-            name: 'Air Quality Study',
+            name: 'Investigation 1',
             selectedSources: ['lausanne_aqi'],
             selectedLayers: ['lausanne_aqi'],
             createdAt: new Date('2024-01-03')
@@ -446,7 +446,11 @@ export const useLayersStore = defineStore('layers', () => {
 
   // Initialize store - apply initial investigation if available
   function initializeInvestigations() {
-    if (activeInvestigationId.value) {
+    // First try to load state from URL
+    const loadedFromUrl = loadStateFromUrl()
+
+    // If no URL state was loaded, apply the default active investigation
+    if (!loadedFromUrl && activeInvestigationId.value) {
       switchToInvestigation(activeInvestigationId.value)
     }
   }
@@ -463,6 +467,79 @@ export const useLayersStore = defineStore('layers', () => {
       expandedGroups: expandedGroups.value
     }
     saveStateToStorage(stateToPersist)
+  }
+
+  // URL sharing functionality
+  function generateShareableUrl(): string {
+    const currentInvestigation = activeInvestigation.value
+    if (!currentInvestigation) return window.location.origin
+
+    const shareableState = {
+      name: currentInvestigation.name,
+      selectedSources: currentInvestigation.selectedSources,
+      selectedLayers: currentInvestigation.selectedLayers,
+      sp0Period: sp0Period.value
+    }
+
+    try {
+      const encoded = btoa(JSON.stringify(shareableState))
+      const url = new URL(window.location.origin + window.location.pathname)
+      url.searchParams.set('state', encoded)
+      return url.toString()
+    } catch (error) {
+      console.warn('Failed to generate shareable URL:', error)
+      return window.location.origin
+    }
+  }
+
+  function loadStateFromUrl(): boolean {
+    try {
+      const urlParams = new URLSearchParams(window.location.search)
+      const encodedState = urlParams.get('state')
+
+      if (!encodedState) return false
+
+      const decodedState = JSON.parse(atob(encodedState))
+
+      // Create a temporary investigation with the shared state
+      const sharedInvestigation: Investigation = {
+        id: `shared-${Date.now()}`,
+        name: decodedState.name + ' (Shared)',
+        selectedSources: decodedState.selectedSources || [],
+        selectedLayers: decodedState.selectedLayers || [],
+        createdAt: new Date()
+      }
+
+      // Add to first project or create a new one
+      if (projects.value.length === 0) {
+        projects.value.push({
+          id: 'shared-project',
+          name: 'Shared Investigations',
+          expanded: true,
+          investigations: []
+        })
+      }
+
+      projects.value[0].investigations.unshift(sharedInvestigation)
+
+      // Switch to the shared investigation
+      switchToInvestigation(sharedInvestigation.id)
+
+      // Update the period if provided
+      if (decodedState.sp0Period) {
+        sp0Period.value = decodedState.sp0Period
+      }
+
+      // Clear the URL parameter to keep URL clean
+      const url = new URL(window.location.href)
+      url.searchParams.delete('state')
+      window.history.replaceState({}, '', url.toString())
+
+      return true
+    } catch (error) {
+      console.warn('Failed to load state from URL:', error)
+      return false
+    }
   }
 
   // Set up watchers to automatically persist state changes
@@ -523,6 +600,8 @@ export const useLayersStore = defineStore('layers', () => {
     removeInvestigation,
     initializeInvestigations,
     persistState,
+    generateShareableUrl,
+    loadStateFromUrl,
     // Utility function to clear persisted data (useful for debugging/reset)
     clearPersistedData: () => {
       try {

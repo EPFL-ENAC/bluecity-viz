@@ -1,16 +1,67 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useLayersStore } from '@/stores/layers'
-import { mdiChevronDown, mdiChevronRight, mdiPlus, mdiClose } from '@mdi/js'
+import { mdiChevronDown, mdiChevronRight, mdiPlus, mdiClose, mdiShare } from '@mdi/js'
 
 // Use the layers store
 const layersStore = useLayersStore()
 layersStore.initializeInvestigations()
+
+// Share functionality
+const showShareDialog = ref(false)
+const shareUrl = ref('')
+const copySuccess = ref(false)
+
+function handleShare() {
+  if (!layersStore.activeInvestigation) {
+    return
+  }
+
+  shareUrl.value = layersStore.generateShareableUrl()
+  showShareDialog.value = true
+  copySuccess.value = false
+}
+
+async function copyToClipboard() {
+  try {
+    await navigator.clipboard.writeText(shareUrl.value)
+    copySuccess.value = true
+    setTimeout(() => {
+      copySuccess.value = false
+    }, 2000)
+  } catch (error) {
+    console.warn('Failed to copy to clipboard:', error)
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea')
+    textArea.value = shareUrl.value
+    document.body.appendChild(textArea)
+    textArea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textArea)
+    copySuccess.value = true
+    setTimeout(() => {
+      copySuccess.value = false
+    }, 2000)
+  }
+}
 </script>
 
 <template>
   <v-card flat class="d-flex flex-column">
     <v-card-title class="flex-shrink-0 text-center pa-2 pb-6">
-      <h6 class="w-100">COLLECTIONS</h6>
+      <div class="d-flex align-center justify-space-between w-100">
+        <div></div>
+        <!-- Spacer -->
+        <h6>COLLECTIONS</h6>
+        <v-btn
+          :icon="mdiShare"
+          size="small"
+          variant="text"
+          :disabled="!layersStore.activeInvestigation"
+          @click="handleShare"
+        >
+        </v-btn>
+      </div>
     </v-card-title>
     <v-card-text class="flex-grow-1 overflow-y-auto">
       <!-- Projects List -->
@@ -81,5 +132,48 @@ layersStore.initializeInvestigations()
         </v-card>
       </div>
     </v-card-text>
+
+    <!-- Share Dialog -->
+    <v-dialog v-model="showShareDialog" max-width="500px">
+      <v-card>
+        <v-card-title class="text-h6">Share Investigation</v-card-title>
+        <v-card-text>
+          <p class="mb-4">
+            Share your current investigation "{{ layersStore.activeInvestigation?.name }}" with
+            others using this URL:
+          </p>
+          <v-text-field
+            v-model="shareUrl"
+            label="Shareable URL"
+            readonly
+            variant="outlined"
+            density="compact"
+            class="mb-3"
+          >
+            <template #append-inner>
+              <v-btn
+                :icon="copySuccess ? 'mdi-check' : 'mdi-content-copy'"
+                size="small"
+                variant="text"
+                :color="copySuccess ? 'success' : 'primary'"
+                @click="copyToClipboard"
+              >
+              </v-btn>
+            </template>
+          </v-text-field>
+          <v-alert v-if="copySuccess" type="success" density="compact" class="mb-3">
+            URL copied to clipboard!
+          </v-alert>
+          <p class="text-caption text-medium-emphasis">
+            Anyone with this URL will be able to view your current investigation setup including
+            selected sources and layers.
+          </p>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="primary" @click="showShareDialog = false">Close</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-card>
 </template>
