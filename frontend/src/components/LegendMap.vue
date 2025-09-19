@@ -224,7 +224,7 @@ const show = ref(true)
 .legend {
   position: absolute;
   bottom: 0.5em;
-  background-color: rgb(var(--v-theme-surface));
+  background-color: rgba(var(--v-theme-surface), 0.8);
   padding: 16px;
   z-index: 1000;
   right: 0.5em;
@@ -245,7 +245,7 @@ const show = ref(true)
 .legend-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: end;
   width: 100%;
   font-size: 0.875rem;
   font-weight: 400;
@@ -313,6 +313,25 @@ const show = ref(true)
   width: 100%;
   max-height: 200px;
   overflow-y: auto;
+  padding-right: 4px;
+}
+
+.categorical-legend::-webkit-scrollbar {
+  width: 4px;
+}
+
+.categorical-legend::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 2px;
+}
+
+.categorical-legend::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 2px;
+}
+
+.categorical-legend::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
 }
 
 .legend-controls {
