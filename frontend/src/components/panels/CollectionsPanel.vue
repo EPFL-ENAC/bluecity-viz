@@ -357,12 +357,12 @@ function saveInvestigationEdit() {
 }
 
 .investigation-card:hover {
-  background-color: #f5f5f5;
+  background-color: rgb(var(--v-theme-surface-variant));
 }
 
 .active-investigation {
-  background-color: #e3f2fd !important;
-  border-color: #2196f3 !important;
+  background-color: rgb(var(--v-theme-primary-container)) !important;
+  border-color: rgb(var(--v-theme-primary)) !important;
 }
 
 .cursor-pointer {

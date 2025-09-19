@@ -2,18 +2,37 @@
 import CollectionsPanel from '@/components/panels/CollectionsPanel.vue'
 import VisualizationsPanel from '@/components/panels/VisualizationsPanel.vue'
 import ResourcesPanel from '@/components/panels/ResourcesPanel.vue'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { mdiMenu, mdiMenuOpen } from '@mdi/js'
+import { useThemeStore } from '@/stores/theme'
+import { useTheme } from 'vuetify'
 
 // Navigation drawer states
 const collectionsDrawer = ref(true)
 const resourcesDrawer = ref(true)
+
+// Use theme store for theme selector
+const themeStore = useThemeStore()
+
+// Vuetify theme management
+const vuetifyTheme = useTheme()
+
+// Watch for theme changes and update Vuetify theme
+watch(
+  () => themeStore.theme,
+  (newTheme) => {
+    const vuetifyThemeName = newTheme === 'style/light.json' ? 'light' : 'dark'
+    console.log('Updating Vuetify theme to:', vuetifyThemeName)
+    vuetifyTheme.change(vuetifyThemeName)
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
   <v-layout class="fill-height">
     <!-- Top App Bar -->
-    <v-app-bar class="border-b-sm" color="white" density="compact" flat>
+    <v-app-bar class="border-b-sm" flat>
       <!-- Collections Section (300px width to match drawer) -->
       <div class="collections-header">
         <v-btn
@@ -29,7 +48,19 @@ const resourcesDrawer = ref(true)
           <span class="text-subtitle-1">BLUECITY VIZ</span>
         </div>
       </div>
-
+      <div class="theme-selector ml-4">
+        <v-select
+          v-model="themeStore.theme"
+          :items="themeStore.themes"
+          item-value="value"
+          item-title="label"
+          label="Theme"
+          density="compact"
+          variant="plain"
+          hide-details
+          style="width: 150px"
+        />
+      </div>
       <!-- Resources Section (300px width to match drawer) -->
       <div class="resources-header">
         <span class="text-subtitle-1">RESOURCES</span>

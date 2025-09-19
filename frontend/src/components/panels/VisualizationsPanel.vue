@@ -5,17 +5,14 @@ import LayerSelector from '@/components/LayerSelector.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
 
 // Use the map logic composable
-const { map, parameters, center, zoom, theme, themes, syncAllLayersVisibility, layersStore } =
-  useMapLogic()
+const { map, parameters, center, zoom, syncAllLayersVisibility, layersStore } = useMapLogic()
 </script>
 
 <template>
   <div class="visualizations-panel position-relative fill-height">
     <MapLibreMap
-      :key="theme"
       ref="map"
       :center="center"
-      :style-spec="theme"
       :popup-layer-ids="parameters.popupLayerIds"
       :zoom="zoom"
       :max-zoom="20"
@@ -30,29 +27,11 @@ const { map, parameters, center, zoom, theme, themes, syncAllLayersVisibility, l
 
     <!-- Layer Selector -->
     <LayerSelector />
-
-    <div class="theme-selector position-absolute top-0 right-0 ma-4">
-      <v-select
-        v-model="theme"
-        :items="themes"
-        item-value="value"
-        item-title="label"
-        label="Theme"
-        dense
-        hide-details
-        outlined
-        style="width: 150px"
-      />
-    </div>
   </div>
 </template>
 
 <style scoped>
 .visualizations-panel {
   position: relative;
-}
-
-.theme-selector {
-  z-index: 1000;
 }
 </style>

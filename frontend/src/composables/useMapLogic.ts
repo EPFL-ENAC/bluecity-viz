@@ -1,7 +1,6 @@
 import MapLibreMap from '@/components/MapLibreMap.vue'
 import { useLayersStore } from '@/stores/layers'
 import { ref, shallowRef, watch } from 'vue'
-import { useTheme } from 'vuetify'
 
 // Import types
 import type { Parameters } from '@/utils/jsonWebMap'
@@ -41,35 +40,15 @@ export function useMapLogic() {
   // Watch for layer selection changes
   watch(() => layersStore.selectedLayers, syncAllLayersVisibility, { immediate: true, deep: true })
 
-  // Theme management
-  const vuetifyTheme = useTheme()
-  const theme = ref('style/light.json') // Default theme
-  const themes = [
-    { value: 'style/light.json', label: 'Light' },
-    { value: 'style/dark.json', label: 'Dark' },
-    { value: 'style/none.json', label: 'None' }
-  ]
-
-  // Watch for theme changes
-  watch(
-    () => theme.value,
-    (newTheme) => {
-      vuetifyTheme.global.name.value = newTheme === 'style/light.json' ? 'light' : 'dark'
-    },
-    { immediate: true }
-  )
-
   // Return all values and functions needed by the component
   return {
     // Refs
     map,
     parameters,
-    theme,
 
     // Constants
     center,
     zoom,
-    themes,
 
     // Functions
     syncAllLayersVisibility,

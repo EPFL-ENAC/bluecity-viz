@@ -13,22 +13,22 @@ import {
   type FilterSpecification,
   type LngLatLike,
   type StyleSetterOptions,
-  type StyleSpecification,
   addProtocol
 } from 'maplibre-gl'
 import type { LegendColor } from '@/utils/legendColor'
-import { onMounted, ref, watch, type Ref } from 'vue'
+import { computed, onMounted, ref, watch, type Ref } from 'vue'
 
 import { Protocol } from 'pmtiles'
 import { useApiKeyStore } from '@/stores/apiKey'
 import { useLayersStore } from '@/stores/layers'
+import { useThemeStore } from '@/stores/theme'
 
 const apiKeyStore = useApiKeyStore()
 const layersStore = useLayersStore()
+const themeStore = useThemeStore()
 
 const props = withDefaults(
   defineProps<{
-    styleSpec: string | StyleSpecification
     center?: LngLatLike
     zoom?: number
     aspectRatio?: number
@@ -64,6 +64,10 @@ const map = ref<any | undefined>(undefined)
 const hasLoaded = ref(false)
 const protocol = new Protocol()
 
+const styleSpec = computed(() => {
+  return themeStore.theme
+})
+
 // Use the map events composable
 const mapEventManager = useMapEvents(map as Ref<Map | undefined>)
 
@@ -72,7 +76,7 @@ addProtocol('pmtiles', protocol.tile)
 function initMap() {
   const newMap = new Map({
     container: container.value as HTMLDivElement,
-    style: props.styleSpec,
+    style: styleSpec.value,
     center: props.center,
     zoom: props.zoom,
     minZoom: props.minZoom,
@@ -147,7 +151,7 @@ function initMap() {
     mapInstance.on('sourcedata', handleDataEvent)
     mapInstance.on('sourcedataloading', handleDataEvent)
 
-    filterSP0Period(layersStore.sp0Period)
+    // filterSP0Period(layersStore.sp0Period)
 
     if (props.callbackLoaded) {
       props.callbackLoaded()
@@ -250,26 +254,26 @@ watch(
   { deep: true }
 )
 
-function filterSP0Period(period: string) {
-  const sp0Group = layersStore.layerGroups.find((group) => group.id === 'sp0_migration')
+// function filterSP0Period(period: string) {
+//   const sp0Group = layersStore.layerGroups.find((group) => group.id === 'sp0_migration')
 
-  if (!sp0Group) return
-  sp0Group.layers
-    .filter((layer) => {
-      return layersStore.selectedLayers.includes(layer.layer.id)
-    })
-    .forEach((layer) => {
-      const filter = ['==', ['get', 'year'], period] as FilterSpecification
-      map.value?.setFilter(layer.layer.id, filter)
-    })
-}
+//   if (!sp0Group) return
+//   sp0Group.layers
+//     .filter((layer) => {
+//       return layersStore.selectedLayers.includes(layer.layer.id)
+//     })
+//     .forEach((layer) => {
+//       const filter = ['==', ['get', 'year'], period] as FilterSpecification
+//       map.value?.setFilter(layer.layer.id, filter)
+//     })
+// }
 
-// Filter SP0 migration layers by period
-watch(
-  () => [layersStore.sp0Period, layersStore.selectedLayers],
-  ([newPeriod]) => filterSP0Period(newPeriod as string),
-  { immediate: true }
-)
+// // Filter SP0 migration layers by period
+// watch(
+//   () => [layersStore.sp0Period, layersStore.selectedLayers],
+//   ([newPeriod]) => filterSP0Period(newPeriod as string),
+//   { immediate: true }
+// )
 
 // Automatic pitch change when 3D layers are added or removed
 watch(
@@ -305,9 +309,34 @@ defineExpose({
 })
 
 watch(
-  () => props.styleSpec,
+  () => styleSpec.value,
   (styleSpec) => {
-    map.value?.setStyle(styleSpec)
+    if (!map.value) return
+
+    // Store current layers state before style change
+    const currentLayersVisibility = mapConfig.layers.map(({ layer }) => ({
+      id: layer.id,
+      visible: map.value?.getLayoutProperty(layer.id, 'visibility') !== 'none'
+    }))
+
+    // Set the new style
+    map.value.setStyle(styleSpec)
+
+    // Re-add sources and layers after style loads
+    map.value.once('styledata', () => {
+      if (!map.value) return
+
+      // Re-add all sources and layers
+      Object.entries(mapConfig.layers).forEach(([, { id, source, layer }]) => {
+        map.value?.addSource(id, source)
+        map.value?.addLayer(layer)
+      })
+
+      // Restore layer visibility
+      currentLayersVisibility.forEach(({ id, visible }) => {
+        setLayerVisibility(id, visible)
+      })
+    })
   },
   { immediate: true }
 )

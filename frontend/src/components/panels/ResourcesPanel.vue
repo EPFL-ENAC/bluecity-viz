@@ -308,14 +308,14 @@ const toggleVisualization = (vizId: string) => {
 .source-card:hover,
 .tool-card:hover,
 .viz-card:hover {
-  background-color: #f5f5f5;
+  background-color: rgb(var(--v-theme-surface-variant));
 }
 
 .active-source,
 .active-tool,
 .active-viz {
-  background-color: #e3f2fd !important;
-  border-color: #2196f3 !important;
+  background-color: rgb(var(--v-theme-primary-container)) !important;
+  border-color: rgb(var(--v-theme-primary)) !important;
 }
 
 .cursor-pointer {
