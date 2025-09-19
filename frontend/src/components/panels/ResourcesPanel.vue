@@ -37,7 +37,7 @@ const addSourceDialog = ref(false)
         <v-expand-transition>
           <div v-show="dataSetsExpanded">
             <div
-              v-if="layersStore.selectedSources.length === 0"
+              v-if="layersStore.availableResourceSources.length === 0"
               class="text-center py-4 text--secondary"
             >
               <p>No data sets added yet</p>
@@ -45,7 +45,7 @@ const addSourceDialog = ref(false)
             </div>
             <div v-else class="space-y-2">
               <v-card
-                v-for="source in layersStore.selectedSourceObjects"
+                v-for="source in layersStore.availableResourceSourceObjects"
                 :key="source.id"
                 density="compact"
                 class="mb-2"

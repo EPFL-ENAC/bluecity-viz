@@ -20,8 +20,15 @@ export const useLayersStore = defineStore('layers', () => {
   // Selected layer IDs
   const selectedLayers = ref<string[]>([])
 
-  // Selected source IDs for the resources panel
-  const selectedSources = ref<string[]>([])
+  // Available source IDs in the resources panel (sources user has added)
+  const availableResourceSources = ref<string[]>([
+    'accessibility_atlas',
+    'lausanne_migration',
+    'lausanne_temperature'
+  ])
+
+  // Active/selected source IDs (sources that are currently enabled)
+  const activeSources = ref<string[]>(['lausanne_migration', 'lausanne_temperature'])
 
   // Store the filtered categories for each layer
   const filteredCategories = ref<Record<string, Record<string, string[]>>>({})
@@ -151,67 +158,70 @@ export const useLayersStore = defineStore('layers', () => {
 
   // Source management functions
 
-  // Get selected source objects
-  const selectedSourceObjects = computed(() => {
-    return mapConfig.sources.filter((source) => selectedSources.value.includes(source.id))
+  // Get available resource source objects (sources added to resources panel)
+  const availableResourceSourceObjects = computed(() => {
+    return mapConfig.sources.filter((source) => availableResourceSources.value.includes(source.id))
   })
 
-  // Get available sources that aren't already selected
+  // Get sources that can be added to resources (not already added)
   const availableSourcesForDialog = computed(() => {
-    return mapConfig.sources.filter((source) => !selectedSources.value.includes(source.id))
+    return mapConfig.sources.filter((source) => !availableResourceSources.value.includes(source.id))
   })
 
-  // Add sources from dialog
+  // Add sources to resources panel
   function addSources(sourceIds: string[]) {
-    selectedSources.value = [...selectedSources.value, ...sourceIds]
+    availableResourceSources.value = [...availableResourceSources.value, ...sourceIds]
   }
 
-  // Remove a source
+  // Remove a source from resources panel
   function removeSource(sourceId: string) {
-    selectedSources.value = selectedSources.value.filter((id) => id !== sourceId)
-    // Also remove any layers from this source when source is removed
+    availableResourceSources.value = availableResourceSources.value.filter(
+      (id: string) => id !== sourceId
+    )
+    // Also remove from active sources and any layers from this source
+    activeSources.value = activeSources.value.filter((id: string) => id !== sourceId)
     const layersFromSource = getLayersBySource(sourceId)
     const layerIds = layersFromSource.map((layer) => layer.layer.id)
     selectedLayers.value = selectedLayers.value.filter((id) => !layerIds.includes(id))
   }
 
-  // Toggle source visibility (enable/disable layers from this source)
+  // Toggle source active state (this will later be used for layer selection instead of automatic layer enabling)
   function toggleSource(sourceId: string, enabled: boolean | null) {
     if (enabled === null) return
 
-    const layersFromSource = getLayersBySource(sourceId)
-    const layerIds = layersFromSource.map((layer) => layer.layer.id)
-
     if (enabled) {
-      // Add layers from this source
-      const newSelection = [...selectedLayers.value, ...layerIds]
-      updateSelectedLayers([...new Set(newSelection)]) // Remove duplicates
+      // Add to active sources
+      if (!activeSources.value.includes(sourceId)) {
+        activeSources.value = [...activeSources.value, sourceId]
+      }
     } else {
-      // Remove layers from this source
-      const filteredLayers = selectedLayers.value.filter((id) => !layerIds.includes(id))
-      updateSelectedLayers(filteredLayers)
+      // Remove from active sources
+      activeSources.value = activeSources.value.filter((id: string) => id !== sourceId)
+      // For now, also remove all layers from this source (this will change when layer selection is implemented)
+      const layersFromSource = getLayersBySource(sourceId)
+      const layerIds = layersFromSource.map((layer) => layer.layer.id)
+      selectedLayers.value = selectedLayers.value.filter((id) => !layerIds.includes(id))
     }
   }
 
-  // Check if source is currently enabled (has visible layers)
+  // Check if source is currently active
   function isSourceEnabled(sourceId: string): boolean {
-    const layersFromSource = getLayersBySource(sourceId)
-    const layerIds = layersFromSource.map((layer) => layer.layer.id)
-    return layerIds.some((id) => selectedLayers.value.includes(id))
+    return activeSources.value.includes(sourceId)
   }
 
   return {
     layerGroups,
     sp0Period,
     selectedLayers,
-    selectedSources,
+    availableResourceSources,
+    activeSources,
     filteredCategories,
     expandedGroups,
     possibleLayers,
     visibleLayers,
     availableSources,
     layersBySource,
-    selectedSourceObjects,
+    availableResourceSourceObjects,
     availableSourcesForDialog,
     toggleGroup,
     isGroupVisible,

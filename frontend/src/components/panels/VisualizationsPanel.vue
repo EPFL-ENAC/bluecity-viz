@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import MapLibreMap from '@/components/MapLibreMap.vue'
 import LegendMap from '@/components/LegendMap.vue'
+import LayerSelector from '@/components/LayerSelector.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
 
 // Use the map logic composable
@@ -26,6 +27,10 @@ const { map, parameters, center, zoom, theme, themes, syncAllLayersVisibility, l
         <legend-map :layers="layersStore.visibleLayers"></legend-map>
       </template>
     </MapLibreMap>
+
+    <!-- Layer Selector -->
+    <LayerSelector />
+
     <div class="theme-selector position-absolute top-0 right-0 ma-4">
       <v-select
         v-model="theme"
