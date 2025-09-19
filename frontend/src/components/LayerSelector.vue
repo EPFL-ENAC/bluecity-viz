@@ -46,11 +46,6 @@ function handleLayerSelection(layerId: string, checked: boolean) {
   }
 }
 
-// Check if layer is selected
-function isLayerSelected(layerId: string): boolean {
-  return layersStore.selectedLayers.includes(layerId)
-}
-
 // Group layers by source for better organization
 const layersBySource = computed(() => {
   const grouped: Record<
@@ -90,7 +85,7 @@ const layersBySource = computed(() => {
           <div class="ml-1">
             <div v-for="layer in layers" :key="layer.id" class="d-flex align-center py-0">
               <v-checkbox
-                :model-value="isLayerSelected(layer.id)"
+                :model-value="layersStore.selectedLayers.includes(layer.id)"
                 class="ma-0 mr-2"
                 color="primary"
                 hide-details
@@ -99,7 +94,9 @@ const layersBySource = computed(() => {
               />
               <div
                 class="flex-grow-1"
-                @click="handleLayerSelection(layer.id, !isLayerSelected(layer.id))"
+                @click="
+                  handleLayerSelection(layer.id, !layersStore.selectedLayers.includes(layer.id))
+                "
               >
                 <v-tooltip :text="layer.info || 'No additional information'" location="right">
                   <template #activator="{ props }">

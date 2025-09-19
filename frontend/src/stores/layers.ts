@@ -3,6 +3,23 @@ import { layerGroups as configLayerGroups, mapConfig } from '@/config/mapConfig'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
+// Investigation interface
+export interface Investigation {
+  id: string
+  name: string
+  selectedSources: string[]
+  selectedLayers: string[]
+  createdAt: Date
+}
+
+// Project interface
+export interface Project {
+  id: string
+  name: string
+  expanded: boolean
+  investigations: Investigation[]
+}
+
 export const useLayersStore = defineStore('layers', () => {
   // Store the layer groups from config
   const layerGroups = ref<
@@ -138,9 +155,9 @@ export const useLayersStore = defineStore('layers', () => {
   // Update selected layers (for checkboxes/multiple selection)
   function updateSelectedLayers(newSelection: string[] | null) {
     if (newSelection !== null) {
-      selectedLayers.value = [...newSelection] // Use spread to ensure reactivity
+      selectedLayers.value = [...newSelection]
     } else {
-      selectedLayers.value = []
+      selectedLayers.value.length = 0
     }
   }
 
@@ -209,6 +226,147 @@ export const useLayersStore = defineStore('layers', () => {
     return activeSources.value.includes(sourceId)
   }
 
+  // Update available resource sources (for investigations)
+  function updateAvailableResourceSources(sourceIds: string[]) {
+    availableResourceSources.value = [...sourceIds]
+  }
+
+  // Update active sources (for investigations)
+  function updateActiveSources(sourceIds: string[]) {
+    activeSources.value = [...sourceIds]
+  }
+
+  // Investigation and Project Management
+
+  // Projects with investigations
+  const projects = ref<Project[]>([
+    {
+      id: 'project-1',
+      name: 'Urban Mobility Analysis',
+      expanded: true,
+      investigations: [
+        {
+          id: 'inv-1',
+          name: 'Population Distribution',
+          selectedSources: ['lausanne_migration'],
+          selectedLayers: ['lausanne_pop_density-layer'],
+          createdAt: new Date('2024-01-01')
+        },
+        {
+          id: 'inv-2',
+          name: 'Temperature Analysis',
+          selectedSources: ['lausanne_temperature'],
+          selectedLayers: ['lausanne_temperature-layer'],
+          createdAt: new Date('2024-01-02')
+        }
+      ]
+    },
+    {
+      id: 'project-2',
+      name: 'Environmental Impact',
+      expanded: false,
+      investigations: [
+        {
+          id: 'inv-3',
+          name: 'Air Quality Study',
+          selectedSources: ['lausanne_aqi'],
+          selectedLayers: ['lausanne_aqi'],
+          createdAt: new Date('2024-01-03')
+        }
+      ]
+    }
+  ])
+
+  const activeInvestigationId = ref<string | null>('inv-1')
+
+  // Computed active investigation
+  const activeInvestigation = computed(() => {
+    for (const project of projects.value) {
+      const investigation = project.investigations.find(
+        (inv) => inv.id === activeInvestigationId.value
+      )
+      if (investigation) return investigation
+    }
+    return null
+  })
+
+  // Toggle project expansion
+  function toggleProject(projectId: string) {
+    const project = projects.value.find((p) => p.id === projectId)
+    if (project) {
+      project.expanded = !project.expanded
+    }
+  }
+
+  // Find investigation by ID
+  function findInvestigation(id: string): Investigation | null {
+    for (const project of projects.value) {
+      const investigation = project.investigations.find((inv) => inv.id === id)
+      if (investigation) return investigation
+    }
+    return null
+  }
+
+  // Switch to investigation
+  function switchToInvestigation(investigationId: string | null) {
+    if (!investigationId) return
+
+    const investigation = findInvestigation(investigationId)
+    if (!investigation) return
+
+    activeInvestigationId.value = investigationId
+
+    // Apply investigation state to the store
+    updateAvailableResourceSources(investigation.selectedSources)
+    updateActiveSources(investigation.selectedSources)
+    updateSelectedLayers(investigation.selectedLayers)
+  }
+
+  // Save current state as new investigation
+  function saveCurrentState(projectId: string) {
+    const project = projects.value.find((p) => p.id === projectId)
+    if (!project) return
+
+    const newInvestigation: Investigation = {
+      id: `inv-${Date.now()}`,
+      name: `Investigation ${project.investigations.length + 1}`,
+      selectedSources: [...availableResourceSources.value],
+      selectedLayers: [...selectedLayers.value],
+      createdAt: new Date()
+    }
+
+    project.investigations.push(newInvestigation)
+    activeInvestigationId.value = newInvestigation.id
+  }
+
+  // Remove investigation
+  function removeInvestigation(investigationId: string) {
+    for (const project of projects.value) {
+      const index = project.investigations.findIndex((inv) => inv.id === investigationId)
+      if (index !== -1) {
+        project.investigations.splice(index, 1)
+
+        // If removing active investigation, switch to first available
+        if (activeInvestigationId.value === investigationId) {
+          const firstInvestigation = projects.value.flatMap((p) => p.investigations)[0]
+          if (firstInvestigation) {
+            switchToInvestigation(firstInvestigation.id)
+          } else {
+            activeInvestigationId.value = null
+          }
+        }
+        break
+      }
+    }
+  }
+
+  // Initialize store - apply initial investigation if available
+  function initializeInvestigations() {
+    if (activeInvestigationId.value) {
+      switchToInvestigation(activeInvestigationId.value)
+    }
+  }
+
   return {
     layerGroups,
     sp0Period,
@@ -233,6 +391,18 @@ export const useLayersStore = defineStore('layers', () => {
     addSources,
     removeSource,
     toggleSource,
-    isSourceEnabled
+    isSourceEnabled,
+    updateAvailableResourceSources,
+    updateActiveSources,
+    // Investigation management
+    projects,
+    activeInvestigationId,
+    activeInvestigation,
+    toggleProject,
+    findInvestigation,
+    switchToInvestigation,
+    saveCurrentState,
+    removeInvestigation,
+    initializeInvestigations
   }
 })
