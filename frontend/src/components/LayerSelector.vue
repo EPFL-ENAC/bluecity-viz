@@ -91,7 +91,7 @@ const layersBySource = computed(() => {
             <div v-for="layer in layers" :key="layer.id" class="d-flex align-center py-0">
               <v-checkbox
                 :model-value="isLayerSelected(layer.id)"
-                class="mr-1"
+                class="ma-0 mr-2"
                 color="primary"
                 hide-details
                 density="compact"
