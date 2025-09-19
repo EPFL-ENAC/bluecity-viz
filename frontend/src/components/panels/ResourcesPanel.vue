@@ -44,42 +44,38 @@ const addVisualizationsDialog = ref(false)
               <p>No data sets added yet</p>
               <p class="text-caption">Click the + button to add data sources</p>
             </div>
-            <div v-else class="space-y-2">
+            <div v-else>
               <v-card
                 v-for="source in layersStore.availableResourceSourceObjects"
                 :key="source.id"
+                :class="[
+                  'source-card mb-1 cursor-pointer',
+                  { 'active-source': layersStore.isSourceEnabled(source.id) }
+                ]"
+                variant="outlined"
                 density="compact"
-                class="mb-1"
+                @click="
+                  layersStore.toggleSource(source.id, !layersStore.isSourceEnabled(source.id))
+                "
               >
-                <v-card-text class="py-1 px-2">
-                  <div class="d-flex align-center justify-between">
+                <v-card-text class="py-2 px-3">
+                  <div class="d-flex align-center justify-space-between w-100">
                     <div class="flex-grow-1">
-                      <div class="d-flex align-center">
-                        <v-switch
-                          :model-value="layersStore.isSourceEnabled(source.id)"
-                          class="ma-2 mr-4"
-                          color="primary"
-                          hide-details
-                          density="compact"
-                          @update:model-value="
-                            (enabled) => layersStore.toggleSource(source.id, enabled)
-                          "
-                        />
-                        <div>
-                          <h6 class="text-subtitle-2 mb-0">{{ source.label }}</h6>
-                          <p class="text-caption text--secondary mb-0">
-                            {{ layersStore.getLayersBySource(source.id).length }} layers available
-                          </p>
-                        </div>
+                      <div class="text-body-2 font-weight-medium">{{ source.label }}</div>
+                      <div class="text-caption text-medium-emphasis">
+                        {{ layersStore.getLayersBySource(source.id).length }} layers available
                       </div>
                     </div>
-                    <v-btn
-                      :icon="mdiClose"
-                      variant="text"
-                      size="small"
-                      density="compact"
-                      @click="layersStore.removeSource(source.id)"
-                    />
+                    <div class="d-flex align-center">
+                      <v-btn
+                        :icon="mdiClose"
+                        size="x-small"
+                        variant="text"
+                        density="compact"
+                        @click.stop="layersStore.removeSource(source.id)"
+                      >
+                      </v-btn>
+                    </div>
                   </div>
                 </v-card-text>
               </v-card>
@@ -106,54 +102,47 @@ const addVisualizationsDialog = ref(false)
         <!-- Analytics Tools List (Expandable) -->
         <v-expand-transition>
           <div v-show="analyticsExpanded">
-            <div class="space-y-2">
-              <v-card
-                v-for="tool in [
-                  {
-                    id: 'correlation',
-                    label: 'Correlation Analysis',
-                    description: 'Analyze relationships between datasets'
-                  },
-                  {
-                    id: 'clustering',
-                    label: 'Spatial Clustering',
-                    description: 'Identify spatial patterns and clusters'
-                  }
-                ]"
-                :key="tool.id"
-                density="compact"
-                class="mb-1"
-              >
-                <v-card-text class="py-1 px-2">
-                  <div class="d-flex align-center justify-between">
-                    <div class="flex-grow-1">
-                      <div class="d-flex align-center">
-                        <v-switch
-                          :model-value="false"
-                          class="ma-2 mr-4"
-                          color="primary"
-                          hide-details
-                          density="compact"
-                        />
-                        <div>
-                          <h6 class="text-body-2 mb-0">{{ tool.label }}</h6>
-                          <p class="text-caption text--secondary mb-0">
-                            {{ tool.description }}
-                          </p>
-                        </div>
-                      </div>
+            <v-card
+              v-for="tool in [
+                {
+                  id: 'correlation',
+                  label: 'Correlation Analysis',
+                  description: 'Analyze relationships between datasets'
+                },
+                {
+                  id: 'clustering',
+                  label: 'Spatial Clustering',
+                  description: 'Identify spatial patterns and clusters'
+                }
+              ]"
+              :key="tool.id"
+              :class="['tool-card mb-1 cursor-pointer', { 'active-tool': false }]"
+              variant="outlined"
+              density="compact"
+              @click="() => {}"
+            >
+              <v-card-text class="py-2 px-3">
+                <div class="d-flex align-center justify-space-between w-100">
+                  <div class="flex-grow-1">
+                    <div class="text-body-2 font-weight-medium">{{ tool.label }}</div>
+                    <div class="text-caption text-medium-emphasis">
+                      {{ tool.description }}
                     </div>
+                  </div>
+                  <div class="d-flex align-center">
                     <v-btn
                       :icon="mdiClose"
+                      size="x-small"
                       variant="text"
-                      size="small"
                       density="compact"
                       disabled
-                    />
+                      @click.stop=""
+                    >
+                    </v-btn>
                   </div>
-                </v-card-text>
-              </v-card>
-            </div>
+                </div>
+              </v-card-text>
+            </v-card>
           </div>
         </v-expand-transition>
       </div>
@@ -181,59 +170,52 @@ const addVisualizationsDialog = ref(false)
         <!-- Visualizations List (Expandable) -->
         <v-expand-transition>
           <div v-show="visualizationsExpanded">
-            <div class="space-y-2">
-              <v-card
-                v-for="viz in [
-                  {
-                    id: 'heatmap',
-                    label: 'Heat Map',
-                    description: 'Display data intensity with color gradients'
-                  },
-                  {
-                    id: 'choropleth',
-                    label: 'Choropleth Map',
-                    description: 'Show data variations across regions'
-                  },
-                  {
-                    id: 'scatter',
-                    label: 'Scatter Plot',
-                    description: 'Plot relationships between variables'
-                  }
-                ]"
-                :key="viz.id"
-                density="compact"
-                class="mb-1"
-              >
-                <v-card-text class="py-1 px-2">
-                  <div class="d-flex align-center justify-between">
-                    <div class="flex-grow-1">
-                      <div class="d-flex align-center">
-                        <v-switch
-                          :model-value="false"
-                          class="ma-2 mr-4"
-                          color="primary"
-                          hide-details
-                          density="compact"
-                        />
-                        <div>
-                          <h6 class="text-body-2 mb-0">{{ viz.label }}</h6>
-                          <p class="text-caption text--secondary mb-0">
-                            {{ viz.description }}
-                          </p>
-                        </div>
-                      </div>
+            <v-card
+              v-for="viz in [
+                {
+                  id: 'heatmap',
+                  label: 'Heat Map',
+                  description: 'Display data intensity with color gradients'
+                },
+                {
+                  id: 'choropleth',
+                  label: 'Choropleth Map',
+                  description: 'Show data variations across regions'
+                },
+                {
+                  id: 'scatter',
+                  label: 'Scatter Plot',
+                  description: 'Plot relationships between variables'
+                }
+              ]"
+              :key="viz.id"
+              :class="['viz-card mb-1 cursor-pointer', { 'active-viz': false }]"
+              variant="outlined"
+              density="compact"
+              @click="() => {}"
+            >
+              <v-card-text class="py-2 px-3">
+                <div class="d-flex align-center justify-space-between w-100">
+                  <div class="flex-grow-1">
+                    <div class="text-body-2 font-weight-medium">{{ viz.label }}</div>
+                    <div class="text-caption text-medium-emphasis">
+                      {{ viz.description }}
                     </div>
+                  </div>
+                  <div class="d-flex align-center">
                     <v-btn
                       :icon="mdiClose"
+                      size="x-small"
                       variant="text"
-                      size="small"
                       density="compact"
                       disabled
-                    />
+                      @click.stop=""
+                    >
+                    </v-btn>
                   </div>
-                </v-card-text>
-              </v-card>
-            </div>
+                </div>
+              </v-card-text>
+            </v-card>
           </div>
         </v-expand-transition>
       </div>
@@ -248,5 +230,28 @@ const addVisualizationsDialog = ref(false)
 .panel-header {
   background-color: #fafafa;
   border-bottom: 1px solid #e0e0e0;
+}
+
+.source-card,
+.tool-card,
+.viz-card {
+  transition: all 0.2s ease;
+}
+
+.source-card:hover,
+.tool-card:hover,
+.viz-card:hover {
+  background-color: #f5f5f5;
+}
+
+.active-source,
+.active-tool,
+.active-viz {
+  background-color: #e3f2fd !important;
+  border-color: #2196f3 !important;
+}
+
+.cursor-pointer {
+  cursor: pointer;
 }
 </style>

@@ -81,52 +81,49 @@ async function copyToClipboard() {
 
           <!-- Investigations List -->
           <v-expand-transition>
-            <div v-show="project.expanded" class="mt-2 w-100">
-              <v-radio-group
-                :model-value="layersStore.activeInvestigationId"
+            <div v-show="project.expanded" class="mt-2">
+              <v-card
+                v-for="investigation in project.investigations"
+                :key="investigation.id"
+                :class="[
+                  'investigation-card mb-1 cursor-pointer',
+                  { 'active-investigation': layersStore.activeInvestigationId === investigation.id }
+                ]"
+                variant="outlined"
                 density="compact"
-                class="mb-0"
-                @update:model-value="layersStore.switchToInvestigation($event)"
+                @click="layersStore.switchToInvestigation(investigation.id)"
               >
-                <v-radio
-                  v-for="investigation in project.investigations"
-                  :key="investigation.id"
-                  :value="investigation.id"
-                  density="compact"
-                  class="mb-1 mr-4"
-                >
-                  <template #label>
-                    <div class="d-flex align-center justify-space-between w-100 px-4">
-                      <div class="flex-grow-1">
-                        <div class="text-body-2">{{ investigation.name }}</div>
-                        <div class="text-caption text-medium-emphasis">
-                          {{ investigation.selectedSources.length }} sources,
-                          {{ investigation.selectedLayers.length }} layers
-                        </div>
-                      </div>
-                      <div class="d-flex align-center">
-                        <v-btn
-                          :icon="mdiShare"
-                          size="x-small"
-                          variant="text"
-                          density="compact"
-                          class="mr-1"
-                          @click.stop="handleShare(investigation.id)"
-                        >
-                        </v-btn>
-                        <v-btn
-                          :icon="mdiClose"
-                          size="x-small"
-                          variant="text"
-                          density="compact"
-                          @click.stop="layersStore.removeInvestigation(investigation.id)"
-                        >
-                        </v-btn>
+                <v-card-text class="py-2 px-3">
+                  <div class="d-flex align-center justify-space-between w-100">
+                    <div class="flex-grow-1">
+                      <div class="text-body-2 font-weight-medium">{{ investigation.name }}</div>
+                      <div class="text-caption text-medium-emphasis">
+                        {{ investigation.selectedSources.length }} sources,
+                        {{ investigation.selectedLayers.length }} layers
                       </div>
                     </div>
-                  </template>
-                </v-radio>
-              </v-radio-group>
+                    <div class="d-flex align-center">
+                      <v-btn
+                        :icon="mdiShare"
+                        size="x-small"
+                        variant="text"
+                        density="compact"
+                        class="mr-1"
+                        @click.stop="handleShare(investigation.id)"
+                      >
+                      </v-btn>
+                      <v-btn
+                        :icon="mdiClose"
+                        size="x-small"
+                        variant="text"
+                        density="compact"
+                        @click.stop="layersStore.removeInvestigation(investigation.id)"
+                      >
+                      </v-btn>
+                    </div>
+                  </div>
+                </v-card-text>
+              </v-card>
             </div>
           </v-expand-transition>
         </v-card>
@@ -183,5 +180,22 @@ async function copyToClipboard() {
 .panel-header {
   background-color: #fafafa;
   border-bottom: 1px solid #e0e0e0;
+}
+
+.investigation-card {
+  transition: all 0.2s ease;
+}
+
+.investigation-card:hover {
+  background-color: #f5f5f5;
+}
+
+.active-investigation {
+  background-color: #e3f2fd !important;
+  border-color: #2196f3 !important;
+}
+
+.cursor-pointer {
+  cursor: pointer;
 }
 </style>

@@ -3,7 +3,7 @@ import CollectionsPanel from '@/components/panels/CollectionsPanel.vue'
 import VisualizationsPanel from '@/components/panels/VisualizationsPanel.vue'
 import ResourcesPanel from '@/components/panels/ResourcesPanel.vue'
 import { ref } from 'vue'
-import { mdiMenu, mdiMenuOpen, mdiClose } from '@mdi/js'
+import { mdiMenu, mdiMenuOpen } from '@mdi/js'
 
 // Navigation drawer states
 const collectionsDrawer = ref(true)
@@ -15,7 +15,7 @@ const resourcesDrawer = ref(true)
     <!-- Top App Bar -->
     <v-app-bar class="border-b-sm" color="white" density="compact" flat>
       <!-- Collections Section (300px width to match drawer) -->
-      <div class="collections-header border-e-sm">
+      <div class="collections-header">
         <v-btn
           :icon="collectionsDrawer ? mdiMenuOpen : mdiMenu"
           variant="text"
@@ -31,7 +31,7 @@ const resourcesDrawer = ref(true)
       </div>
 
       <!-- Resources Section (300px width to match drawer) -->
-      <div class="resources-header border-s-sm">
+      <div class="resources-header">
         <span class="text-subtitle-1">RESOURCES</span>
         <v-btn
           :icon="resourcesDrawer ? mdiMenuOpen : mdiMenu"
