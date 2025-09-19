@@ -19,12 +19,20 @@ export function createUrlSharingComposable(
     }
 
     try {
-      const encoded = btoa(JSON.stringify(shareableState))
+      const jsonString = JSON.stringify(shareableState)
+      const encoded = btoa(jsonString)
       const url = new URL(window.location.origin + window.location.pathname)
       url.searchParams.set('state', encoded)
       return url.toString()
     } catch (error) {
-      console.warn('Failed to generate shareable URL:', error)
+      if (error instanceof TypeError && error.message.includes('malformed')) {
+        console.warn(
+          'Failed to generate shareable URL: Invalid character in shareable state for base64 encoding',
+          error
+        )
+      } else {
+        console.warn('Failed to generate shareable URL:', error)
+      }
       return window.location.origin
     }
   }
@@ -36,7 +44,47 @@ export function createUrlSharingComposable(
 
       if (!encodedState) return false
 
-      const decodedState = JSON.parse(atob(encodedState))
+      // Check for invalid base64 encoding
+      let decodedString: string
+      try {
+        decodedString = atob(encodedState)
+      } catch (base64Error) {
+        console.warn('Failed to load state from URL: Invalid base64 encoding', base64Error)
+        return false
+      }
+
+      // Check for malformed JSON
+      let decodedState: any
+      try {
+        decodedState = JSON.parse(decodedString)
+      } catch (jsonError) {
+        console.warn('Failed to load state from URL: Malformed JSON in decoded state', jsonError)
+        return false
+      }
+
+      // Check for missing required properties
+      if (!decodedState.name) {
+        console.warn(
+          'Failed to load state from URL: Missing required property "name" in decoded state'
+        )
+        return false
+      }
+
+      // Validate property types
+      if (decodedState.selectedSources && !Array.isArray(decodedState.selectedSources)) {
+        console.warn('Failed to load state from URL: Property "selectedSources" must be an array')
+        return false
+      }
+
+      if (decodedState.selectedLayers && !Array.isArray(decodedState.selectedLayers)) {
+        console.warn('Failed to load state from URL: Property "selectedLayers" must be an array')
+        return false
+      }
+
+      if (decodedState.sp0Period && typeof decodedState.sp0Period !== 'string') {
+        console.warn('Failed to load state from URL: Property "sp0Period" must be a string')
+        return false
+      }
 
       // Create a temporary investigation with the shared state
       const sharedInvestigation: Investigation = {
@@ -74,7 +122,7 @@ export function createUrlSharingComposable(
 
       return true
     } catch (error) {
-      console.warn('Failed to load state from URL:', error)
+      console.warn('Failed to load state from URL: Unexpected error during state loading', error)
       return false
     }
   }
