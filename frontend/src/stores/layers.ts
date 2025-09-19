@@ -1,7 +1,7 @@
 import type { CustomSourceSpecification } from '@/config/layerTypes'
 import { layerGroups as configLayerGroups, mapConfig } from '@/config/mapConfig'
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 // Investigation interface
 export interface Investigation {
@@ -20,7 +20,52 @@ export interface Project {
   investigations: Investigation[]
 }
 
+// Persistence helpers
+const STORAGE_KEY = 'bluecity-layers-store'
+
+interface PersistedState {
+  selectedLayers: string[]
+  availableResourceSources: string[]
+  activeSources: string[]
+  projects: Project[]
+  activeInvestigationId: string | null
+  sp0Period: string
+  expandedGroups: Record<string, boolean>
+}
+
+function loadPersistedState(): Partial<PersistedState> {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      // Convert date strings back to Date objects for investigations
+      if (parsed.projects) {
+        parsed.projects.forEach((project: Project) => {
+          project.investigations.forEach((investigation: Investigation) => {
+            investigation.createdAt = new Date(investigation.createdAt)
+          })
+        })
+      }
+      return parsed
+    }
+  } catch (error) {
+    console.warn('Failed to load persisted state:', error)
+  }
+  return {}
+}
+
+function saveStateToStorage(state: PersistedState) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch (error) {
+    console.warn('Failed to save state to storage:', error)
+  }
+}
+
 export const useLayersStore = defineStore('layers', () => {
+  // Load persisted state
+  const persistedState = loadPersistedState()
+
   // Store the layer groups from config
   const layerGroups = ref<
     {
@@ -32,20 +77,24 @@ export const useLayersStore = defineStore('layers', () => {
     }[]
   >(configLayerGroups)
 
-  const sp0Period = ref<string>('2020-2023')
+  const sp0Period = ref<string>(persistedState.sp0Period || '2020-2023')
 
   // Selected layer IDs
-  const selectedLayers = ref<string[]>([])
+  const selectedLayers = ref<string[]>(persistedState.selectedLayers || [])
 
   // Available source IDs in the resources panel (sources user has added)
-  const availableResourceSources = ref<string[]>([
-    'accessibility_atlas',
-    'lausanne_migration',
-    'lausanne_temperature'
-  ])
+  const availableResourceSources = ref<string[]>(
+    persistedState.availableResourceSources || [
+      'accessibility_atlas',
+      'lausanne_migration',
+      'lausanne_temperature'
+    ]
+  )
 
   // Active/selected source IDs (sources that are currently enabled)
-  const activeSources = ref<string[]>(['lausanne_migration', 'lausanne_temperature'])
+  const activeSources = ref<string[]>(
+    persistedState.activeSources || ['lausanne_migration', 'lausanne_temperature']
+  )
 
   // Store the filtered categories for each layer
   const filteredCategories = ref<Record<string, Record<string, string[]>>>({})
@@ -56,7 +105,8 @@ export const useLayersStore = defineStore('layers', () => {
 
   // Expanded state for each group
   const expandedGroups = ref<Record<string, boolean>>(
-    Object.fromEntries(layerGroups.value.map((group) => [group.id, !!group.expanded]))
+    persistedState.expandedGroups ||
+      Object.fromEntries(layerGroups.value.map((group) => [group.id, !!group.expanded]))
   )
 
   // Flatten all layers for internal use
@@ -150,6 +200,8 @@ export const useLayersStore = defineStore('layers', () => {
         selectedLayers.value = [...otherGroupLayers, groupLayerIds[0]]
       }
     }
+    // Update active investigation if one exists
+    updateCurrentInvestigation()
   }
 
   // Update selected layers (for checkboxes/multiple selection)
@@ -159,6 +211,8 @@ export const useLayersStore = defineStore('layers', () => {
     } else {
       selectedLayers.value.length = 0
     }
+    // Update active investigation if one exists
+    updateCurrentInvestigation()
   }
 
   // Update single layer selection (for radio buttons/single selection)
@@ -188,6 +242,8 @@ export const useLayersStore = defineStore('layers', () => {
   // Add sources to resources panel
   function addSources(sourceIds: string[]) {
     availableResourceSources.value = [...availableResourceSources.value, ...sourceIds]
+    // Update active investigation if one exists
+    updateCurrentInvestigation()
   }
 
   // Remove a source from resources panel
@@ -200,6 +256,8 @@ export const useLayersStore = defineStore('layers', () => {
     const layersFromSource = getLayersBySource(sourceId)
     const layerIds = layersFromSource.map((layer) => layer.layer.id)
     selectedLayers.value = selectedLayers.value.filter((id) => !layerIds.includes(id))
+    // Update active investigation if one exists
+    updateCurrentInvestigation()
   }
 
   // Toggle source active state (this will later be used for layer selection instead of automatic layer enabling)
@@ -219,6 +277,8 @@ export const useLayersStore = defineStore('layers', () => {
       const layerIds = layersFromSource.map((layer) => layer.layer.id)
       selectedLayers.value = selectedLayers.value.filter((id) => !layerIds.includes(id))
     }
+    // Update active investigation if one exists
+    updateCurrentInvestigation()
   }
 
   // Check if source is currently active
@@ -236,48 +296,64 @@ export const useLayersStore = defineStore('layers', () => {
     activeSources.value = [...sourceIds]
   }
 
+  // Update current investigation with current state
+  function updateCurrentInvestigation() {
+    // Don't update if we're currently loading an investigation
+    if (isLoadingInvestigation.value) return
+    if (!activeInvestigationId.value) return
+
+    const investigation = findInvestigation(activeInvestigationId.value)
+    if (!investigation) return
+
+    // Update the investigation with current state
+    investigation.selectedSources = [...availableResourceSources.value]
+    investigation.selectedLayers = [...selectedLayers.value]
+  }
+
   // Investigation and Project Management
 
   // Projects with investigations
-  const projects = ref<Project[]>([
-    {
-      id: 'project-1',
-      name: 'Urban Mobility Analysis',
-      expanded: true,
-      investigations: [
-        {
-          id: 'inv-1',
-          name: 'Population Distribution',
-          selectedSources: ['lausanne_migration'],
-          selectedLayers: ['lausanne_pop_density-layer'],
-          createdAt: new Date('2024-01-01')
-        },
-        {
-          id: 'inv-2',
-          name: 'Temperature Analysis',
-          selectedSources: ['lausanne_temperature'],
-          selectedLayers: ['lausanne_temperature-layer'],
-          createdAt: new Date('2024-01-02')
-        }
-      ]
-    },
-    {
-      id: 'project-2',
-      name: 'Environmental Impact',
-      expanded: false,
-      investigations: [
-        {
-          id: 'inv-3',
-          name: 'Air Quality Study',
-          selectedSources: ['lausanne_aqi'],
-          selectedLayers: ['lausanne_aqi'],
-          createdAt: new Date('2024-01-03')
-        }
-      ]
-    }
-  ])
+  const projects = ref<Project[]>(
+    persistedState.projects || [
+      {
+        id: 'project-1',
+        name: 'Urban Mobility Analysis',
+        expanded: true,
+        investigations: [
+          {
+            id: 'inv-1',
+            name: 'Population Distribution',
+            selectedSources: ['lausanne_migration'],
+            selectedLayers: ['lausanne_pop_density-layer'],
+            createdAt: new Date('2024-01-01')
+          },
+          {
+            id: 'inv-2',
+            name: 'Temperature Analysis',
+            selectedSources: ['lausanne_temperature'],
+            selectedLayers: ['lausanne_temperature-layer'],
+            createdAt: new Date('2024-01-02')
+          }
+        ]
+      },
+      {
+        id: 'project-2',
+        name: 'Environmental Impact',
+        expanded: false,
+        investigations: [
+          {
+            id: 'inv-3',
+            name: 'Air Quality Study',
+            selectedSources: ['lausanne_aqi'],
+            selectedLayers: ['lausanne_aqi'],
+            createdAt: new Date('2024-01-03')
+          }
+        ]
+      }
+    ]
+  )
 
-  const activeInvestigationId = ref<string | null>('inv-1')
+  const activeInvestigationId = ref<string | null>(persistedState.activeInvestigationId || 'inv-1')
 
   // Computed active investigation
   const activeInvestigation = computed(() => {
@@ -307,6 +383,9 @@ export const useLayersStore = defineStore('layers', () => {
     return null
   }
 
+  // Track if we're currently loading an investigation to prevent auto-updates
+  const isLoadingInvestigation = ref(false)
+
   // Switch to investigation
   function switchToInvestigation(investigationId: string | null) {
     if (!investigationId) return
@@ -314,12 +393,17 @@ export const useLayersStore = defineStore('layers', () => {
     const investigation = findInvestigation(investigationId)
     if (!investigation) return
 
+    // Set loading flag to prevent auto-updates during state restoration
+    isLoadingInvestigation.value = true
     activeInvestigationId.value = investigationId
 
     // Apply investigation state to the store
     updateAvailableResourceSources(investigation.selectedSources)
     updateActiveSources(investigation.selectedSources)
     updateSelectedLayers(investigation.selectedLayers)
+
+    // Clear loading flag
+    isLoadingInvestigation.value = false
   }
 
   // Save current state as new investigation
@@ -367,6 +451,40 @@ export const useLayersStore = defineStore('layers', () => {
     }
   }
 
+  // Persist state to localStorage
+  function persistState() {
+    const stateToPersist: PersistedState = {
+      selectedLayers: selectedLayers.value,
+      availableResourceSources: availableResourceSources.value,
+      activeSources: activeSources.value,
+      projects: projects.value,
+      activeInvestigationId: activeInvestigationId.value,
+      sp0Period: sp0Period.value,
+      expandedGroups: expandedGroups.value
+    }
+    saveStateToStorage(stateToPersist)
+  }
+
+  // Set up watchers to automatically persist state changes
+  watch(
+    [
+      selectedLayers,
+      availableResourceSources,
+      activeSources,
+      projects,
+      activeInvestigationId,
+      sp0Period,
+      expandedGroups
+    ],
+    () => {
+      // Debounce the persistence to avoid too frequent writes
+      if (!isLoadingInvestigation.value) {
+        setTimeout(persistState, 100)
+      }
+    },
+    { deep: true }
+  )
+
   return {
     layerGroups,
     sp0Period,
@@ -403,6 +521,15 @@ export const useLayersStore = defineStore('layers', () => {
     switchToInvestigation,
     saveCurrentState,
     removeInvestigation,
-    initializeInvestigations
+    initializeInvestigations,
+    persistState,
+    // Utility function to clear persisted data (useful for debugging/reset)
+    clearPersistedData: () => {
+      try {
+        localStorage.removeItem(STORAGE_KEY)
+      } catch (error) {
+        console.warn('Failed to clear persisted data:', error)
+      }
+    }
   }
 })
