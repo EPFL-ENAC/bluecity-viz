@@ -2,7 +2,14 @@
 import AddSourceDialog from '@/components/panels/AddSourceDialog.vue'
 import { useLayersStore } from '@/stores/layers'
 import { ref } from 'vue'
-import { mdiPlus, mdiChevronDown, mdiChevronRight, mdiClose } from '@mdi/js'
+import {
+  mdiPlus,
+  mdiChevronDown,
+  mdiChevronRight,
+  mdiClose,
+  mdiCheckboxMarked,
+  mdiCheckboxBlankOutline
+} from '@mdi/js'
 
 // Use the layers store
 const layersStore = useLayersStore()
@@ -14,6 +21,27 @@ const visualizationsExpanded = ref(true)
 const addSourceDialog = ref(false)
 const addAnalyticsDialog = ref(false)
 const addVisualizationsDialog = ref(false)
+
+// State for placeholder items
+const enabledTools = ref(new Set<string>())
+const enabledVisualizations = ref(new Set<string>())
+
+// Functions for placeholder interactions
+const toggleTool = (toolId: string) => {
+  if (enabledTools.value.has(toolId)) {
+    enabledTools.value.delete(toolId)
+  } else {
+    enabledTools.value.add(toolId)
+  }
+}
+
+const toggleVisualization = (vizId: string) => {
+  if (enabledVisualizations.value.has(vizId)) {
+    enabledVisualizations.value.delete(vizId)
+  } else {
+    enabledVisualizations.value.add(vizId)
+  }
+}
 </script>
 
 <template>
@@ -60,13 +88,25 @@ const addVisualizationsDialog = ref(false)
               >
                 <v-card-text class="py-2 px-3">
                   <div class="d-flex align-center justify-space-between w-100">
-                    <div class="flex-grow-1">
-                      <div class="text-body-2 font-weight-medium">{{ source.label }}</div>
-                      <div class="text-caption text-medium-emphasis">
-                        {{ layersStore.getLayersBySource(source.id).length }} layers available
+                    <div class="d-flex align-center flex-grow-1">
+                      <v-icon
+                        :icon="
+                          layersStore.isSourceEnabled(source.id)
+                            ? mdiCheckboxMarked
+                            : mdiCheckboxBlankOutline
+                        "
+                        size="small"
+                        class="mr-2"
+                        :color="layersStore.isSourceEnabled(source.id) ? 'primary' : 'grey'"
+                      />
+                      <div class="flex-grow-1">
+                        <div class="text-body-2 font-weight-medium">{{ source.label }}</div>
+                        <div class="text-caption text-medium-emphasis">
+                          {{ layersStore.getLayersBySource(source.id).length }} layers available
+                        </div>
                       </div>
                     </div>
-                    <div class="d-flex align-center">
+                    <div class="d-flex align-center ml-2">
                       <v-btn
                         :icon="mdiClose"
                         size="x-small"
@@ -116,17 +156,30 @@ const addVisualizationsDialog = ref(false)
                 }
               ]"
               :key="tool.id"
-              :class="['tool-card mb-1 cursor-pointer', { 'active-tool': false }]"
+              :class="[
+                'tool-card mb-1 cursor-pointer',
+                { 'active-tool': enabledTools.has(tool.id) }
+              ]"
               variant="outlined"
               density="compact"
-              @click="() => {}"
+              @click="toggleTool(tool.id)"
             >
               <v-card-text class="py-2 px-3">
                 <div class="d-flex align-center justify-space-between w-100">
-                  <div class="flex-grow-1">
-                    <div class="text-body-2 font-weight-medium">{{ tool.label }}</div>
-                    <div class="text-caption text-medium-emphasis">
-                      {{ tool.description }}
+                  <div class="d-flex align-center flex-grow-1">
+                    <v-icon
+                      :icon="
+                        enabledTools.has(tool.id) ? mdiCheckboxMarked : mdiCheckboxBlankOutline
+                      "
+                      size="small"
+                      class="mr-2"
+                      :color="enabledTools.has(tool.id) ? 'primary' : 'grey'"
+                    />
+                    <div class="flex-grow-1">
+                      <div class="text-body-2 font-weight-medium">{{ tool.label }}</div>
+                      <div class="text-caption text-medium-emphasis">
+                        {{ tool.description }}
+                      </div>
                     </div>
                   </div>
                   <div class="d-flex align-center">
@@ -135,8 +188,7 @@ const addVisualizationsDialog = ref(false)
                       size="x-small"
                       variant="text"
                       density="compact"
-                      disabled
-                      @click.stop=""
+                      @click.stop="enabledTools.delete(tool.id)"
                     >
                     </v-btn>
                   </div>
@@ -189,17 +241,32 @@ const addVisualizationsDialog = ref(false)
                 }
               ]"
               :key="viz.id"
-              :class="['viz-card mb-1 cursor-pointer', { 'active-viz': false }]"
+              :class="[
+                'viz-card mb-1 cursor-pointer',
+                { 'active-viz': enabledVisualizations.has(viz.id) }
+              ]"
               variant="outlined"
               density="compact"
-              @click="() => {}"
+              @click="toggleVisualization(viz.id)"
             >
               <v-card-text class="py-2 px-3">
                 <div class="d-flex align-center justify-space-between w-100">
-                  <div class="flex-grow-1">
-                    <div class="text-body-2 font-weight-medium">{{ viz.label }}</div>
-                    <div class="text-caption text-medium-emphasis">
-                      {{ viz.description }}
+                  <div class="d-flex align-center flex-grow-1">
+                    <v-icon
+                      :icon="
+                        enabledVisualizations.has(viz.id)
+                          ? mdiCheckboxMarked
+                          : mdiCheckboxBlankOutline
+                      "
+                      size="small"
+                      class="mr-2"
+                      :color="enabledVisualizations.has(viz.id) ? 'primary' : 'grey'"
+                    />
+                    <div class="flex-grow-1">
+                      <div class="text-body-2 font-weight-medium">{{ viz.label }}</div>
+                      <div class="text-caption text-medium-emphasis">
+                        {{ viz.description }}
+                      </div>
                     </div>
                   </div>
                   <div class="d-flex align-center">
@@ -208,8 +275,7 @@ const addVisualizationsDialog = ref(false)
                       size="x-small"
                       variant="text"
                       density="compact"
-                      disabled
-                      @click.stop=""
+                      @click.stop="enabledVisualizations.delete(viz.id)"
                     >
                     </v-btn>
                   </div>

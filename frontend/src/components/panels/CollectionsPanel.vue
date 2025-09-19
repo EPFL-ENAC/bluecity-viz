@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useLayersStore } from '@/stores/layers'
-import { mdiChevronDown, mdiChevronRight, mdiPlus, mdiClose, mdiShare } from '@mdi/js'
+import {
+  mdiChevronDown,
+  mdiChevronRight,
+  mdiPlus,
+  mdiClose,
+  mdiShare,
+  mdiRadioboxMarked,
+  mdiRadioboxBlank
+} from '@mdi/js'
 
 // Use the layers store
 const layersStore = useLayersStore()
@@ -95,11 +103,27 @@ async function copyToClipboard() {
               >
                 <v-card-text class="py-2 px-3">
                   <div class="d-flex align-center justify-space-between w-100">
-                    <div class="flex-grow-1">
-                      <div class="text-body-2 font-weight-medium">{{ investigation.name }}</div>
-                      <div class="text-caption text-medium-emphasis">
-                        {{ investigation.selectedSources.length }} sources,
-                        {{ investigation.selectedLayers.length }} layers
+                    <div class="d-flex align-center flex-grow-1">
+                      <v-icon
+                        :icon="
+                          layersStore.activeInvestigationId === investigation.id
+                            ? mdiRadioboxMarked
+                            : mdiRadioboxBlank
+                        "
+                        size="small"
+                        class="mr-2"
+                        :color="
+                          layersStore.activeInvestigationId === investigation.id
+                            ? 'primary'
+                            : 'grey'
+                        "
+                      />
+                      <div class="flex-grow-1">
+                        <div class="text-body-2 font-weight-medium">{{ investigation.name }}</div>
+                        <div class="text-caption text-medium-emphasis">
+                          {{ investigation.selectedSources.length }} sources,
+                          {{ investigation.selectedLayers.length }} layers
+                        </div>
                       </div>
                     </div>
                     <div class="d-flex align-center">
