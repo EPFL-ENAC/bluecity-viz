@@ -302,6 +302,7 @@ const toggleVisualization = (vizId: string) => {
 .tool-card,
 .viz-card {
   transition: all 0.2s ease;
+  border-color: #e0e0e0;
 }
 
 .source-card:hover,

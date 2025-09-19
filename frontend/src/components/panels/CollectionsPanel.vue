@@ -353,6 +353,7 @@ function saveInvestigationEdit() {
 
 .investigation-card {
   transition: all 0.2s ease;
+  border-color: #e0e0e0;
 }
 
 .investigation-card:hover {
