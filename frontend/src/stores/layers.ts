@@ -1,3 +1,4 @@
+import type { CustomSourceSpecification } from '@/config/layerTypes'
 import { layerGroups as configLayerGroups, mapConfig } from '@/config/mapConfig'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
@@ -18,6 +19,9 @@ export const useLayersStore = defineStore('layers', () => {
 
   // Selected layer IDs
   const selectedLayers = ref<string[]>([])
+
+  // Selected source IDs for the resources panel
+  const selectedSources = ref<string[]>([])
 
   // Store the filtered categories for each layer
   const filteredCategories = ref<Record<string, Record<string, string[]>>>({})
@@ -47,6 +51,38 @@ export const useLayersStore = defineStore('layers', () => {
   // Get visible layer configurations
   const visibleLayers = computed(() => {
     return mapConfig.layers.filter((layer) => selectedLayers.value.includes(layer.layer.id))
+  })
+
+  // Get list of all available sources
+  const availableSources = computed((): CustomSourceSpecification[] => {
+    return mapConfig.sources
+  })
+
+  // Get layers that use a specific source
+  function getLayersBySource(sourceId: string) {
+    return mapConfig.layers.filter((layer) => {
+      // Check if the layer's source ID matches the provided source ID
+      const source = layer.source as CustomSourceSpecification
+      return source.id === sourceId
+    })
+  }
+
+  // Get all layers grouped by their source
+  const layersBySource = computed(() => {
+    const sourceMap = new Map<string, typeof mapConfig.layers>()
+
+    mapConfig.layers.forEach((layer) => {
+      const source = layer.source as CustomSourceSpecification
+      const sourceId = source.id
+      if (sourceId) {
+        if (!sourceMap.has(sourceId)) {
+          sourceMap.set(sourceId, [])
+        }
+        sourceMap.get(sourceId)!.push(layer)
+      }
+    })
+
+    return sourceMap
   })
 
   // Toggle group expansion
@@ -113,19 +149,80 @@ export const useLayersStore = defineStore('layers', () => {
     updateSelectedLayers([...otherGroupLayers, layerId])
   }
 
+  // Source management functions
+
+  // Get selected source objects
+  const selectedSourceObjects = computed(() => {
+    return mapConfig.sources.filter((source) => selectedSources.value.includes(source.id))
+  })
+
+  // Get available sources that aren't already selected
+  const availableSourcesForDialog = computed(() => {
+    return mapConfig.sources.filter((source) => !selectedSources.value.includes(source.id))
+  })
+
+  // Add sources from dialog
+  function addSources(sourceIds: string[]) {
+    selectedSources.value = [...selectedSources.value, ...sourceIds]
+  }
+
+  // Remove a source
+  function removeSource(sourceId: string) {
+    selectedSources.value = selectedSources.value.filter((id) => id !== sourceId)
+    // Also remove any layers from this source when source is removed
+    const layersFromSource = getLayersBySource(sourceId)
+    const layerIds = layersFromSource.map((layer) => layer.layer.id)
+    selectedLayers.value = selectedLayers.value.filter((id) => !layerIds.includes(id))
+  }
+
+  // Toggle source visibility (enable/disable layers from this source)
+  function toggleSource(sourceId: string, enabled: boolean | null) {
+    if (enabled === null) return
+
+    const layersFromSource = getLayersBySource(sourceId)
+    const layerIds = layersFromSource.map((layer) => layer.layer.id)
+
+    if (enabled) {
+      // Add layers from this source
+      const newSelection = [...selectedLayers.value, ...layerIds]
+      updateSelectedLayers([...new Set(newSelection)]) // Remove duplicates
+    } else {
+      // Remove layers from this source
+      const filteredLayers = selectedLayers.value.filter((id) => !layerIds.includes(id))
+      updateSelectedLayers(filteredLayers)
+    }
+  }
+
+  // Check if source is currently enabled (has visible layers)
+  function isSourceEnabled(sourceId: string): boolean {
+    const layersFromSource = getLayersBySource(sourceId)
+    const layerIds = layersFromSource.map((layer) => layer.layer.id)
+    return layerIds.some((id) => selectedLayers.value.includes(id))
+  }
+
   return {
     layerGroups,
     sp0Period,
     selectedLayers,
+    selectedSources,
     filteredCategories,
     expandedGroups,
     possibleLayers,
     visibleLayers,
+    availableSources,
+    layersBySource,
+    selectedSourceObjects,
+    availableSourcesForDialog,
     toggleGroup,
     isGroupVisible,
     filterOutCategories,
     toggleGroupVisibility,
     updateSelectedLayers,
-    updateSingleLayerSelection
+    updateSingleLayerSelection,
+    getLayersBySource,
+    addSources,
+    removeSource,
+    toggleSource,
+    isSourceEnabled
   }
 })

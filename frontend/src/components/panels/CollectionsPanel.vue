@@ -4,8 +4,8 @@
 
 <template>
   <v-card flat class="d-flex flex-column">
-    <v-card-title class="flex-shrink-0 text-center pa-6">
-      <h4 class="w-100">COLLECTIONS</h4>
+    <v-card-title class="flex-shrink-0 text-center pa-2">
+      <h6 class="w-100">COLLECTIONS</h6>
     </v-card-title>
     <v-card-text class="flex-grow-1 overflow-y-auto">
       <!-- Placeholder for configuration selection -->
