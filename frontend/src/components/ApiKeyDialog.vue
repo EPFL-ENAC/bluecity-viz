@@ -9,7 +9,7 @@ const apiKeyStore = useApiKeyStore()
 const apiKey = ref('')
 const errorMessage = ref('')
 const isLoading = ref(false)
-const dialogOpen = ref(true) // Start with dialog open
+const dialogOpen = ref(!import.meta.env.DEV) // Only open dialog in production
 const isDev = import.meta.env.DEV
 
 // Separate function to test API key validity
@@ -55,6 +55,13 @@ async function testApiKey(keyToTest: string): Promise<boolean> {
 }
 
 onMounted(async () => {
+  // In dev mode, automatically set a dev API key and emit success
+  if (isDev) {
+    apiKeyStore.setApiKey('dev-api-key')
+    emit('apiKeySaved', 'dev-api-key')
+    return
+  }
+
   // If there's a stored API key, test it automatically
   if (apiKeyStore.apiKey) {
     apiKey.value = apiKeyStore.apiKey
