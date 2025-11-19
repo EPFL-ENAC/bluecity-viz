@@ -50,27 +50,24 @@ watch(
 )
 
 watch(
-  () => trafficStore.comparisons,
-  (comparisons) => {
-    if (comparisons.length > 0 && mapRef?.value?.trafficAnalysisMap) {
-      mapRef.value.trafficAnalysisMap.visualizeRoutes(comparisons)
+  () => [trafficStore.originalEdgeUsage, trafficStore.newEdgeUsage],
+  ([originalUsage, newUsage]) => {
+    if (originalUsage.length > 0 && mapRef?.value?.trafficAnalysisMap) {
+      mapRef.value.trafficAnalysisMap.visualizeEdgeUsage(originalUsage, newUsage)
     }
-  }
+  },
+  { deep: true }
 )
 
 function handleEdgeClick(u: number, v: number) {
-  if (trafficStore.clickMode === 'remove') {
-    trafficStore.addRemovedEdge(u, v)
-  } else {
-    trafficStore.removeRemovedEdge(u, v)
-  }
+  trafficStore.addRemovedEdge(u, v)
 }
 
 async function shufflePairs() {
   trafficStore.isLoading = true
   loadingMessage.value = 'Generating random pairs...'
   try {
-    const pairs = await generateRandomPairs(5)
+    const pairs = await generateRandomPairs(100, undefined, 1)
     trafficStore.setNodePairs(pairs)
     trafficStore.clearResults()
     if (mapRef?.value?.trafficAnalysisMap) {
@@ -88,8 +85,10 @@ async function calculateRoutes() {
   loadingMessage.value = 'Calculating routes...'
   try {
     const result = await recalculateRoutes(trafficStore.nodePairs, trafficStore.removedEdgesArray)
-    trafficStore.setComparisons(result.comparisons)
-    console.log(`Calculated ${result.comparisons.length} route comparisons`)
+    trafficStore.setEdgeUsage(result.original_edge_usage, result.new_edge_usage)
+    console.log(
+      `Original: ${result.original_edge_usage.length} edges, New: ${result.new_edge_usage.length} edges`
+    )
   } catch (error) {
     console.error('Failed to calculate routes:', error)
   } finally {
@@ -114,60 +113,17 @@ function closePanel() {
     </v-card-title>
 
     <v-card-text class="pa-3">
-      <!-- Loading State -->
-      <v-progress-linear
-        v-if="trafficStore.isLoading || trafficStore.isCalculating"
-        indeterminate
-        class="mb-3"
-      />
-      <div v-if="trafficStore.isLoading || trafficStore.isCalculating" class="text-center mb-3">
-        <p class="text-caption text-medium-emphasis">{{ loadingMessage }}</p>
-      </div>
-
-      <!-- Click Mode Toggle -->
+      <!-- Regenerate Pairs -->
       <div class="mb-3">
-        <div class="d-flex align-center justify-space-between">
-          <span class="text-caption">Click Mode:</span>
-          <v-switch
-            :model-value="trafficStore.clickMode === 'add'"
-            density="compact"
-            hide-details
-            inset
-            @update:model-value="trafficStore.toggleClickMode()"
-          >
-            <template #label>
-              <span class="text-caption">
-                {{ trafficStore.clickMode === 'remove' ? 'Remove' : 'Add' }}
-              </span>
-            </template>
-          </v-switch>
-        </div>
-      </div>
-
-      <!-- Origin-Destination Pairs -->
-      <div class="mb-3">
-        <div class="d-flex align-center justify-space-between mb-2">
-          <span class="text-caption font-weight-medium">Origin-Destination Pairs</span>
-          <v-btn
-            :icon="mdiRefresh"
-            size="x-small"
-            variant="outlined"
-            :disabled="trafficStore.isLoading"
-            @click="shufflePairs"
-          />
-        </div>
-        <v-card variant="outlined" flat>
-          <v-list density="compact" class="pa-0">
-            <v-list-item v-for="(pair, index) in trafficStore.nodePairs" :key="index" class="px-3">
-              <template #prepend>
-                <span class="text-caption mr-2">{{ index + 1 }}.</span>
-              </template>
-              <v-list-item-title class="text-caption">
-                {{ pair.origin }} → {{ pair.destination }}
-              </v-list-item-title>
-            </v-list-item>
-          </v-list>
-        </v-card>
+        <v-btn
+          block
+          variant="outlined"
+          :prepend-icon="mdiRefresh"
+          :disabled="trafficStore.isLoading"
+          @click="shufflePairs"
+        >
+          Generate New Pairs
+        </v-btn>
       </div>
 
       <!-- Removed Edges -->
@@ -236,20 +192,31 @@ function closePanel() {
       >
         Calculate Routes
       </v-btn>
-
+      <!-- Loading State -->
+      <v-progress-linear
+        v-if="trafficStore.isLoading || trafficStore.isCalculating"
+        indeterminate
+        class="my-6"
+      />
+      <div v-if="trafficStore.isLoading || trafficStore.isCalculating" class="text-center mb-3">
+        <p class="text-caption text-medium-emphasis">{{ loadingMessage }}</p>
+      </div>
       <!-- Results Summary -->
       <div v-if="trafficStore.hasCalculatedRoutes" class="mt-3">
         <v-card variant="outlined" flat>
           <v-card-text class="pa-3">
             <div class="text-caption mb-2">
-              Calculated {{ trafficStore.comparisons.length }} route comparisons
+              Original: {{ trafficStore.originalEdgeUsage.length }} edges used
+            </div>
+            <div class="text-caption mb-2">
+              After removal: {{ trafficStore.newEdgeUsage.length }} edges used
             </div>
             <div class="text-caption text-medium-emphasis">
               <strong>Legend:</strong>
               <ul class="ml-4 mt-1">
-                <li>Faded paths: Original routes</li>
-                <li>Bright paths: New routes (with edges removed)</li>
-                <li>Black dashed: Removed edges</li>
+                <li>Blue edges: Original routes (opacity = frequency)</li>
+                <li>Orange edges: New routes (opacity = frequency)</li>
+                <li>Red dashed: Removed edges</li>
               </ul>
             </div>
           </v-card-text>

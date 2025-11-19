@@ -3,6 +3,9 @@
 import osmnx as ox
 import networkx as nx
 import random
+import time
+import os
+import logging
 from typing import List, Optional, Tuple
 from pathlib import Path
 import random
@@ -16,7 +19,13 @@ from app.models.route import (
     RecalculateResponse,
     GraphEdge,
     GraphData,
+    EdgeUsageStats,
 )
+
+# Enable osmnx logging to see what it's doing
+logging.basicConfig(level=logging.INFO)
+ox_logger = logging.getLogger('osmnx')
+ox_logger.setLevel(logging.INFO)
 
 
 class GraphService:
@@ -110,23 +119,119 @@ class GraphService:
 
         return {"travel_time": travel_time, "distance": distance}
 
+    def _calculate_edge_usage_stats(
+        self, routes: List[Route], total_routes: int, original_stats: Optional[dict] = None
+    ) -> List[EdgeUsageStats]:
+        """Calculate edge usage statistics from routes."""
+        edge_counts = {}
+        
+        # Count edge usage across all routes
+        for route in routes:
+            for i in range(len(route.path) - 1):
+                u, v = route.path[i], route.path[i + 1]
+                edge_key = (u, v)
+                edge_counts[edge_key] = edge_counts.get(edge_key, 0) + 1
+        
+        # Build statistics with frequency
+        stats = []
+        for (u, v), count in edge_counts.items():
+            frequency = count / total_routes if total_routes > 0 else 0
+            
+            # Calculate delta if original stats provided
+            delta_count = None
+            delta_frequency = None
+            if original_stats and (u, v) in original_stats:
+                orig_count = original_stats[(u, v)]['count']
+                orig_freq = original_stats[(u, v)]['frequency']
+                delta_count = count - orig_count
+                delta_frequency = frequency - orig_freq
+            elif original_stats:
+                # Edge is new (not in original)
+                delta_count = count
+                delta_frequency = frequency
+            
+            stats.append(EdgeUsageStats(
+                u=u,
+                v=v,
+                count=count,
+                frequency=frequency,
+                delta_count=delta_count,
+                delta_frequency=delta_frequency
+            ))
+        
+        # Sort by frequency descending
+        stats.sort(key=lambda x: x.frequency, reverse=True)
+        return stats
+
     async def calculate_routes(
-        self, pairs: List[NodePair], weight: str = "travel_time"
+        self, pairs: List[NodePair], weight: str = "travel_time", use_parallel: bool = None
     ) -> List[Route]:
         """Calculate shortest paths for given node pairs."""
         if not self.graph:
             raise RuntimeError("Graph not loaded")
 
-        routes = []
-        for pair in pairs:
+        if not pairs:
+            return []
+
+        # Auto-determine parallelization based on number of routes
+        if use_parallel is None:
+            use_parallel = len(pairs) > 100
+        
+        # Check available CPU cores
+        cpu_count = os.cpu_count()
+        print(f"[PERF] Available CPU cores: {cpu_count}")
+
+        start_time = time.time()
+        print(f"[PERF] Starting route calculation for {len(pairs)} pairs (parallel={use_parallel}, auto={use_parallel is None})")
+
+        # Extract origins and destinations for batch processing
+        origins = [pair.origin for pair in pairs]
+        destinations = [pair.destination for pair in pairs]
+
+        path_calc_start = time.time()
+        
+        if use_parallel:
+            # Use multiprocessing for faster calculation
+            # Optimal number of CPUs for this workload (too many causes overhead)
+            cpus_to_use = min(4, cpu_count or 1)  # Cap at 4 cores for best performance
+            print(f"[PERF] Calling ox.routing.shortest_path with cpus={cpus_to_use} (of {cpu_count} available)")
+            print(f"[PERF] Origins type: {type(origins)}, length: {len(origins)}")
+            print(f"[PERF] Destinations type: {type(destinations)}, length: {len(destinations)}")
+            
             try:
-                path = ox.routing.shortest_path(
-                    self.graph, pair.origin, pair.destination, weight=weight
+                paths = ox.routing.shortest_path(
+                    self.graph, origins, destinations, weight=weight, cpus=cpus_to_use
                 )
+                path_calc_time = time.time() - path_calc_start
+                print(f"[PERF] Parallel shortest_path took {path_calc_time:.2f}s for {len(pairs)} pairs ({path_calc_time/len(pairs)*1000:.2f}ms per route)")
+                print(f"[PERF] Returned {len(paths) if paths else 0} paths")
+            except Exception as e:
+                print(f"Parallel shortest path failed: {e}, falling back to sequential")
+                use_parallel = False
+        
+        if not use_parallel:
+            # Sequential is often faster for graphs in memory without multiprocessing overhead
+            paths = []
+            for pair in pairs:
+                try:
+                    path = ox.routing.shortest_path(
+                        self.graph, pair.origin, pair.destination, weight=weight
+                    )
+                    paths.append(path)
+                except Exception as path_error:
+                    print(f"Failed to calculate route {pair.origin} -> {pair.destination}: {path_error}")
+                    paths.append(None)
+            path_calc_time = time.time() - path_calc_start
+            print(f"[PERF] Sequential shortest_path took {path_calc_time:.2f}s for {len(pairs)} pairs ({path_calc_time/len(pairs)*1000:.1f}ms per route)")
 
-                if path is None:
-                    continue
+        # Build Route objects from paths
+        build_start = time.time()
+        routes = []
+        for pair, path in zip(pairs, paths):
+            if path is None:
+                continue
 
+            try:
                 geometry = self._build_path_geometry(path)
                 metrics = self._calculate_route_metrics(path, weight)
 
@@ -140,10 +245,13 @@ class GraphService:
                 )
                 routes.append(route)
             except Exception as e:
-                print(
-                    f"Failed to calculate route {pair.origin} -> {pair.destination}: {e}"
-                )
+                print(f"Failed to build route {pair.origin} -> {pair.destination}: {e}")
                 continue
+
+        build_time = time.time() - build_start
+        total_time = time.time() - start_time
+        print(f"[PERF] Building {len(routes)} Route objects took {build_time:.2f}s")
+        print(f"[PERF] Total calculate_routes took {total_time:.2f}s")
 
         return routes
 
@@ -157,29 +265,46 @@ class GraphService:
         if not self.graph:
             raise RuntimeError("Graph not loaded")
 
+        total_start = time.time()
+        print(f"[PERF] ===== Starting recalculate_with_removed_edges =====")
+        print(f"[PERF] Pairs: {len(pairs)}, Edges to remove: {len(edges_to_remove)}")
+
         # Calculate original routes
+        orig_start = time.time()
         original_routes = await self.calculate_routes(pairs, weight)
+        orig_time = time.time() - orig_start
+        print(f"[PERF] Original routes calculation took {orig_time:.2f}s")
 
         # Create modified graph
+        copy_start = time.time()
         G_modified = self.graph.copy()
-        removed = []
+        copy_time = time.time() - copy_start
+        print(f"[PERF] Graph copy took {copy_time:.2f}s")
 
+        remove_start = time.time()
+        removed = []
         for edge in edges_to_remove:
             if G_modified.has_edge(edge.u, edge.v):
                 G_modified.remove_edge(edge.u, edge.v)
                 removed.append(edge)
+        remove_time = time.time() - remove_start
+        print(f"[PERF] Removing {len(removed)} edges took {remove_time:.2f}s")
 
         # Temporarily swap graphs
         original_graph = self.graph
         self.graph = G_modified
 
         # Calculate new routes
+        new_start = time.time()
         new_routes = await self.calculate_routes(pairs, weight)
+        new_time = time.time() - new_start
+        print(f"[PERF] New routes calculation took {new_time:.2f}s")
 
         # Restore original graph
         self.graph = original_graph
 
         # Build comparisons
+        comp_start = time.time()
         comparisons = []
         for orig, new in zip(original_routes, new_routes):
             # Check if removed edge was on original path
@@ -200,8 +325,39 @@ class GraphService:
                 removed_edge_on_path=removed_on_path,
             )
             comparisons.append(comparison)
+        comp_time = time.time() - comp_start
+        
+        # Calculate edge usage statistics
+        stats_start = time.time()
+        total_routes = len(pairs)
+        
+        # Calculate original edge usage
+        original_edge_usage = self._calculate_edge_usage_stats(original_routes, total_routes)
+        
+        # Build dict for delta calculation
+        original_stats_dict = {
+            (stat.u, stat.v): {'count': stat.count, 'frequency': stat.frequency}
+            for stat in original_edge_usage
+        }
+        
+        # Calculate new edge usage with delta
+        new_edge_usage = self._calculate_edge_usage_stats(
+            new_routes, total_routes, original_stats_dict
+        )
+        
+        stats_time = time.time() - stats_start
+        total_time = time.time() - total_start
+        
+        print(f"[PERF] Calculating edge usage stats took {stats_time:.2f}s")
+        print(f"[PERF] Original: {len(original_edge_usage)} unique edges used")
+        print(f"[PERF] New: {len(new_edge_usage)} unique edges used")
+        print(f"[PERF] ===== Total recalculate took {total_time:.2f}s =====")
 
-        return RecalculateResponse(comparisons=comparisons, removed_edges=removed)
+        return RecalculateResponse(
+            removed_edges=removed,
+            original_edge_usage=original_edge_usage,
+            new_edge_usage=new_edge_usage
+        )
 
     def get_graph_data(self) -> GraphData:
         """Get complete graph data for visualization."""
@@ -250,20 +406,65 @@ class GraphService:
         )
 
     def generate_random_pairs(
-        self, count: int = 5, seed: Optional[int] = None
+        self, count: int = 100, seed: Optional[int] = None, radius_km: float = 2.0
     ) -> List[NodePair]:
-        """Generate random origin-destination node pairs."""
+        """Generate random origin-destination node pairs within radius from center."""
         if not self.graph:
             raise RuntimeError("Graph not loaded")
 
         if seed is not None:
             random.seed(seed)
 
-        nodes = list(self.graph.nodes())
-        pairs = []
+        # Lausanne city center coordinates (Place de la Riponne)
+        center_lat, center_lon = 46.5225, 6.6328
 
-        for _ in range(count):
-            origin, destination = random.sample(nodes, 2)
-            pairs.append(NodePair(origin=origin, destination=destination))
+        # Filter nodes within radius
+        nodes_in_radius = []
+        for node_id in self.graph.nodes():
+            node = self.graph.nodes[node_id]
+            node_lat, node_lon = node['y'], node['x']
+            
+            # Calculate approximate distance in km using Haversine formula
+            lat_diff = node_lat - center_lat
+            lon_diff = node_lon - center_lon
+            
+            # Approximate distance (good enough for small areas)
+            lat_km = lat_diff * 111.0  # 1 degree latitude ≈ 111 km
+            lon_km = lon_diff * 111.0 * 0.7  # adjusted for Lausanne's latitude
+            distance_km = (lat_km**2 + lon_km**2)**0.5
+            
+            if distance_km <= radius_km:
+                nodes_in_radius.append(node_id)
+
+        if len(nodes_in_radius) < 2:
+            # Fallback to all nodes if radius too small
+            nodes_in_radius = list(self.graph.nodes())
+
+        # Generate pairs ensuring origin and destination are not too close
+        min_distance_km = 0.3  # Minimum 300 meters between origin and destination
+        pairs = []
+        max_attempts = count * 10  # Prevent infinite loop
+        attempts = 0
+        
+        while len(pairs) < count and attempts < max_attempts:
+            attempts += 1
+            origin, destination = random.sample(nodes_in_radius, 2)
+            
+            # Check distance between origin and destination
+            orig_node = self.graph.nodes[origin]
+            dest_node = self.graph.nodes[destination]
+            
+            lat_diff = orig_node['y'] - dest_node['y']
+            lon_diff = orig_node['x'] - dest_node['x']
+            lat_km = lat_diff * 111.0
+            lon_km = lon_diff * 111.0 * 0.7
+            distance_km = (lat_km**2 + lon_km**2)**0.5
+            
+            # Only add pair if nodes are far enough apart
+            if distance_km >= min_distance_km:
+                pairs.append(NodePair(origin=origin, destination=destination))
+
+        if len(pairs) < count:
+            print(f"Warning: Only generated {len(pairs)} pairs (requested {count}). Try increasing radius or decreasing min_distance.")
 
         return pairs

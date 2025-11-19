@@ -107,18 +107,19 @@ async def get_graph():
 @router.post("/random-pairs", response_model=List[NodePair])
 async def generate_random_pairs(request: RandomPairsRequest):
     """
-    Generate random origin-destination node pairs.
+    Generate random origin-destination node pairs within specified radius.
 
     Args:
-        request: Request with count and optional seed
+        request: Request with count, optional seed, and radius from city center
 
     Returns:
-        List of random node pairs
+        List of random node pairs within the specified radius
     """
     try:
         pairs = graph_service.generate_random_pairs(
             count=request.count,
             seed=request.seed,
+            radius_km=request.radius_km,
         )
         return pairs
     except Exception as e:

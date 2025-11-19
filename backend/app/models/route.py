@@ -70,11 +70,23 @@ class RouteComparison(BaseModel):
     removed_edge_on_path: Optional[Edge] = None
 
 
-class RecalculateResponse(BaseModel):
-    """Response with original and recalculated routes."""
+class EdgeUsageStats(BaseModel):
+    """Edge usage statistics."""
 
-    comparisons: List[RouteComparison]
+    u: int = Field(..., description="Start node ID")
+    v: int = Field(..., description="End node ID")
+    count: int = Field(..., description="Number of times this edge was used")
+    frequency: float = Field(..., description="Usage frequency (count / total_routes)")
+    delta_count: Optional[int] = Field(None, description="Change in usage count (new - original)")
+    delta_frequency: Optional[float] = Field(None, description="Change in frequency (new - original)")
+
+
+class RecalculateResponse(BaseModel):
+    """Response with edge usage statistics."""
+
     removed_edges: List[Edge]
+    original_edge_usage: List[EdgeUsageStats] = Field(..., description="Edge usage in original routes")
+    new_edge_usage: List[EdgeUsageStats] = Field(..., description="Edge usage in new routes with delta")
 
 
 class GraphEdge(BaseModel):
@@ -102,6 +114,9 @@ class RandomPairsRequest(BaseModel):
     """Request to generate random node pairs."""
 
     count: int = Field(
-        default=5, ge=1, le=20, description="Number of pairs to generate"
+        default=100, ge=1, le=1000, description="Number of pairs to generate"
     )
     seed: Optional[int] = Field(None, description="Random seed for reproducibility")
+    radius_km: Optional[float] = Field(
+        default=2.0, ge=0.1, le=50.0, description="Radius in km from city center to sample nodes"
+    )

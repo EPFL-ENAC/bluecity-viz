@@ -1,58 +1,29 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-export interface GraphEdge {
-  u: number
-  v: number
-  geometry: {
-    coordinates: number[][]
-  }
-  name?: string
-  highway?: string
-  speed_kph?: number
-  length?: number
-  travel_time?: number
-}
-
 export interface NodePair {
   origin: number
   destination: number
 }
 
-export interface Route {
-  origin: number
-  destination: number
-  path: number[]
-  geometry?: {
-    coordinates: number[][]
-  }
-  travel_time?: number
-  distance?: number
-}
-
-export interface RouteComparison {
-  origin: number
-  destination: number
-  original_route: Route
-  new_route: Route
-  removed_edge_on_path?: {
-    u: number
-    v: number
-  }
+export interface EdgeUsageStats {
+  u: number
+  v: number
+  count: number
+  frequency: number
+  delta_count?: number
+  delta_frequency?: number
 }
 
 export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // State
   const isOpen = ref(false)
   const isLoading = ref(false)
-  const graphEdges = ref<GraphEdge[]>([])
+  const isCalculating = ref(false)
   const removedEdges = ref<Set<string>>(new Set())
   const nodePairs = ref<NodePair[]>([])
-  const originalRoutes = ref<Route[]>([])
-  const newRoutes = ref<Route[]>([])
-  const comparisons = ref<RouteComparison[]>([])
-  const isCalculating = ref(false)
-  const clickMode = ref<'add' | 'remove'>('remove')
+  const originalEdgeUsage = ref<EdgeUsageStats[]>([])
+  const newEdgeUsage = ref<EdgeUsageStats[]>([])
 
   // Computed
   const removedEdgesArray = computed(() => {
@@ -64,7 +35,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   const removedEdgesCount = computed(() => removedEdges.value.size)
 
-  const hasCalculatedRoutes = computed(() => comparisons.value.length > 0)
+  const hasCalculatedRoutes = computed(() => originalEdgeUsage.value.length > 0)
 
   // Actions
   function togglePanel() {
@@ -77,10 +48,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   function closePanel() {
     isOpen.value = false
-  }
-
-  function toggleClickMode() {
-    clickMode.value = clickMode.value === 'remove' ? 'add' : 'remove'
   }
 
   function addRemovedEdge(u: number, v: number) {
@@ -106,29 +73,18 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     removedEdges.value.clear()
   }
 
-  function isEdgeRemoved(u: number, v: number): boolean {
-    const key = `${u}-${v}`
-    return removedEdges.value.has(key)
-  }
-
-  function setGraphEdges(edges: GraphEdge[]) {
-    graphEdges.value = edges
-  }
-
   function setNodePairs(pairs: NodePair[]) {
     nodePairs.value = pairs
   }
 
-  function setComparisons(newComparisons: RouteComparison[]) {
-    comparisons.value = newComparisons
-    originalRoutes.value = newComparisons.map((c) => c.original_route)
-    newRoutes.value = newComparisons.map((c) => c.new_route)
+  function setEdgeUsage(original: EdgeUsageStats[], newUsage: EdgeUsageStats[]) {
+    originalEdgeUsage.value = original
+    newEdgeUsage.value = newUsage
   }
 
   function clearResults() {
-    comparisons.value = []
-    originalRoutes.value = []
-    newRoutes.value = []
+    originalEdgeUsage.value = []
+    newEdgeUsage.value = []
   }
 
   return {
@@ -136,13 +92,10 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     isOpen,
     isLoading,
     isCalculating,
-    clickMode,
-    graphEdges,
     removedEdges,
     nodePairs,
-    originalRoutes,
-    newRoutes,
-    comparisons,
+    originalEdgeUsage,
+    newEdgeUsage,
 
     // Computed
     removedEdgesArray,
@@ -153,15 +106,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     togglePanel,
     openPanel,
     closePanel,
-    toggleClickMode,
     addRemovedEdge,
     removeRemovedEdge,
     toggleEdge,
     clearRemovedEdges,
-    isEdgeRemoved,
-    setGraphEdges,
     setNodePairs,
-    setComparisons,
+    setEdgeUsage,
     clearResults
   }
 })
