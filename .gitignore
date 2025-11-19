@@ -30,5 +30,6 @@ processing/**/*.qgz
 processing/**/*.aprx
 processing/**/*.atpx
 processing/**/*.pmtiles
+processing/**/*.graphml
 
 processing/**/BlueCity_Demo2/**
