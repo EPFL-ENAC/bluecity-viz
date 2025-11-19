@@ -1,0 +1,1 @@
+"""BlueCity FastAPI Backend."""
