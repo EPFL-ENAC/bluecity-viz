@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, inject, type Ref } from 'vue'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { fetchGraphData, generateRandomPairs, recalculateRoutes } from '@/services/trafficAnalysis'
+import { generateRandomPairs, recalculateRoutes } from '@/services/trafficAnalysis'
 import {
   mdiClose,
   mdiRefresh,
@@ -14,40 +14,24 @@ import {
 const trafficStore = useTrafficAnalysisStore()
 const removedEdgesExpanded = ref(true)
 const loadingMessage = ref('')
-
-// Inject the map reference from parent
 const mapRef = inject<Ref<any>>('mapRef')
 
 onMounted(async () => {
-  await loadGraphData()
   await shufflePairs()
+  if (mapRef?.value?.trafficAnalysisMap && trafficStore.isOpen) {
+    mapRef.value.trafficAnalysisMap.addGraphEdgesLayerFromTiles()
+  }
 })
 
-// Watch for graph edges being loaded and add them to the map
-watch(
-  () => trafficStore.graphEdges,
-  (edges) => {
-    if (edges.length > 0 && mapRef?.value?.trafficAnalysisMap) {
-      mapRef.value.trafficAnalysisMap.addGraphEdgesLayer(edges)
-    }
-  }
-)
-
-// Watch for panel opening/closing
 watch(
   () => trafficStore.isOpen,
   (isOpen) => {
     if (!mapRef?.value?.trafficAnalysisMap) return
 
     if (isOpen) {
-      // Add graph edges when panel opens
-      if (trafficStore.graphEdges.length > 0) {
-        mapRef.value.trafficAnalysisMap.addGraphEdgesLayer(trafficStore.graphEdges)
-      }
-      // Attach click listener
+      mapRef.value.trafficAnalysisMap.addGraphEdgesLayerFromTiles()
       mapRef.value.trafficAnalysisMap.attachEdgeClickListener(handleEdgeClick)
     } else {
-      // Remove graph edges and routes when panel closes
       mapRef.value.trafficAnalysisMap.removeGraphEdgesLayer()
       mapRef.value.trafficAnalysisMap.clearRoutes()
       mapRef.value.trafficAnalysisMap.detachEdgeClickListener()
@@ -55,7 +39,6 @@ watch(
   }
 )
 
-// Watch for removed edges changes
 watch(
   () => trafficStore.removedEdgesArray,
   (removedEdges) => {
@@ -66,7 +49,6 @@ watch(
   { deep: true }
 )
 
-// Watch for route comparisons
 watch(
   () => trafficStore.comparisons,
   (comparisons) => {
@@ -84,20 +66,6 @@ function handleEdgeClick(u: number, v: number) {
   }
 }
 
-async function loadGraphData() {
-  trafficStore.isLoading = true
-  loadingMessage.value = 'Loading graph data...'
-  try {
-    const graphData = await fetchGraphData()
-    trafficStore.setGraphEdges(graphData.edges)
-    console.log(`Loaded ${graphData.edge_count} edges from graph`)
-  } catch (error) {
-    console.error('Failed to load graph data:', error)
-  } finally {
-    trafficStore.isLoading = false
-  }
-}
-
 async function shufflePairs() {
   trafficStore.isLoading = true
   loadingMessage.value = 'Generating random pairs...'
@@ -105,7 +73,6 @@ async function shufflePairs() {
     const pairs = await generateRandomPairs(5)
     trafficStore.setNodePairs(pairs)
     trafficStore.clearResults()
-    // Clear routes visualization when shuffling
     if (mapRef?.value?.trafficAnalysisMap) {
       mapRef.value.trafficAnalysisMap.clearRoutes()
     }

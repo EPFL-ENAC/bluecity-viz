@@ -1,9 +1,10 @@
-import type { GraphEdge, RouteComparison } from '@/stores/trafficAnalysis'
+import { getGraphTilesUrl } from '@/services/trafficAnalysis'
+import type { RouteComparison } from '@/stores/trafficAnalysis'
 import type { Map as MapLibre } from 'maplibre-gl'
 import type { Ref } from 'vue'
 
 interface TrafficAnalysisMapReturn {
-  addGraphEdgesLayer: (edges: GraphEdge[]) => void
+  addGraphEdgesLayerFromTiles: () => void
   removeGraphEdgesLayer: () => void
   updateRemovedEdges: (removedEdges: { u: number; v: number }[]) => void
   visualizeRoutes: (comparisons: RouteComparison[]) => void
@@ -18,50 +19,23 @@ interface TrafficAnalysisMapReturn {
 export function useTrafficAnalysisMap(mapRef: Ref<MapLibre | undefined>): TrafficAnalysisMapReturn {
   let edgeClickHandler: ((e: any) => void) | null = null
 
-  /**
-   * Add graph edges layer to the map
-   */
-  function addGraphEdgesLayer(edges: GraphEdge[]): void {
+  function addGraphEdgesLayerFromTiles(): void {
     if (!mapRef.value) return
 
     const map = mapRef.value
+    const tilesUrl = getGraphTilesUrl()
 
-    // Create GeoJSON for all graph edges
-    const geojson = {
-      type: 'FeatureCollection' as const,
-      features: edges.map((edge) => ({
-        type: 'Feature' as const,
-        geometry: {
-          type: 'LineString' as const,
-          coordinates: edge.geometry.coordinates
-        },
-        properties: {
-          u: edge.u,
-          v: edge.v,
-          name: edge.name || 'Unknown',
-          highway: edge.highway || 'Unknown',
-          speed_kph: edge.speed_kph || 0,
-          length: edge.length || 0,
-          travel_time: edge.travel_time || 0
-        }
-      }))
-    }
-
-    // Remove existing layers/sources if they exist
     if (map.getLayer('traffic-graph-edges')) {
       map.removeLayer('traffic-graph-edges')
-    }
-    if (map.getLayer('traffic-graph-edges-hover')) {
-      map.removeLayer('traffic-graph-edges-hover')
     }
     if (map.getSource('traffic-graph-edges')) {
       map.removeSource('traffic-graph-edges')
     }
 
-    // Add source
+    // Add PMTiles source
     map.addSource('traffic-graph-edges', {
-      type: 'geojson',
-      data: geojson
+      type: 'vector',
+      url: `pmtiles://${tilesUrl}`
     })
 
     // Add base layer
@@ -69,55 +43,56 @@ export function useTrafficAnalysisMap(mapRef: Ref<MapLibre | undefined>): Traffi
       id: 'traffic-graph-edges',
       type: 'line',
       source: 'traffic-graph-edges',
+      'source-layer': 'graph_edges',
       layout: {
         'line-join': 'round',
         'line-cap': 'round'
       },
       paint: {
         'line-color': '#888',
-        'line-width': 2,
-        'line-opacity': 0.6
+        'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 4, 2],
+        'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0.6]
       }
     })
 
-    // Add hover layer
-    map.addLayer({
-      id: 'traffic-graph-edges-hover',
-      type: 'line',
-      source: 'traffic-graph-edges',
-      layout: {
-        'line-join': 'round',
-        'line-cap': 'round'
-      },
-      paint: {
-        'line-color': '#00f',
-        'line-width': 4,
-        'line-opacity': 0
-      }
-    })
+    // Optimize hover effect with feature state
+    let hoveredFeatureId: number | null = null
 
-    // Add hover effect
-    map.on('mouseenter', 'traffic-graph-edges', () => {
+    map.on('mousemove', 'traffic-graph-edges', (e) => {
       map.getCanvas().style.cursor = 'pointer'
+
+      if (e.features && e.features.length > 0) {
+        const feature = e.features[0]
+
+        // Clear previous hover
+        if (hoveredFeatureId !== null) {
+          map.setFeatureState(
+            { source: 'traffic-graph-edges', sourceLayer: 'graph_edges', id: hoveredFeatureId },
+            { hover: false }
+          )
+        }
+
+        // Set new hover
+        hoveredFeatureId = feature.id as number
+        if (hoveredFeatureId !== null) {
+          map.setFeatureState(
+            { source: 'traffic-graph-edges', sourceLayer: 'graph_edges', id: hoveredFeatureId },
+            { hover: true }
+          )
+        }
+      }
     })
 
     map.on('mouseleave', 'traffic-graph-edges', () => {
       map.getCanvas().style.cursor = ''
-    })
 
-    map.on('mousemove', 'traffic-graph-edges', (e) => {
-      if (e.features && e.features.length > 0) {
-        const feature = e.features[0]
-        map.setPaintProperty('traffic-graph-edges-hover', 'line-opacity', [
-          'case',
-          [
-            'all',
-            ['==', ['get', 'u'], feature.properties?.u],
-            ['==', ['get', 'v'], feature.properties?.v]
-          ],
-          1,
-          0
-        ])
+      // Clear hover state
+      if (hoveredFeatureId !== null) {
+        map.setFeatureState(
+          { source: 'traffic-graph-edges', sourceLayer: 'graph_edges', id: hoveredFeatureId },
+          { hover: false }
+        )
+        hoveredFeatureId = null
       }
     })
   }
@@ -132,9 +107,6 @@ export function useTrafficAnalysisMap(mapRef: Ref<MapLibre | undefined>): Traffi
 
     if (map.getLayer('traffic-graph-edges')) {
       map.removeLayer('traffic-graph-edges')
-    }
-    if (map.getLayer('traffic-graph-edges-hover')) {
-      map.removeLayer('traffic-graph-edges-hover')
     }
     if (map.getSource('traffic-graph-edges')) {
       map.removeSource('traffic-graph-edges')
@@ -433,7 +405,7 @@ export function useTrafficAnalysisMap(mapRef: Ref<MapLibre | undefined>): Traffi
   }
 
   return {
-    addGraphEdgesLayer,
+    addGraphEdgesLayerFromTiles,
     removeGraphEdgesLayer,
     updateRemovedEdges,
     visualizeRoutes,

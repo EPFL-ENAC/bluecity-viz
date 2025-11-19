@@ -1,19 +1,9 @@
-import type { GraphEdge, NodePair, RouteComparison } from '@/stores/trafficAnalysis'
+import type { NodePair, RouteComparison } from '@/stores/trafficAnalysis'
 
 const API_BASE_URL = 'http://localhost:8000/api/v1/routes'
 
-export interface GraphData {
-  edges: GraphEdge[]
-  node_count: number
-  edge_count: number
-}
-
-export async function fetchGraphData(): Promise<GraphData> {
-  const response = await fetch(`${API_BASE_URL}/graph`)
-  if (!response.ok) {
-    throw new Error('Failed to fetch graph data')
-  }
-  return response.json()
+export function getGraphTilesUrl(): string {
+  return '/geodata/lausanne_drive.pmtiles'
 }
 
 export async function generateRandomPairs(count: number = 5, seed?: number): Promise<NodePair[]> {
