@@ -2,8 +2,10 @@
 
 import osmnx as ox
 import networkx as nx
+import random
 from typing import List, Optional, Tuple
 from pathlib import Path
+import random
 
 from app.models.route import (
     NodePair,
@@ -12,6 +14,8 @@ from app.models.route import (
     PathGeometry,
     RouteComparison,
     RecalculateResponse,
+    GraphEdge,
+    GraphData,
 )
 
 
@@ -198,3 +202,68 @@ class GraphService:
             comparisons.append(comparison)
 
         return RecalculateResponse(comparisons=comparisons, removed_edges=removed)
+
+    def get_graph_data(self) -> GraphData:
+        """Get complete graph data for visualization."""
+        if not self.graph:
+            raise RuntimeError("Graph not loaded")
+
+        edges = []
+        for u, v, d in self.graph.edges(data=True):
+            # Build geometry
+            if "geometry" in d:
+                coords = list(d["geometry"].coords)
+                geometry = PathGeometry(coordinates=[[lon, lat] for lon, lat in coords])
+            else:
+                u_x, u_y = self.graph.nodes[u]["x"], self.graph.nodes[u]["y"]
+                v_x, v_y = self.graph.nodes[v]["x"], self.graph.nodes[v]["y"]
+                geometry = PathGeometry(coordinates=[[u_x, u_y], [v_x, v_y]])
+
+            # Get metadata
+            name_raw = d.get("name")
+            if isinstance(name_raw, list):
+                name = " - ".join(str(n) for n in name_raw if n)
+            elif name_raw:
+                name = str(name_raw)
+            else:
+                name = None
+
+            highway_raw = d.get("highway", "Unknown")
+            highway = highway_raw[0] if isinstance(highway_raw, list) else highway_raw
+
+            edge = GraphEdge(
+                u=u,
+                v=v,
+                geometry=geometry,
+                name=name,
+                highway=highway,
+                speed_kph=d.get("speed_kph"),
+                length=d.get("length"),
+                travel_time=d.get("travel_time"),
+            )
+            edges.append(edge)
+
+        return GraphData(
+            edges=edges,
+            node_count=len(self.graph.nodes),
+            edge_count=len(self.graph.edges),
+        )
+
+    def generate_random_pairs(
+        self, count: int = 5, seed: Optional[int] = None
+    ) -> List[NodePair]:
+        """Generate random origin-destination node pairs."""
+        if not self.graph:
+            raise RuntimeError("Graph not loaded")
+
+        if seed is not None:
+            random.seed(seed)
+
+        nodes = list(self.graph.nodes())
+        pairs = []
+
+        for _ in range(count):
+            origin, destination = random.sample(nodes, 2)
+            pairs.append(NodePair(origin=origin, destination=destination))
+
+        return pairs

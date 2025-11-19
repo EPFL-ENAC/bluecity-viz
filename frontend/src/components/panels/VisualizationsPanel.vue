@@ -3,9 +3,24 @@ import MapLibreMap from '@/components/MapLibreMap.vue'
 import LegendMap from '@/components/LegendMap.vue'
 import LayerSelector from '@/components/LayerSelector.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
+import { inject, watch, type Ref } from 'vue'
 
 // Use the map logic composable
 const { map, parameters, center, zoom, syncAllLayersVisibility, layersStore } = useMapLogic()
+
+// Get the provided map ref from parent
+const mapComponentRef = inject<Ref<any>>('mapRef')
+
+// Watch map changes and update the provided ref
+watch(
+  map,
+  (newMap) => {
+    if (mapComponentRef) {
+      mapComponentRef.value = newMap
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <template>

@@ -75,3 +75,33 @@ class RecalculateResponse(BaseModel):
 
     comparisons: List[RouteComparison]
     removed_edges: List[Edge]
+
+
+class GraphEdge(BaseModel):
+    """Graph edge with geometry and metadata."""
+
+    u: int = Field(..., description="Start node ID")
+    v: int = Field(..., description="End node ID")
+    geometry: PathGeometry = Field(..., description="Edge geometry")
+    name: Optional[str] = Field(None, description="Street name")
+    highway: Optional[str] = Field(None, description="Highway type")
+    speed_kph: Optional[float] = Field(None, description="Speed limit in km/h")
+    length: Optional[float] = Field(None, description="Length in meters")
+    travel_time: Optional[float] = Field(None, description="Travel time in seconds")
+
+
+class GraphData(BaseModel):
+    """Complete graph data for visualization."""
+
+    edges: List[GraphEdge] = Field(..., description="All graph edges")
+    node_count: int = Field(..., description="Total number of nodes")
+    edge_count: int = Field(..., description="Total number of edges")
+
+
+class RandomPairsRequest(BaseModel):
+    """Request to generate random node pairs."""
+
+    count: int = Field(
+        default=5, ge=1, le=20, description="Number of pairs to generate"
+    )
+    seed: Optional[int] = Field(None, description="Random seed for reproducibility")

@@ -3,6 +3,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import LoadingCircle from '@/components/LoadingCircle.vue'
 import { mapConfig } from '@/config/mapConfig'
 import { useMapEvents } from '@/composables/useMapEvents'
+import { useTrafficAnalysisMap } from '@/composables/useTrafficAnalysisMap'
 
 import {
   FullscreenControl,
@@ -70,6 +71,9 @@ const styleSpec = computed(() => {
 
 // Use the map events composable
 const mapEventManager = useMapEvents(map as Ref<Map | undefined>)
+
+// Use the traffic analysis map composable
+const trafficAnalysisMap = useTrafficAnalysisMap(map as Ref<Map | undefined>)
 
 addProtocol('pmtiles', protocol.tile)
 
@@ -305,7 +309,9 @@ defineExpose({
   onZoom,
   changeSourceTilesUrl,
   setLayerVisibility,
-  getSourceTilesUrl
+  getSourceTilesUrl,
+  // Expose traffic analysis map methods
+  trafficAnalysisMap
 })
 
 watch(

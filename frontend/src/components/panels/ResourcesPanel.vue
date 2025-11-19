@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AddSourceDialog from '@/components/panels/AddSourceDialog.vue'
 import { useLayersStore } from '@/stores/layers'
+import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { ref } from 'vue'
 import {
   mdiPlus,
@@ -13,6 +14,7 @@ import {
 
 // Use the layers store
 const layersStore = useLayersStore()
+const trafficStore = useTrafficAnalysisStore()
 
 // Local state for the component (only UI state)
 const dataSetsExpanded = ref(true)
@@ -28,6 +30,11 @@ const enabledVisualizations = ref(new Set<string>())
 
 // Functions for placeholder interactions
 const toggleTool = (toolId: string) => {
+  if (toolId === 'traffic-analysis') {
+    trafficStore.togglePanel()
+    return
+  }
+
   if (enabledTools.value.has(toolId)) {
     enabledTools.value.delete(toolId)
   } else {
@@ -142,6 +149,33 @@ const toggleVisualization = (vizId: string) => {
         <!-- Analytics Tools List (Expandable) -->
         <v-expand-transition>
           <div v-show="analyticsExpanded">
+            <v-card
+              :class="['tool-card mb-1 cursor-pointer', { 'active-tool': trafficStore.isOpen }]"
+              variant="outlined"
+              density="compact"
+              @click="toggleTool('traffic-analysis')"
+            >
+              <v-card-text class="py-2 px-3">
+                <div class="d-flex align-center justify-space-between w-100">
+                  <div class="d-flex align-center flex-grow-1">
+                    <v-icon
+                      :icon="trafficStore.isOpen ? mdiCheckboxMarked : mdiCheckboxBlankOutline"
+                      size="small"
+                      class="mr-2"
+                      :color="trafficStore.isOpen ? 'primary' : 'grey'"
+                    />
+                    <div class="flex-grow-1">
+                      <div class="text-body-2 font-weight-medium">Traffic Analysis</div>
+                      <div class="text-caption text-medium-emphasis">
+                        Simulate edge removal and route recalculation
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </v-card-text>
+            </v-card>
+
+            <!-- Keep other existing tools -->
             <v-card
               v-for="tool in [
                 {

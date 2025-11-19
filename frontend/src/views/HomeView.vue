@@ -2,7 +2,8 @@
 import CollectionsPanel from '@/components/panels/CollectionsPanel.vue'
 import VisualizationsPanel from '@/components/panels/VisualizationsPanel.vue'
 import ResourcesPanel from '@/components/panels/ResourcesPanel.vue'
-import { ref, watch } from 'vue'
+import TrafficAnalysisPanel from '@/components/panels/TrafficAnalysisPanel.vue'
+import { ref, watch, provide } from 'vue'
 import { mdiMenu, mdiMenuOpen } from '@mdi/js'
 import { useThemeStore } from '@/stores/theme'
 import { useTheme } from 'vuetify'
@@ -10,6 +11,12 @@ import { useTheme } from 'vuetify'
 // Navigation drawer states
 const collectionsDrawer = ref(true)
 const resourcesDrawer = ref(true)
+
+// Map reference to pass to child components
+const mapComponentRef = ref<any>(null)
+
+// Provide map ref to children
+provide('mapRef', mapComponentRef)
 
 // Use theme store for theme selector
 const themeStore = useThemeStore()
@@ -89,6 +96,8 @@ watch(
     <!-- Main Content Area -->
     <v-main>
       <VisualizationsPanel />
+      <!-- Add Traffic Analysis Panel -->
+      <TrafficAnalysisPanel />
     </v-main>
   </v-layout>
 </template>

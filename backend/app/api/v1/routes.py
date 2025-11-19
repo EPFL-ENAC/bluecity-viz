@@ -1,16 +1,21 @@
 """Route calculation endpoints."""
 
-from fastapi import APIRouter, HTTPException
-from typing import List
-from pydantic import BaseModel
+from typing import List, Optional
 
 from app.models.route import (
-    RouteRequest,
-    RouteResponse,
+    GraphData,
+    GraphEdge,
+    NodePair,
+    PathGeometry,
+    RandomPairsRequest,
     RecalculateRequest,
     RecalculateResponse,
+    RouteRequest,
+    RouteResponse,
 )
 from app.services.graph_service import GraphService
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/routes", tags=["routes"])
 
@@ -80,5 +85,41 @@ async def recalculate_routes(request: RecalculateRequest):
             weight=request.weight,
         )
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/graph", response_model=GraphData)
+async def get_graph():
+    """
+    Get complete graph data for visualization.
+
+    Returns:
+        Complete graph with all edges and their geometries
+    """
+    try:
+        graph_data = graph_service.get_graph_data()
+        return graph_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/random-pairs", response_model=List[NodePair])
+async def generate_random_pairs(request: RandomPairsRequest):
+    """
+    Generate random origin-destination node pairs.
+
+    Args:
+        request: Request with count and optional seed
+
+    Returns:
+        List of random node pairs
+    """
+    try:
+        pairs = graph_service.generate_random_pairs(
+            count=request.count,
+            seed=request.seed,
+        )
+        return pairs
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
