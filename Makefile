@@ -6,14 +6,25 @@ help: ## Show this help message
 	@echo "BlueCity Viz - Available commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-dev: ## Start frontend development server
+dev: ## Start frontend and backend development servers
+	@echo "Starting backend and frontend development servers..."
+	@trap 'kill 0' INT; \
+	cd backend && uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload & \
+	cd frontend && npm run dev & \
+	wait
+
+dev-frontend: ## Start only frontend development server
 	cd frontend && npm run dev
+
+dev-backend: ## Start only backend development server
+	cd backend && uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 build: ## Build frontend for production
 	cd frontend && npm run build
 
 install: ## Install all dependencies
 	cd frontend && npm install
+	cd backend && uv sync
 	cd processing && uv sync
 
 

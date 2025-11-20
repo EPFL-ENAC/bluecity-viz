@@ -15,6 +15,14 @@
     "schema": "typescript-json-schema --esModuleInterop -o schema/parameters.schema.json src/utils/*.ts Parameters"
   },
   "dependencies": {
+    "@deck.gl/core": "^9.2.2",
+    "@deck.gl/geo-layers": "^9.2.2",
+    "@deck.gl/layers": "^9.2.2",
+    "@deck.gl/mapbox": "^9.2.2",
+    "@loaders.gl/core": "^4.3.4",
+    "@loaders.gl/mvt": "^4.3.4",
+    "@loaders.gl/pmtiles": "^4.3.4",
+    "deck.gl": "^9.2.2",
     "lodash": "^4.17.21",
     "maplibre-gl": "^4.3.2",
     "mdi": "^2.2.43",
