@@ -1,6 +1,7 @@
 import type { EdgeUsageStats, NodePair } from '@/stores/trafficAnalysis'
 
 const API_BASE_URL = 'http://localhost:8000/api/v1/routes'
+const GEOJSON_URL = 'http://localhost:8000/data/lausanne.geojson'
 
 export interface EdgeGeometry {
   u: number
@@ -12,26 +13,56 @@ export interface EdgeGeometry {
   highway?: string
 }
 
-export function getGraphTilesUrl(): string {
-  return '/geodata/lausanne_drive.pmtiles'
-}
-
 /**
- * Fetch edge geometries from the backend
- * This endpoint needs to be implemented in the backend to return all edges with coordinates
+ * Fetch edge geometries from pre-generated GeoJSON file
  */
 export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[]> {
   try {
-    const url = limit
-      ? `${API_BASE_URL}/edge-geometries?limit=${limit}`
-      : `${API_BASE_URL}/edge-geometries`
+    console.time('[Frontend] Total fetch time')
 
-    const response = await fetch(url)
+    console.time('[Frontend] Network request')
+    const response = await fetch(GEOJSON_URL)
+    console.timeEnd('[Frontend] Network request')
+
     if (!response.ok) {
-      console.warn('Edge geometries endpoint not available, using empty dataset')
+      console.warn('GeoJSON file not available, using empty dataset')
       return []
     }
-    return response.json()
+
+    // Check response size
+    const contentLength = response.headers.get('content-length')
+    const contentEncoding = response.headers.get('content-encoding')
+    console.log(
+      `[Frontend] Response size: ${
+        contentLength ? (parseInt(contentLength) / 1024).toFixed(2) + ' KB' : 'unknown'
+      }${contentEncoding ? ` (${contentEncoding})` : ''}`
+    )
+
+    console.time('[Frontend] JSON parsing')
+    const geojson = await response.json()
+    console.timeEnd('[Frontend] JSON parsing')
+
+    // Convert GeoJSON features to EdgeGeometry format
+    console.time('[Frontend] GeoJSON conversion')
+    const edges: EdgeGeometry[] = geojson.features.map((feature: any) => ({
+      u: feature.properties.u,
+      v: feature.properties.v,
+      coordinates: feature.geometry.coordinates,
+      travel_time: feature.properties.travel_time,
+      length: feature.properties.length,
+      name: feature.properties.name,
+      highway: feature.properties.highway
+    }))
+    
+    if (limit) {
+      edges.splice(limit)
+    }
+    console.timeEnd('[Frontend] GeoJSON conversion')
+
+    console.timeEnd('[Frontend] Total fetch time')
+    console.log(`[Frontend] Loaded ${edges.length} edges from GeoJSON`)
+
+    return edges
   } catch (error) {
     console.warn('Failed to fetch edge geometries:', error)
     return []

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from app.api.v1 import routes
@@ -62,6 +63,11 @@ app.add_middleware(
 
 # Include routers
 app.include_router(routes.router, prefix="/api/v1")
+
+# Mount static data directory for serving GeoJSON files
+data_dir = Path(__file__).parent.parent / "data"
+if data_dir.exists():
+    app.mount("/data", StaticFiles(directory=str(data_dir)), name="data")
 
 
 @app.get("/")

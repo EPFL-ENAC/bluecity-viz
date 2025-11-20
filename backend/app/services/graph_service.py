@@ -72,10 +72,15 @@ class GraphService:
         Returns:
             List of edge dictionaries with u, v, coordinates, and properties
         """
+        import time
+        
         if not self.graph:
             raise RuntimeError("Graph not loaded")
         
+        start_time = time.time()
         edges = []
+        
+        iteration_start = time.time()
         for i, (u, v, data) in enumerate(self.graph.edges(data=True)):
             if limit and i >= limit:
                 break
@@ -113,6 +118,12 @@ class GraphService:
                 "highway": highway
             }
             edges.append(edge_dict)
+        
+        iteration_time = time.time() - iteration_start
+        total_time = time.time() - start_time
+        
+        print(f"[PERF] Graph iteration: {iteration_time:.3f}s")
+        print(f"[PERF] Total get_edge_geometries: {total_time:.3f}s for {len(edges)} edges")
         
         return edges
 

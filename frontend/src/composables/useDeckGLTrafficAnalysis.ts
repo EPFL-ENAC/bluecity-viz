@@ -1,13 +1,9 @@
 import {
   fetchEdgeGeometries,
-  getGraphTilesUrl,
   type EdgeGeometry
 } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { TileLayer } from '@deck.gl/geo-layers'
 import { GeoJsonLayer, PathLayer } from '@deck.gl/layers'
-import { createDataSource } from '@loaders.gl/core'
-import { PMTilesSource } from '@loaders.gl/pmtiles'
 import type { Ref } from 'vue'
 import { shallowRef } from 'vue'
 
@@ -47,56 +43,55 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   let baseLayer: any = null
 
   /**
-   * Load graph edges from PMTiles for efficient tile-based rendering
+   * Load graph edges as GeoJSON for efficient rendering and interaction
    */
   async function loadGraphEdges(): Promise<void> {
     try {
-      console.time('Loading graph edges from PMTiles')
+      console.time('Loading graph edges as GeoJSON')
 
-      // Load edge geometries for interaction (removed edges, routes)
+      // Load all edge geometries at once
       const edges = await fetchEdgeGeometries()
       edgeGeometries.value = edges
 
       // Populate the store with edge geometries for display purposes
       trafficStore.setEdgeGeometries(edges)
 
-      console.log(`Loaded ${edges.length} edge geometries for interaction`)
+      console.log(`Loaded ${edges.length} edge geometries`)
 
-      // Get PMTiles URL
-      const tilesUrl = getGraphTilesUrl()
-      const pmtilesUrl = `${window.location.origin}${tilesUrl}`
+      // Convert to GeoJSON format for Deck.gl
+      const geojsonData: any = {
+        type: 'FeatureCollection',
+        features: edges.map(edge => ({
+          type: 'Feature',
+          geometry: {
+            type: 'LineString',
+            coordinates: edge.coordinates
+          },
+          properties: {
+            u: edge.u,
+            v: edge.v,
+            name: edge.name,
+            highway: edge.highway,
+            travel_time: edge.travel_time,
+            length: edge.length
+          }
+        }))
+      }
 
-      // Create data source using loaders.gl pattern
-      const tileSource: any = createDataSource(pmtilesUrl, [PMTilesSource], {})
-
-      // Use TileLayer with getTileData from the source (following loaders.gl example)
-      baseLayer = new TileLayer({
+      // Create single GeoJsonLayer for all edges
+      baseLayer = new GeoJsonLayer({
         id: 'traffic-graph-edges',
-        getTileData: tileSource.getTileData.bind(tileSource),
+        data: geojsonData,
+        lineWidthMinPixels: 1,
+        getLineColor: [136, 136, 136, 153],
+        getLineWidth: 2,
+        getFillColor: [136, 136, 136, 100],
         pickable: true,
         autoHighlight: true,
-        highlightColor: [0, 170, 255, 200],
-        minZoom: 0,
-        maxZoom: 20,
-        tileSize: 256,
-        renderSubLayers: (props: any) => {
-          if (!props.data) return null
-
-          return new GeoJsonLayer({
-            ...props,
-            id: `${props.id}-geojson`,
-            data: props.data,
-            lineWidthMinPixels: 1,
-            getLineColor: [136, 136, 136, 153],
-            getLineWidth: 2,
-            getFillColor: [136, 136, 136, 100],
-            pickable: true,
-            autoHighlight: true
-          })
-        }
+        highlightColor: [0, 170, 255, 200]
       })
 
-      console.timeEnd('Loading graph edges from PMTiles')
+      console.timeEnd('Loading graph edges as GeoJSON')
 
       layers.value = [baseLayer]
     } catch (error) {

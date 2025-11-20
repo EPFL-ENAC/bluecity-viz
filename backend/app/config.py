@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     # Graph settings
     graph_path: str = "data/lausanne.graphml"
+    geojson_path: str = "data/lausanne.geojson"
     default_weight: str = "travel_time"
 
     # API settings
