@@ -2,10 +2,12 @@
 
 # Paths
 GRAPH_DIR := data/graph
+ELEVATION_DIR := data/elevation
 FRONTEND_GEODATA_DIR := ../../frontend/public/geodata
 
 # Files
 DRIVE_GRAPHML := $(GRAPH_DIR)/lausanne_drive.graphml
+DRIVE_GEOJSON := $(GRAPH_DIR)/lausanne_drive.geojson
 DRIVE_PMTILES := $(GRAPH_DIR)/lausanne_drive.pmtiles
 FRONTEND_PMTILES := $(FRONTEND_GEODATA_DIR)/lausanne_drive.pmtiles
 
@@ -14,6 +16,8 @@ help:
 	@echo "============================"
 	@echo ""
 	@echo "Available targets:"
+	@echo "  make elevation   - Download elevation raster data from swisstopo"
+	@echo "  make geojson     - Generate GeoJSON from GraphML files"
 	@echo "  make tiles       - Generate PMTiles from GraphML files"
 	@echo "  make install     - Copy generated PMTiles to frontend geodata folder"
 	@echo "  make all         - Generate tiles and install to frontend"
@@ -24,12 +28,27 @@ help:
 	@echo "  - tippecanoe (brew install tippecanoe)"
 	@echo "  - Python packages: osmnx, geopandas, shapely"
 
+# Download elevation raster data
+elevation:
+	@echo "Downloading Swiss elevation data (swissALTI3D)..."
+	@mkdir -p $(ELEVATION_DIR)
+	uv run python download_elevation_data.py
+	@echo "✓ Elevation data downloaded to $(ELEVATION_DIR)"
+
+# Generate GeoJSON from GraphML
+geojson: $(DRIVE_GEOJSON)
+
+$(DRIVE_GEOJSON): $(DRIVE_GRAPHML)
+	@echo "Generating GeoJSON from $(DRIVE_GRAPHML)..."
+	@uv run python -c "from generate_graph_tiles import graphml_to_geojson; graphml_to_geojson('$(DRIVE_GRAPHML)', '$(DRIVE_GEOJSON)')"
+	@echo "✓ GeoJSON generated: $(DRIVE_GEOJSON)"
+
 # Generate PMTiles from GraphML
 tiles: $(DRIVE_PMTILES)
 
 $(DRIVE_PMTILES): $(DRIVE_GRAPHML) generate_graph_tiles.py
 	@echo "Generating PMTiles from $(DRIVE_GRAPHML)..."
-	python generate_graph_tiles.py $(DRIVE_GRAPHML) $(DRIVE_PMTILES)
+	uv run python generate_graph_tiles.py $(DRIVE_GRAPHML) $(DRIVE_PMTILES)
 	@echo "✓ PMTiles generated: $(DRIVE_PMTILES)"
 
 # Install files to frontend
@@ -47,8 +66,8 @@ all: tiles install
 
 # Clean generated files
 clean:
-	@echo "Cleaning generated PMTiles files..."
-	@rm -f $(DRIVE_PMTILES)
+	@echo "Cleaning generated PMTiles and GeoJSON files..."
+	@rm -f $(DRIVE_PMTILES) $(DRIVE_GEOJSON)
 	@echo "✓ Clean complete"
 
 # Clean backend files as well

@@ -104,6 +104,7 @@ dmypy.json
 .pyre/
 
 # Data files (add specific patterns for your data)
+*.tif
 *.csv
 *.xlsx
 *.geojson

@@ -52,25 +52,31 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   function addRemovedEdge(u: number, v: number) {
     const key = `${u}-${v}`
-    removedEdges.value.add(key)
+    const newSet = new Set(removedEdges.value)
+    newSet.add(key)
+    removedEdges.value = newSet
   }
 
   function removeRemovedEdge(u: number, v: number) {
     const key = `${u}-${v}`
-    removedEdges.value.delete(key)
+    const newSet = new Set(removedEdges.value)
+    newSet.delete(key)
+    removedEdges.value = newSet
   }
 
   function toggleEdge(u: number, v: number) {
     const key = `${u}-${v}`
-    if (removedEdges.value.has(key)) {
-      removedEdges.value.delete(key)
+    const newSet = new Set(removedEdges.value)
+    if (newSet.has(key)) {
+      newSet.delete(key)
     } else {
-      removedEdges.value.add(key)
+      newSet.add(key)
     }
+    removedEdges.value = newSet
   }
 
   function clearRemovedEdges() {
-    removedEdges.value.clear()
+    removedEdges.value = new Set()
   }
 
   function setNodePairs(pairs: NodePair[]) {
