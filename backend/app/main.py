@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from pathlib import Path
 
 from app.api.v1 import routes
@@ -41,6 +42,13 @@ app = FastAPI(
     description="API for traffic network analysis and route optimization",
     version=settings.app_version,
     lifespan=lifespan,
+)
+
+# Add GZip compression middleware for responses >= 10KB
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=10000,  # 10KB - only compress responses larger than this
+    compresslevel=3  
 )
 
 # CORS middleware
