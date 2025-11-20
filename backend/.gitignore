@@ -27,7 +27,9 @@ build/
 htmlcov/
 
 # Data
-data/
 **/*.graphml
+**/*.pmtiles
 *.csv
 *.geojson
+!data/lausanne.geojson
+!data/lausanne.graphml

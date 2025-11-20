@@ -23,7 +23,7 @@ async function shufflePairs() {
   trafficStore.isLoading = true
   loadingMessage.value = 'Generating random pairs...'
   try {
-    const pairs = await generateRandomPairs(100, undefined, 1)
+    const pairs = await generateRandomPairs(1000, undefined, 3)
     trafficStore.setNodePairs(pairs)
     trafficStore.clearResults()
   } catch (error) {

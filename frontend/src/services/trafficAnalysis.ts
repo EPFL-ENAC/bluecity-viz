@@ -53,7 +53,7 @@ export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[
       name: feature.properties.name,
       highway: feature.properties.highway
     }))
-    
+
     if (limit) {
       edges.splice(limit)
     }
