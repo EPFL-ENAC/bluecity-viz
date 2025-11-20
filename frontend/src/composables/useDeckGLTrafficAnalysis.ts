@@ -3,6 +3,7 @@ import {
   getGraphTilesUrl,
   type EdgeGeometry
 } from '@/services/trafficAnalysis'
+import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { TileLayer } from '@deck.gl/geo-layers'
 import { GeoJsonLayer, PathLayer } from '@deck.gl/layers'
 import { createDataSource } from '@loaders.gl/core'
@@ -39,6 +40,9 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   const removedEdgesSet = shallowRef<Set<string>>(new Set())
   let edgeClickCallback: ((u: number, v: number) => void) | null = null
 
+  // Get store instance
+  const trafficStore = useTrafficAnalysisStore()
+
   // Cache the base layer to avoid recreating it (can be MVTLayer or PathLayer)
   let baseLayer: any = null
 
@@ -52,6 +56,10 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       // Load edge geometries for interaction (removed edges, routes)
       const edges = await fetchEdgeGeometries()
       edgeGeometries.value = edges
+
+      // Populate the store with edge geometries for display purposes
+      trafficStore.setEdgeGeometries(edges)
+
       console.log(`Loaded ${edges.length} edge geometries for interaction`)
 
       // Get PMTiles URL
@@ -228,9 +236,18 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   function handleClick(info: any): void {
     if (!info.object || !edgeClickCallback) return
 
-    const edge = info.object as EdgeGeometry
-    if (edge.u !== undefined && edge.v !== undefined) {
-      edgeClickCallback(edge.u, edge.v)
+    // Get all edges that share the same coordinates as the clicked edge
+    const clickedEdge = info.object as EdgeGeometry
+    if (clickedEdge.u === undefined || clickedEdge.v === undefined) return
+
+    // Also explicitly look for the reverse edge (u-v becomes v-u)
+    const reverseEdge = edgeGeometries.value.find(
+      (edge) => edge.u === clickedEdge.v && edge.v === clickedEdge.u
+    )
+    edgeClickCallback(clickedEdge.u, clickedEdge.v)
+
+    if (reverseEdge) {
+      edgeClickCallback(reverseEdge.u!, reverseEdge.v!)
     }
   }
 

@@ -112,12 +112,14 @@ function closePanel() {
           >
             <v-list v-if="trafficStore.removedEdgesCount > 0" density="compact" class="pa-0">
               <v-list-item
-                v-for="edge in trafficStore.removedEdgesArray"
+                v-for="edge in trafficStore.removedEdgesForDisplay"
                 :key="`${edge.u}-${edge.v}`"
                 class="px-3"
               >
                 <v-list-item-title class="text-caption">
-                  {{ edge.u }} → {{ edge.v }}
+                  {{ edge.name }}
+                  <span v-if="edge.isBidirectional" class="text-grey"> (↔)</span>
+                  <span v-else class="text-grey"> ({{ edge.u }}→{{ edge.v }})</span>
                 </v-list-item-title>
                 <template #append>
                   <v-btn

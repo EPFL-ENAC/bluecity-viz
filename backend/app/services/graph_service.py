@@ -90,12 +90,27 @@ class GraphService:
                     [self.graph.nodes[v]["x"], self.graph.nodes[v]["y"]]
                 ]
             
+            # Get edge name
+            name_raw = data.get("name")
+            if isinstance(name_raw, list):
+                name = name_raw[0] if name_raw else None
+            elif name_raw:
+                name = str(name_raw)
+            else:
+                name = None
+            
+            # Get highway type
+            highway_raw = data.get("highway", "Unknown")
+            highway = highway_raw[0] if isinstance(highway_raw, list) else highway_raw
+            
             edge_dict = {
                 "u": int(u),
                 "v": int(v),
                 "coordinates": coords,
                 "travel_time": data.get("travel_time"),
-                "length": data.get("length")
+                "length": data.get("length"),
+                "name": name,
+                "highway": highway
             }
             edges.append(edge_dict)
         

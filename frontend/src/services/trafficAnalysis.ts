@@ -8,6 +8,8 @@ export interface EdgeGeometry {
   coordinates: [number, number][]
   travel_time?: number
   length?: number
+  name?: string
+  highway?: string
 }
 
 export function getGraphTilesUrl(): string {

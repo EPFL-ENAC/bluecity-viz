@@ -134,6 +134,8 @@ class EdgeGeometry(BaseModel):
     coordinates: List[List[float]]
     travel_time: Optional[float] = None
     length: Optional[float] = None
+    name: Optional[str] = None
+    highway: Optional[str] = None
 
 
 @router.get("/edge-geometries")
