@@ -116,7 +116,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       data: removedEdgeGeometries,
       getPath: (d: EdgeGeometry) => d.coordinates,
       getColor: [255, 0, 0, 230],
-      getWidth: 5,
+      getWidth: 30,
       widthUnits: 'pixels',
       getDashArray: [2, 2],
       dashJustified: true,
@@ -162,12 +162,25 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       })
       .filter(Boolean) as (EdgeGeometry & { frequency: number })[]
 
+    // Calculate max frequency for normalization
+    const maxOriginalFreq = Math.max(...originalWithFreq.map((d) => d.frequency), 0.01)
+    const maxNewFreq =
+      newWithFreq.length > 0
+        ? Math.max(...newWithFreq.map((d) => d.frequency), 0.01)
+        : maxOriginalFreq
+
+    // Normalize frequency to opacity range [20%, 80%] (51 to 204)
+    const getOpacity = (frequency: number, maxFreq: number) => {
+      const normalized = frequency / maxFreq // 0 to 1
+      return Math.round(51 + normalized * 204) // 20% to 100% of 255
+    }
+
     // Create original routes layer (blue)
     const originalLayer = new PathLayer({
       id: 'traffic-original-routes',
       data: originalWithFreq,
       getPath: (d: EdgeGeometry) => d.coordinates,
-      getColor: [33, 150, 243, 200], // Blue
+      getColor: (d: any) => [33, 150, 243, getOpacity(d.frequency, maxOriginalFreq)], // Blue with frequency-based opacity
       getWidth: (d: any) => Math.max(2, Math.min(10, d.frequency * 100 + 2)),
       widthUnits: 'pixels',
       widthMinPixels: 2,
@@ -183,7 +196,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
             id: 'traffic-new-routes',
             data: newWithFreq,
             getPath: (d: EdgeGeometry) => d.coordinates,
-            getColor: [255, 152, 0, 200], // Orange
+            getColor: (d: any) => [255, 152, 0, getOpacity(d.frequency, maxNewFreq)], // Orange with frequency-based opacity
             getWidth: (d: any) => Math.max(2, Math.min(10, d.frequency * 100 + 2)),
             widthUnits: 'pixels',
             widthMinPixels: 2,
