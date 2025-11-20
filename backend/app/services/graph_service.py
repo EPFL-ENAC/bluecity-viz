@@ -62,6 +62,45 @@ class GraphService:
             f"Loaded graph: {len(self.graph.nodes)} nodes, {len(self.graph.edges)} edges"
         )
 
+    def get_edge_geometries(self, limit: Optional[int] = None) -> List[dict]:
+        """
+        Get edge geometries for visualization.
+        
+        Args:
+            limit: Optional limit on number of edges to return
+            
+        Returns:
+            List of edge dictionaries with u, v, coordinates, and properties
+        """
+        if not self.graph:
+            raise RuntimeError("Graph not loaded")
+        
+        edges = []
+        for i, (u, v, data) in enumerate(self.graph.edges(data=True)):
+            if limit and i >= limit:
+                break
+                
+            # Get edge geometry
+            if "geometry" in data:
+                coords = [[lon, lat] for lon, lat in data["geometry"].coords]
+            else:
+                # Fallback to straight line between nodes
+                coords = [
+                    [self.graph.nodes[u]["x"], self.graph.nodes[u]["y"]],
+                    [self.graph.nodes[v]["x"], self.graph.nodes[v]["y"]]
+                ]
+            
+            edge_dict = {
+                "u": int(u),
+                "v": int(v),
+                "coordinates": coords,
+                "travel_time": data.get("travel_time"),
+                "length": data.get("length")
+            }
+            edges.append(edge_dict)
+        
+        return edges
+
     def get_graph_info(self) -> dict:
         """Get information about the loaded graph."""
         if not self.graph:

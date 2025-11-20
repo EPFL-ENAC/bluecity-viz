@@ -124,3 +124,31 @@ async def generate_random_pairs(request: RandomPairsRequest):
         return pairs
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class EdgeGeometry(BaseModel):
+    """Edge geometry for frontend visualization."""
+
+    u: int
+    v: int
+    coordinates: List[List[float]]
+    travel_time: Optional[float] = None
+    length: Optional[float] = None
+
+
+@router.get("/edge-geometries")
+async def get_edge_geometries(limit: Optional[int] = None):
+    """
+    Get all edge geometries from the graph for Deck.gl visualization.
+
+    Args:
+        limit: Optional limit on number of edges to return (for testing)
+
+    Returns:
+        List of edges with u, v node IDs and coordinate arrays
+    """
+    try:
+        edges = graph_service.get_edge_geometries(limit=limit)
+        return edges
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

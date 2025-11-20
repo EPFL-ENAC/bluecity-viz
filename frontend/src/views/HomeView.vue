@@ -2,7 +2,7 @@
 import CollectionsPanel from '@/components/panels/CollectionsPanel.vue'
 import VisualizationsPanel from '@/components/panels/VisualizationsPanel.vue'
 import ResourcesPanel from '@/components/panels/ResourcesPanel.vue'
-import TrafficAnalysisPanel from '@/components/panels/TrafficAnalysisPanel.vue'
+import TrafficAnalysisPanelDeckGL from '@/components/panels/TrafficAnalysisPanelDeckGL.vue'
 import { ref, watch, provide } from 'vue'
 import { mdiMenu, mdiMenuOpen } from '@mdi/js'
 import { useThemeStore } from '@/stores/theme'
@@ -96,8 +96,8 @@ watch(
     <!-- Main Content Area -->
     <v-main>
       <VisualizationsPanel />
-      <!-- Add Traffic Analysis Panel -->
-      <TrafficAnalysisPanel />
+      <!-- Add Traffic Analysis Panel (Deck.gl version) -->
+      <TrafficAnalysisPanelDeckGL />
     </v-main>
   </v-layout>
 </template>
