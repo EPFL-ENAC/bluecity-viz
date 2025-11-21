@@ -4,9 +4,7 @@ from typing import List, Optional
 
 from app.models.route import (
     GraphData,
-    GraphEdge,
     NodePair,
-    PathGeometry,
     RandomPairsRequest,
     RecalculateRequest,
     RecalculateResponse,
@@ -15,7 +13,7 @@ from app.models.route import (
 )
 from app.services.graph_service import GraphService
 from fastapi import APIRouter, HTTPException, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/routes", tags=["routes"])
 
@@ -118,7 +116,7 @@ async def generate_random_pairs(request: RandomPairsRequest):
     try:
         # Clear route cache when generating new pairs
         graph_service.clear_route_cache()
-        
+
         pairs = graph_service.generate_random_pairs(
             count=request.count,
             seed=request.seed,
@@ -133,7 +131,7 @@ async def generate_random_pairs(request: RandomPairsRequest):
 async def clear_cache():
     """
     Clear the route calculation cache.
-    
+
     Returns:
         Status message
     """
@@ -169,33 +167,34 @@ async def get_edge_geometries(response: Response, limit: Optional[int] = None):
     """
     import time
     import json
+
     try:
         request_start = time.time()
-        
+
         data_start = time.time()
         edges = graph_service.get_edge_geometries(limit=limit)
         data_time = time.time() - data_start
-        
+
         # Manually serialize to check size
         json_start = time.time()
         json_str = json.dumps(edges)
         json_time = time.time() - json_start
         uncompressed_size = len(json_str) / (1024 * 1024)  # MB
-        
+
         total_time = time.time() - request_start
-        
+
         print(f"[PERF] Data generation: {data_time:.3f}s for {len(edges)} edges")
         print(f"[PERF] JSON serialization: {json_time:.3f}s")
         print(f"[PERF] Uncompressed JSON size: {uncompressed_size:.2f} MB")
         print(f"[PERF] Total endpoint time: {total_time:.3f}s")
-        
+
         # Add Server-Timing headers
         response.headers["Server-Timing"] = (
             f"data;dur={data_time*1000:.1f}, "
             f"json;dur={json_time*1000:.1f}, "
             f"total;dur={total_time*1000:.1f}"
         )
-        
+
         return edges
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

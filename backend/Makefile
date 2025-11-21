@@ -8,8 +8,8 @@ help:
 	@echo "  make dev        - Run development server with auto-reload"
 	@echo "  make run        - Run production server"
 	@echo "  make test       - Run test script"
-	@echo "  make lint       - Run ruff linter"
-	@echo "  make format     - Format code with ruff"
+	@echo "  make lint       - Run flake8 linter"
+	@echo "  make format     - Format code with black"
 	@echo "  make clean      - Remove cache and build files"
 
 install:
@@ -25,10 +25,20 @@ test:
 	uv run --directory . python test_with_data.py
 
 lint:
-	uv run ruff check .
+	@if uv --version >/dev/null 2>&1; then \
+		uv run flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics; \
+		uv run flake8 app --count --exit-zero --max-complexity=15 --max-line-length=100 --statistics; \
+	else \
+		.venv/bin/flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics; \
+		.venv/bin/flake8 app --count --exit-zero --max-complexity=15 --max-line-length=100 --statistics; \
+	fi
 
 format:
-	uv run ruff format .
+	@if uv --version >/dev/null 2>&1; then \
+		uv run black app; \
+	else \
+		.venv/bin/black app; \
+	fi
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

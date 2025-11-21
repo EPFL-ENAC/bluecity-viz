@@ -9,7 +9,6 @@ from pathlib import Path
 
 from app.api.v1 import routes
 from app.config import settings
-from app.services.graph_service import GraphService
 
 
 @asynccontextmanager
@@ -49,7 +48,7 @@ app = FastAPI(
 app.add_middleware(
     GZipMiddleware,
     minimum_size=10000,  # 10KB - only compress responses larger than this
-    compresslevel=3  
+    compresslevel=3,
 )
 
 # CORS middleware

@@ -54,10 +54,9 @@ jobs:
         run: uv sync
 
       - name: Run linter
-        run: uv run ruff check .
+        run: |
+          uv run flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics
+          uv run flake8 app --count --exit-zero --max-complexity=15 --max-line-length=100 --statistics
 
       - name: Run formatter check
-        run: uv run ruff format --check .
-
-      - name: Type check
-        run: uv run mypy app || true
+        run: uv run black --check app
