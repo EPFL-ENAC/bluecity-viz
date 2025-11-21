@@ -116,12 +116,30 @@ async def generate_random_pairs(request: RandomPairsRequest):
         List of random node pairs within the specified radius
     """
     try:
+        # Clear route cache when generating new pairs
+        graph_service.clear_route_cache()
+        
         pairs = graph_service.generate_random_pairs(
             count=request.count,
             seed=request.seed,
             radius_km=request.radius_km,
         )
         return pairs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/clear-cache")
+async def clear_cache():
+    """
+    Clear the route calculation cache.
+    
+    Returns:
+        Status message
+    """
+    try:
+        graph_service.clear_route_cache()
+        return {"status": "ok", "message": "Cache cleared"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

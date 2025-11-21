@@ -40,6 +40,8 @@ class GraphService:
         """
         self.graph = None
         self.graph_path = graph_path
+        self.route_cache = {}  # Cache for original routes by pairs hash
+        self.pairs_cache = None  # Cache the last node pairs for comparison
 
         if graph_path:
             self.load_graph(graph_path)
@@ -334,11 +336,47 @@ class GraphService:
         print(f"[PERF] ===== Starting recalculate_with_removed_edges =====")
         print(f"[PERF] Pairs: {len(pairs)}, Edges to remove: {len(edges_to_remove)}")
 
-        # Calculate original routes
-        orig_start = time.time()
-        original_routes = await self.calculate_routes(pairs, weight)
-        orig_time = time.time() - orig_start
-        print(f"[PERF] Original routes calculation took {orig_time:.2f}s")
+        # Generate cache key for current pairs
+        pairs_key = tuple((p.origin, p.destination) for p in pairs)
+        
+        # Check if we need to recalculate original routes
+        if self.pairs_cache != pairs_key or pairs_key not in self.route_cache:
+            print(f"[PERF] Cache miss - calculating original routes")
+            orig_start = time.time()
+            original_routes = await self.calculate_routes(pairs, weight)
+            orig_time = time.time() - orig_start
+            print(f"[PERF] Original routes calculation took {orig_time:.2f}s")
+            
+            # Cache the results
+            self.pairs_cache = pairs_key
+            self.route_cache[pairs_key] = original_routes
+        else:
+            print(f"[PERF] Cache hit - using cached original routes")
+            original_routes = self.route_cache[pairs_key]
+
+        # Build set of removed edges for fast lookup
+        removed_edges_set = {(edge.u, edge.v) for edge in edges_to_remove}
+        
+        # Find pairs that have removed edges in their original path
+        pairs_to_recalculate = []
+        pairs_indices_to_recalculate = []
+        
+        filter_start = time.time()
+        for i, route in enumerate(original_routes):
+            needs_recalc = False
+            for j in range(len(route.path) - 1):
+                edge = (route.path[j], route.path[j + 1])
+                if edge in removed_edges_set:
+                    needs_recalc = True
+                    break
+            
+            if needs_recalc:
+                pairs_to_recalculate.append(pairs[i])
+                pairs_indices_to_recalculate.append(i)
+        
+        filter_time = time.time() - filter_start
+        print(f"[PERF] Filtering affected pairs took {filter_time:.3f}s")
+        print(f"[PERF] {len(pairs_to_recalculate)}/{len(pairs)} pairs need recalculation")
 
         # Create modified graph
         copy_start = time.time()
@@ -355,18 +393,28 @@ class GraphService:
         remove_time = time.time() - remove_start
         print(f"[PERF] Removing {len(removed)} edges took {remove_time:.2f}s")
 
-        # Temporarily swap graphs
-        original_graph = self.graph
-        self.graph = G_modified
+        # Calculate new routes only for affected pairs
+        new_routes = list(original_routes)  # Start with copy of original routes
+        
+        if pairs_to_recalculate:
+            # Temporarily swap graphs
+            original_graph = self.graph
+            self.graph = G_modified
 
-        # Calculate new routes
-        new_start = time.time()
-        new_routes = await self.calculate_routes(pairs, weight)
-        new_time = time.time() - new_start
-        print(f"[PERF] New routes calculation took {new_time:.2f}s")
+            # Calculate new routes only for affected pairs
+            new_start = time.time()
+            recalculated_routes = await self.calculate_routes(pairs_to_recalculate, weight)
+            new_time = time.time() - new_start
+            print(f"[PERF] Recalculating {len(pairs_to_recalculate)} routes took {new_time:.2f}s")
 
-        # Restore original graph
-        self.graph = original_graph
+            # Restore original graph
+            self.graph = original_graph
+            
+            # Update the affected routes
+            for idx, recalc_route in zip(pairs_indices_to_recalculate, recalculated_routes):
+                new_routes[idx] = recalc_route
+        else:
+            print(f"[PERF] No routes need recalculation (no removed edges on paths)")
 
         # Build comparisons
         comp_start = time.time()
@@ -469,6 +517,12 @@ class GraphService:
             node_count=len(self.graph.nodes),
             edge_count=len(self.graph.edges),
         )
+
+    def clear_route_cache(self):
+        """Clear the cached routes."""
+        self.route_cache.clear()
+        self.pairs_cache = None
+        print("[CACHE] Route cache cleared")
 
     def generate_random_pairs(
         self, count: int = 100, seed: Optional[int] = None, radius_km: float = 2.0
