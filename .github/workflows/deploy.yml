@@ -6,7 +6,7 @@ name: deploy
     branches:
       - main
       - dev
-    tags: ['v*.*.*']
+    tags: ["v*.*.*"]
 
 jobs:
   deploy:
@@ -17,6 +17,6 @@ jobs:
     secrets:
       token: ${{ secrets.CD_TOKEN }}
     with:
-      ORG: epfl-bluecity 
-      REPO: bluecity-viz 
+      ORG: epfl-enac
+      REPO: bluecity-viz
       build_context: '["./backend", "./frontend"]'
