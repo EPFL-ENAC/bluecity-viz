@@ -13,7 +13,7 @@ ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 WORKDIR /app
 
 # Copy project files needed for dependency installation
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 
 # Install dependencies using uv sync
 RUN uv sync --frozen --no-cache
