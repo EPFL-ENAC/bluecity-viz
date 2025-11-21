@@ -165,8 +165,8 @@ async def get_edge_geometries(response: Response, limit: Optional[int] = None):
     Returns:
         List of edges with u, v node IDs and coordinate arrays
     """
-    import time
     import json
+    import time
 
     try:
         request_start = time.time()

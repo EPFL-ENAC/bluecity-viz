@@ -1,23 +1,23 @@
 """Graph service for route calculations."""
 
-import osmnx as ox
-import time
-import os
 import logging
-from typing import List, Optional
-from pathlib import Path
+import os
 import random
+import time
+from pathlib import Path
+from typing import List, Optional
 
+import osmnx as ox
 from app.models.route import (
-    NodePair,
     Edge,
-    Route,
-    PathGeometry,
-    RouteComparison,
-    RecalculateResponse,
-    GraphEdge,
-    GraphData,
     EdgeUsageStats,
+    GraphData,
+    GraphEdge,
+    NodePair,
+    PathGeometry,
+    RecalculateResponse,
+    Route,
+    RouteComparison,
 )
 
 # Enable osmnx logging to see what it's doing
