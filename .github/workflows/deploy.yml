@@ -17,6 +17,6 @@ jobs:
     secrets:
       token: ${{ secrets.CD_TOKEN }}
     with:
-      org: epfl-enac-bluecity
-      repo: bluecity-viz
+      ORG: epfl-bluecity 
+      REPO: bluecity-viz 
       build_context: '["./backend", "./frontend"]'
