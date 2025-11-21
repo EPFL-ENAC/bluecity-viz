@@ -114,7 +114,7 @@ class RandomPairsRequest(BaseModel):
     """Request to generate random node pairs."""
 
     count: int = Field(
-        default=100, ge=1, le=1000, description="Number of pairs to generate"
+        default=100, ge=1, le=10000, description="Number of pairs to generate"
     )
     seed: Optional[int] = Field(None, description="Random seed for reproducibility")
     radius_km: Optional[float] = Field(

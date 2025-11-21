@@ -1,9 +1,9 @@
-import {
-  fetchEdgeGeometries,
-  type EdgeGeometry
-} from '@/services/trafficAnalysis'
+import { fetchEdgeGeometries, type EdgeGeometry } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { GeoJsonLayer, PathLayer } from '@deck.gl/layers'
+import { rgb } from 'd3-color'
+import { scaleDiverging, scaleSequential } from 'd3-scale'
+import { interpolateRdBu, interpolateViridis } from 'd3-scale-chromatic'
 import type { Ref } from 'vue'
 import { shallowRef } from 'vue'
 
@@ -13,7 +13,6 @@ interface EdgeUsageStats {
   count: number
   frequency: number
   delta_count?: number
-  delta_frequency?: number
 }
 
 interface DeckGLTrafficAnalysisReturn {
@@ -61,7 +60,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       // Convert to GeoJSON format for Deck.gl
       const geojsonData: any = {
         type: 'FeatureCollection',
-        features: edges.map(edge => ({
+        features: edges.map((edge) => ({
           type: 'Feature',
           geometry: {
             type: 'LineString',
@@ -113,23 +112,21 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       return removedEdgesSet.value.has(key)
     })
 
-    // Create/update removed layer
+    // Create/update removed layer with dashed black arrows (more visible)
     const removedLayer = new PathLayer({
       id: 'traffic-removed-edges',
       data: removedEdgeGeometries,
       getPath: (d: EdgeGeometry) => d.coordinates,
-      getColor: [255, 0, 0, 230],
-      getWidth: 30,
+      getColor: [0, 0, 0, 255], // Solid black
+      getWidth: 6,
       widthUnits: 'pixels',
-      getDashArray: [2, 2],
+      getDashArray: [8, 4], // Dashed pattern: 8px line, 4px gap (more visible)
       dashJustified: true,
       pickable: true
     })
 
     // Keep route layers if they exist
-    const routeLayers = layers.value.filter(
-      (l) => l.id === 'traffic-original-routes' || l.id === 'traffic-new-routes'
-    )
+    const routeLayers = layers.value.filter((l) => l.id === 'traffic-routes')
 
     layers.value = [
       baseLayer,
@@ -139,10 +136,14 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   }
 
   /**
-   * Visualize edge usage statistics using Deck.gl PathLayer
+   * Visualize edge usage statistics using delta frequency for color coding
    */
   function visualizeEdgeUsage(originalUsage: EdgeUsageStats[], newUsage: EdgeUsageStats[]): void {
     clearRoutes()
+
+    console.log('[DEBUG] visualizeEdgeUsage called')
+    console.log('[DEBUG] newUsage length:', newUsage.length)
+    console.log('[DEBUG] First 3 newUsage entries:', newUsage.slice(0, 3))
 
     // Build lookup map for edges
     const edgeMap = new Map<string, EdgeGeometry>()
@@ -150,40 +151,104 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       edgeMap.set(`${edge.u}-${edge.v}`, edge)
     })
 
-    // Map usage stats to edge geometries with frequency data
-    const originalWithFreq = originalUsage
+    // Use new usage stats (which include delta_count)
+    const edgesWithStats = newUsage
       .map((stat) => {
         const edge = edgeMap.get(`${stat.u}-${stat.v}`)
-        return edge ? { ...edge, frequency: stat.frequency } : null
+        return edge
+          ? {
+              ...edge,
+              frequency: stat.frequency,
+              delta_count: stat.delta_count ?? 0 // Use nullish coalescing to default to 0
+            }
+          : null
       })
-      .filter(Boolean) as (EdgeGeometry & { frequency: number })[]
+      .filter(Boolean) as (EdgeGeometry & { frequency: number; delta_count: number })[]
 
-    const newWithFreq = newUsage
-      .map((stat) => {
-        const edge = edgeMap.get(`${stat.u}-${stat.v}`)
-        return edge ? { ...edge, frequency: stat.frequency } : null
-      })
-      .filter(Boolean) as (EdgeGeometry & { frequency: number })[]
+    console.log('[DEBUG] edgesWithStats length:', edgesWithStats.length)
+    console.log(
+      '[DEBUG] First 3 edgesWithStats:',
+      edgesWithStats.slice(0, 3).map((e) => ({
+        u: e.u,
+        v: e.v,
+        frequency: e.frequency,
+        delta_count: e.delta_count
+      }))
+    )
 
-    // Calculate max frequency for normalization
-    const maxOriginalFreq = Math.max(...originalWithFreq.map((d) => d.frequency), 0.01)
-    const maxNewFreq =
-      newWithFreq.length > 0
-        ? Math.max(...newWithFreq.map((d) => d.frequency), 0.01)
-        : maxOriginalFreq
+    const minDelta = Math.min(...edgesWithStats.map((d) => d.delta_count), -0.1)
+    const maxDelta = Math.max(...edgesWithStats.map((d) => d.delta_count), 0.05)
 
-    // Normalize frequency to opacity range [20%, 80%] (51 to 204)
-    const getOpacity = (frequency: number, maxFreq: number) => {
-      const normalized = frequency / maxFreq // 0 to 1
-      return Math.round(51 + normalized * 204) // 20% to 100% of 255
+    // Check if we have meaningful delta values (recalculated routes) or just frequencies (original routes)
+    // When no edges are removed, delta_count will be undefined or 0 for all edges
+    const hasDeltaValues = newUsage.some(
+      (stat) => stat.delta_count !== undefined && Math.abs(stat.delta_count) > 0.001
+    )
+
+    console.log('[DEBUG] minDelta:', minDelta)
+    console.log('[DEBUG] maxDelta:', maxDelta)
+    console.log('[DEBUG] hasDeltaValues:', hasDeltaValues)
+
+    let colorScale: any
+    if (hasDeltaValues) {
+      // Use diverging scale (RdBu) for delta_count when edges are removed
+      // This shows increased (red) vs decreased (blue) traffic
+      console.log('[DEBUG] Using diverging scale (RdBu) for delta_count')
+      colorScale = scaleDiverging(interpolateRdBu).domain([maxDelta, 0, minDelta])
+    } else {
+      // Use sequential scale (Viridis) for frequency when showing original routes
+      // This shows high (yellow) vs low (purple) usage
+      const maxFreq = Math.max(...edgesWithStats.map((d) => d.frequency), 0.01)
+      console.log('[DEBUG] Using sequential scale (Viridis) for frequency, maxFreq:', maxFreq)
+      colorScale = scaleSequential(interpolateViridis).domain([0, maxFreq])
     }
 
-    // Create original routes layer (blue)
-    const originalLayer = new PathLayer({
-      id: 'traffic-original-routes',
-      data: originalWithFreq,
+    const getColor = (colorStr: string): [number, number, number] => {
+      const color = rgb(colorStr)
+      return [color.r, color.g, color.b]
+    }
+
+    // Test color generation for first edge
+    if (edgesWithStats.length > 0) {
+      const testEdge = edgesWithStats[0]
+      const testValue = hasDeltaValues ? testEdge.delta_count : testEdge.frequency
+      const testColorStr = colorScale(testValue)
+      const testColor = getColor(testColorStr)
+      console.log(
+        '[DEBUG] Test color for first edge:',
+        testColor,
+        'delta:',
+        testEdge.delta_count,
+        'freq:',
+        testEdge.frequency,
+        'colorString:',
+        testColorStr
+      )
+    }
+
+    // Create outline layer
+    const outlineLayer = new PathLayer({
+      id: 'traffic-routes-outline',
+      data: edgesWithStats,
       getPath: (d: EdgeGeometry) => d.coordinates,
-      getColor: (d: any) => [33, 150, 243, getOpacity(d.frequency, maxOriginalFreq)], // Blue with frequency-based opacity
+      getColor: [0, 0, 0, 120], // Light dark outline
+      getWidth: (d: any) => Math.max(4, Math.min(12, d.frequency * 100 + 4)), // 2px wider than main
+      widthUnits: 'pixels',
+      widthMinPixels: 4,
+      widthMaxPixels: 12,
+      pickable: false
+    })
+
+    // Create main traffic layer with delta-based coloring
+    const trafficLayer = new PathLayer({
+      id: 'traffic-routes',
+      data: edgesWithStats,
+      getPath: (d: EdgeGeometry) => d.coordinates,
+      getColor: (d: any) => {
+        const value = hasDeltaValues ? d.delta_count : d.frequency
+        const colorStr = colorScale(value)
+        return getColor(colorStr)
+      },
       getWidth: (d: any) => Math.max(2, Math.min(10, d.frequency * 100 + 2)),
       widthUnits: 'pixels',
       widthMinPixels: 2,
@@ -192,28 +257,11 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       autoHighlight: true
     })
 
-    // Create new routes layer (orange) - only if different
-    const newLayer =
-      newUsage.length > 0 && newUsage.length !== originalUsage.length
-        ? new PathLayer({
-            id: 'traffic-new-routes',
-            data: newWithFreq,
-            getPath: (d: EdgeGeometry) => d.coordinates,
-            getColor: (d: any) => [255, 152, 0, getOpacity(d.frequency, maxNewFreq)], // Orange with frequency-based opacity
-            getWidth: (d: any) => Math.max(2, Math.min(10, d.frequency * 100 + 2)),
-            widthUnits: 'pixels',
-            widthMinPixels: 2,
-            widthMaxPixels: 10,
-            pickable: true,
-            autoHighlight: true
-          })
-        : null
-
     // Update layers array - preserve base and removed layers
     const removedLayer = layers.value.find((l) => l.id === 'traffic-removed-edges')
     const preservedLayers = [baseLayer, removedLayer].filter(Boolean)
 
-    layers.value = [...preservedLayers, originalLayer, ...(newLayer ? [newLayer] : [])]
+    layers.value = [...preservedLayers, outlineLayer, trafficLayer]
   }
 
   /**

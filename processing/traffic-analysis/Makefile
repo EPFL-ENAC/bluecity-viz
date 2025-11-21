@@ -4,12 +4,14 @@
 GRAPH_DIR := data/graph
 ELEVATION_DIR := data/elevation
 FRONTEND_GEODATA_DIR := ../../frontend/public/geodata
+BACKEND_DATA_DIR := ../../backend/data
 
 # Files
 DRIVE_GRAPHML := $(GRAPH_DIR)/lausanne_drive.graphml
 DRIVE_GEOJSON := $(GRAPH_DIR)/lausanne_drive.geojson
 DRIVE_PMTILES := $(GRAPH_DIR)/lausanne_drive.pmtiles
 FRONTEND_PMTILES := $(FRONTEND_GEODATA_DIR)/lausanne_drive.pmtiles
+BACKEND_GEOJSON := $(BACKEND_DATA_DIR)/lausanne.geojson
 
 help:
 	@echo "Traffic Analysis Processing"
@@ -19,7 +21,7 @@ help:
 	@echo "  make elevation   - Download elevation raster data from swisstopo"
 	@echo "  make geojson     - Generate GeoJSON from GraphML files"
 	@echo "  make tiles       - Generate PMTiles from GraphML files"
-	@echo "  make install     - Copy generated PMTiles to frontend geodata folder"
+	@echo "  make install     - Copy generated files to frontend and backend"
 	@echo "  make all         - Generate tiles and install to frontend"
 	@echo "  make clean       - Remove generated PMTiles files"
 	@echo "  make help        - Show this help message"
@@ -52,12 +54,17 @@ $(DRIVE_PMTILES): $(DRIVE_GRAPHML) generate_graph_tiles.py
 	@echo "✓ PMTiles generated: $(DRIVE_PMTILES)"
 
 # Install files to frontend
-install: tiles
-	@echo "Installing PMTiles to frontend geodata folder..."
+install: tiles geojson
+	@echo "Installing files to frontend and backend..."
 	@mkdir -p $(FRONTEND_GEODATA_DIR)
+	@mkdir -p $(BACKEND_DATA_DIR)
 	@if [ -f $(DRIVE_PMTILES) ]; then \
 		cp $(DRIVE_PMTILES) $(FRONTEND_PMTILES); \
 		echo "✓ Copied PMTiles: $(FRONTEND_PMTILES)"; \
+	fi
+	@if [ -f $(DRIVE_GEOJSON) ]; then \
+		cp $(DRIVE_GEOJSON) $(BACKEND_GEOJSON); \
+		echo "✓ Copied GeoJSON: $(BACKEND_GEOJSON)"; \
 	fi
 	@echo "✓ Installation complete!"
 

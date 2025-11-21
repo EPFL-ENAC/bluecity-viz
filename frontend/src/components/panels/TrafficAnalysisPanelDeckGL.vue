@@ -23,7 +23,7 @@ async function shufflePairs() {
   trafficStore.isLoading = true
   loadingMessage.value = 'Generating random pairs...'
   try {
-    const pairs = await generateRandomPairs(1000, undefined, 3)
+    const pairs = await generateRandomPairs(5000, undefined, 4)
     trafficStore.setNodePairs(pairs)
     trafficStore.clearResults()
   } catch (error) {
@@ -158,12 +158,13 @@ function closePanel() {
 
       <!-- Info Text -->
       <div class="mt-3 text-caption text-medium-emphasis">
-        <p>Using Deck.gl for visualization:</p>
+        <p>Traffic Analysis Visualization:</p>
         <ul class="ml-4">
           <li>Click edges to remove them</li>
-          <li>Blue: Original routes</li>
-          <li>Orange: Rerouted traffic</li>
-          <li>Red: Removed edges</li>
+          <li class="text-red">Red: Increased traffic</li>
+          <li class="text-blue">Blue: Decreased traffic</li>
+          <li>White: No change</li>
+          <li>⚫ Dashed black: Removed edges</li>
         </ul>
       </div>
     </v-card-text>
