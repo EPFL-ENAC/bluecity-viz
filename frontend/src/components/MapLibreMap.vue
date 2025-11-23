@@ -296,6 +296,7 @@ watch(
 )
 
 defineExpose({
+  map,
   getPaintProperty,
   setFilter,
   getFilter,

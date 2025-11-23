@@ -6,7 +6,7 @@ import LayerSelector from '@/components/LayerSelector.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
 import { useDeckGLTrafficAnalysis } from '@/composables/useDeckGLTrafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { inject, watch, onMounted, computed, type Ref } from 'vue'
+import { inject, watch, onMounted, type Ref } from 'vue'
 
 // Use the map logic composable
 const { map, parameters, center, zoom, syncAllLayersVisibility, layersStore } = useMapLogic()
@@ -16,15 +16,6 @@ const trafficStore = useTrafficAnalysisStore()
 
 // Use Deck.gl traffic analysis
 const deckGLTraffic = useDeckGLTrafficAnalysis()
-
-// Create stable view state for Deck.gl to prevent constant recreation
-const deckViewState = computed(() => ({
-  longitude: center.lng,
-  latitude: center.lat,
-  zoom: zoom,
-  pitch: 0,
-  bearing: 0
-}))
 
 // Get the provided map ref from parent
 const mapComponentRef = inject<Ref<any>>('mapRef')
@@ -89,9 +80,8 @@ onMounted(async () => {
 
 <template>
   <div class="visualizations-panel position-relative fill-height">
-    <!-- MapLibre Map (shown when traffic analysis is NOT active) -->
+    <!-- MapLibre Map (always shown as base layer) -->
     <MapLibreMap
-      v-show="!trafficStore.isOpen"
       ref="map"
       :center="center"
       :popup-layer-ids="parameters.popupLayerIds"
@@ -106,11 +96,9 @@ onMounted(async () => {
       </template>
     </MapLibreMap>
 
-    <!-- Deck.gl Canvas (shown when traffic analysis IS active) -->
+    <!-- Deck.gl Canvas (always mounted, shows layers only when traffic analysis is active) -->
     <DeckGLOverlay
-      v-show="trafficStore.isOpen"
-      :layers="deckGLTraffic.layers.value"
-      :view-state="deckViewState"
+      :layers="trafficStore.isOpen ? deckGLTraffic.layers.value : []"
       :on-click="handleDeckClick"
       class="fill-height"
     />

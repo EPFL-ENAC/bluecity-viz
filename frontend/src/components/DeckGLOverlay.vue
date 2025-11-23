@@ -1,127 +1,88 @@
 <script setup lang="ts">
-import { Deck } from '@deck.gl/core'
-import { TileLayer } from '@deck.gl/geo-layers'
-import { BitmapLayer } from '@deck.gl/layers'
-import { onMounted, onUnmounted, watch, ref } from 'vue'
+import { MapboxOverlay } from '@deck.gl/mapbox'
+import { onMounted, onUnmounted, watch, inject, type Ref, nextTick } from 'vue'
+import type { Map as MapLibreMap } from 'maplibre-gl'
 
 const props = defineProps<{
   layers: any[]
-  viewState?: any
   onClick?: (info: any, event: any) => void
   onHover?: (info: any, event: any) => void
-  showBasemap?: boolean
 }>()
 
-const emit = defineEmits<{
-  viewStateChange: [viewState: any]
-}>()
+// Get the MapLibre map instance from parent
+const mapRef = inject<Ref<{ map?: MapLibreMap }>>('mapRef')
 
-const container = ref<HTMLDivElement | null>(null)
-let deck: Deck | null = null
+let deckOverlay: MapboxOverlay | null = null
 
-// Create basemap tile layer once and reuse it
-const basemapLayer = new TileLayer({
-  id: 'basemap-tiles',
-  data: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-  minZoom: 0,
-  maxZoom: 19,
-  tileSize: 256,
-  renderSubLayers: (props: any) => {
-    const {
-      bbox: { west, south, east, north }
-    } = props.tile
-
-    return new BitmapLayer(props, {
-      data: undefined,
-      image: props.data,
-      bounds: [west, south, east, north]
-    })
+const initializeOverlay = () => {
+  if (!mapRef?.value?.map) {
+    console.warn('MapLibre map not available for Deck.gl overlay')
+    return false
   }
-})
 
-onMounted(() => {
-  if (!container.value) return
+  const map = mapRef.value.map
 
-  const allLayers = props.showBasemap !== false ? [basemapLayer, ...props.layers] : props.layers
+  // Don't reinitialize if already exists
+  if (deckOverlay) {
+    return true
+  }
 
-  // Initialize Deck.gl instance
-  deck = new Deck({
-    canvas: container.value.querySelector('canvas') || undefined,
-    width: '100%',
-    height: '100%',
-    initialViewState: props.viewState || {
-      longitude: 6.63,
-      latitude: 46.52,
-      zoom: 11,
-      pitch: 0,
-      bearing: 0
-    },
-    controller: true,
-    layers: allLayers,
+  // Create Deck.gl overlay that syncs with MapLibre
+  deckOverlay = new MapboxOverlay({
+    interleaved: true,
+    layers: props.layers,
     onClick: (info, event) => {
       if (props.onClick) {
         props.onClick(info, event)
       }
     },
-    onViewStateChange: ({ viewState }) => {
-      emit('viewStateChange', viewState)
+    onHover: (info, event) => {
+      if (props.onHover) {
+        props.onHover(info, event)
+      }
     }
   })
+
+  // Add overlay to MapLibre map
+  map.addControl(deckOverlay as any)
+  return true
+}
+
+onMounted(async () => {
+  // Wait for next tick to ensure map is ready
+  await nextTick()
+  
+  // Try to initialize, retry if map not ready
+  const initialized = initializeOverlay()
+  if (!initialized) {
+    setTimeout(initializeOverlay, 100)
+  }
 })
 
-// Watch for layer changes and update deck
+// Watch for layer changes and update deck overlay
 watch(
   () => props.layers,
   (newLayers) => {
-    if (deck) {
-      const allLayers = props.showBasemap !== false ? [basemapLayer, ...newLayers] : newLayers
-      deck.setProps({ layers: allLayers })
-    }
-  }
-)
-
-// Watch for view state changes
-watch(
-  () => props.viewState,
-  (newViewState) => {
-    if (deck && newViewState) {
-      deck.setProps({ initialViewState: newViewState })
+    if (deckOverlay) {
+      deckOverlay.setProps({ layers: newLayers })
     }
   }
 )
 
 onUnmounted(() => {
-  if (deck) {
-    deck.finalize()
-    deck = null
+  if (deckOverlay && mapRef?.value?.map) {
+    mapRef.value.map.removeControl(deckOverlay as any)
+    deckOverlay.finalize()
+    deckOverlay = null
   }
 })
 
 defineExpose({
-  deck
+  overlay: deckOverlay
 })
 </script>
 
 <template>
-  <div ref="container" class="deckgl-overlay">
-    <canvas />
-  </div>
+  <!-- No visual element needed - overlay is added as MapLibre control -->
+  <div style="display: none"></div>
 </template>
-
-<style scoped>
-.deckgl-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: all;
-  z-index: 1;
-  background-color: #f0f0f0;
-}
-
-.deckgl-overlay canvas {
-  width: 100%;
-  height: 100%;
-}
-</style>
