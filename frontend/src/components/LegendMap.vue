@@ -4,6 +4,8 @@ import { mdiChevronUp, mdiChevronDown } from '@mdi/js'
 import type { MapLayerConfig } from '@/config/layerTypes'
 import { type LayerSpecification } from 'maplibre-gl'
 import { useLayersStore } from '@/stores/layers'
+import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { rgb } from 'd3-color'
 
 type LegendColor = {
   color: string
@@ -16,6 +18,7 @@ const props = defineProps<{
 }>()
 
 const store = useLayersStore()
+const trafficStore = useTrafficAnalysisStore()
 
 /**
  * Generate legend colors for a given layer's paint property.
@@ -120,6 +123,75 @@ const generatedLayersWithColors = computed(() => {
     .filter((layer) => layer.colors && layer.colors.length > 0)
 })
 
+// Generate traffic analysis legend
+const trafficLegend = computed(() => {
+  // Force reactivity by accessing these values
+  const mode = trafficStore.legendMode
+  const scale = trafficStore.colorScale
+  const min = trafficStore.minValue
+  const max = trafficStore.maxValue
+
+  if (mode === 'none' || !scale) {
+    return null
+  }
+
+  const colors: LegendColor[] = []
+  const steps = 40
+
+  if (mode === 'delta') {
+    // Delta mode: show actual min/max values from store (values are vehicle count differences)
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1)
+      // Interpolate from max (positive, red) to min (negative, blue)
+      const value = max - t * (max - min)
+      const colorStr = scale(value)
+      const color = rgb(colorStr)
+      const count = Math.round(value)
+      colors.push({
+        color: `rgb(${color.r}, ${color.g}, ${color.b})`,
+        label: value >= 0 ? `+${count}` : `${count}`
+      })
+    }
+
+    return {
+      label: 'Traffic Change',
+      unit: 'Vehicle Count Difference',
+      colors,
+      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      isCategorical: false
+    }
+  } else {
+    // Frequency mode: show actual max frequency from store
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1)
+      const value = max * (1 - t)
+      const colorStr = scale(value)
+      const color = rgb(colorStr)
+      colors.push({
+        color: `rgb(${color.r}, ${color.g}, ${color.b})`,
+        label: (value * 100).toFixed(0) + '%'
+      })
+    }
+
+    return {
+      label: 'Edge Usage Frequency',
+      unit: 'Relative Usage',
+      colors,
+      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      isCategorical: false
+    }
+  }
+})
+
+// Combine MapLibre and traffic legends
+const allLegends = computed(() => {
+  const legends = [...generatedLayersWithColors.value]
+  if (trafficLegend.value) {
+    legends.push(trafficLegend.value as any)
+  }
+  return legends
+})
+
 // Toggle category selection
 const toggleCategory = (
   layerId: string,
@@ -147,14 +219,19 @@ const toggleCategory = (
 }
 
 const show = ref(true)
+
+// Show legend if there are MapLibre layers OR traffic visualization is active
+const shouldShowLegend = computed(() => {
+  return allLegends.value.length > 0 || trafficLegend.value !== null
+})
 </script>
 
 <template>
-  <div v-if="generatedLayersWithColors.length > 0" class="legend">
+  <div v-if="shouldShowLegend" class="legend">
     <div v-if="show" class="legend-content d-flex d-row ga-10">
       <div
-        v-for="layer in generatedLayersWithColors"
-        :key="layer?.id"
+        v-for="layer in allLegends"
+        :key="layer?.id || layer?.label"
         class="layer-legend d-flex flex-column justify-space-between"
       >
         <div class="layer-legend-header">

@@ -1,6 +1,12 @@
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
+import { rgb } from 'd3-color'
+import { scaleDiverging, scaleSequential } from 'd3-scale'
+import { interpolateRdBu, interpolateViridis } from 'd3-scale-chromatic'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+
+type ColorScale = ((value: number) => string) | null
+type LegendMode = 'none' | 'frequency' | 'delta'
 
 export interface NodePair {
   origin: number
@@ -20,7 +26,7 @@ export interface EdgeUsageStats {
   count: number
   frequency: number
   delta_count?: number
-  delta_frequency?: number
+  delta_count?: number
 }
 
 export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
@@ -33,6 +39,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const nodePairs = ref<NodePair[]>([])
   const originalEdgeUsage = ref<EdgeUsageStats[]>([])
   const newEdgeUsage = ref<EdgeUsageStats[]>([])
+
+  // Visualization state
+  const legendMode = ref<LegendMode>('none')
+  const colorScale = ref<ColorScale>(null)
+  const minValue = ref<number>(0)
+  const maxValue = ref<number>(0)
 
   // Computed
   const removedEdgesArray = computed(() => {
@@ -146,15 +158,55 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   function setEdgeUsage(original: EdgeUsageStats[], newUsage: EdgeUsageStats[]) {
     originalEdgeUsage.value = original
     newEdgeUsage.value = newUsage
+
+    // Calculate color scale based on usage data
+    if (newUsage.length === 0) {
+      legendMode.value = 'none'
+      colorScale.value = null
+      return
+    }
+
+    // Check if we have delta values (recalculated routes)
+    const hasDeltaValues = newUsage.some(
+      (stat) => stat.delta_count !== undefined && Math.abs(stat.delta_count) > 0.001
+    )
+
+    if (hasDeltaValues) {
+      // Delta mode: diverging scale
+      const minDelta = Math.min(...newUsage.map((d) => d.delta_count ?? 0), -1)
+      const maxDelta = Math.max(...newUsage.map((d) => d.delta_count ?? 0), 1)
+      minValue.value = minDelta
+      maxValue.value = maxDelta
+      legendMode.value = 'delta'
+      colorScale.value = scaleDiverging(interpolateRdBu).domain([maxDelta, 0, minDelta])
+    } else {
+      // Frequency mode: sequential scale
+      const maxFreq = Math.max(...newUsage.map((d) => d.frequency), 0.01)
+      minValue.value = 0
+      maxValue.value = maxFreq
+      legendMode.value = 'frequency'
+      colorScale.value = scaleSequential(interpolateViridis).domain([0, maxFreq])
+    }
   }
 
   function clearResults() {
     originalEdgeUsage.value = []
     newEdgeUsage.value = []
+    legendMode.value = 'none'
+    colorScale.value = null
+    minValue.value = 0
+    maxValue.value = 0
   }
 
   function setEdgeGeometries(geometries: EdgeGeometry[]) {
     edgeGeometries.value = geometries
+  }
+
+  function getColor(value: number): [number, number, number] {
+    if (!colorScale.value) return [136, 136, 136] // Gray fallback
+    const colorStr = colorScale.value(value)
+    const color = rgb(colorStr)
+    return [color.r, color.g, color.b]
   }
 
   return {
@@ -166,6 +218,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     nodePairs,
     originalEdgeUsage,
     newEdgeUsage,
+
+    // Visualization state
+    legendMode,
+    colorScale,
+    minValue,
+    maxValue,
 
     // Computed
     removedEdgesArray,
@@ -184,6 +242,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     setNodePairs,
     setEdgeUsage,
     clearResults,
-    setEdgeGeometries
+    setEdgeGeometries,
+    getColor
   }
 })

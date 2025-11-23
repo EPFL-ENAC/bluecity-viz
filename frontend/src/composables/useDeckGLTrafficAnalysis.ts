@@ -1,9 +1,6 @@
 import { fetchEdgeGeometries, type EdgeGeometry } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { GeoJsonLayer, PathLayer } from '@deck.gl/layers'
-import { rgb } from 'd3-color'
-import { scaleDiverging, scaleSequential } from 'd3-scale'
-import { interpolateRdBu, interpolateViridis } from 'd3-scale-chromatic'
 import type { Ref } from 'vue'
 import { shallowRef } from 'vue'
 
@@ -176,55 +173,8 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       }))
     )
 
-    const minDelta = Math.min(...edgesWithStats.map((d) => d.delta_count), -0.1)
-    const maxDelta = Math.max(...edgesWithStats.map((d) => d.delta_count), 0.05)
-
-    // Check if we have meaningful delta values (recalculated routes) or just frequencies (original routes)
-    // When no edges are removed, delta_count will be undefined or 0 for all edges
-    const hasDeltaValues = newUsage.some(
-      (stat) => stat.delta_count !== undefined && Math.abs(stat.delta_count) > 0.001
-    )
-
-    console.log('[DEBUG] minDelta:', minDelta)
-    console.log('[DEBUG] maxDelta:', maxDelta)
-    console.log('[DEBUG] hasDeltaValues:', hasDeltaValues)
-
-    let colorScale: any
-    if (hasDeltaValues) {
-      // Use diverging scale (RdBu) for delta_count when edges are removed
-      // This shows increased (red) vs decreased (blue) traffic
-      console.log('[DEBUG] Using diverging scale (RdBu) for delta_count')
-      colorScale = scaleDiverging(interpolateRdBu).domain([maxDelta, 0, minDelta])
-    } else {
-      // Use sequential scale (Viridis) for frequency when showing original routes
-      // This shows high (yellow) vs low (purple) usage
-      const maxFreq = Math.max(...edgesWithStats.map((d) => d.frequency), 0.01)
-      console.log('[DEBUG] Using sequential scale (Viridis) for frequency, maxFreq:', maxFreq)
-      colorScale = scaleSequential(interpolateViridis).domain([0, maxFreq])
-    }
-
-    const getColor = (colorStr: string): [number, number, number] => {
-      const color = rgb(colorStr)
-      return [color.r, color.g, color.b]
-    }
-
-    // Test color generation for first edge
-    if (edgesWithStats.length > 0) {
-      const testEdge = edgesWithStats[0]
-      const testValue = hasDeltaValues ? testEdge.delta_count : testEdge.frequency
-      const testColorStr = colorScale(testValue)
-      const testColor = getColor(testColorStr)
-      console.log(
-        '[DEBUG] Test color for first edge:',
-        testColor,
-        'delta:',
-        testEdge.delta_count,
-        'freq:',
-        testEdge.frequency,
-        'colorString:',
-        testColorStr
-      )
-    }
+    // Determine which value to use for coloring
+    const hasDeltaValues = trafficStore.legendMode === 'delta'
 
     // Create outline layer
     const outlineLayer = new PathLayer({
@@ -239,15 +189,14 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       pickable: false
     })
 
-    // Create main traffic layer with delta-based coloring
+    // Create main traffic layer with color from store
     const trafficLayer = new PathLayer({
       id: 'traffic-routes',
       data: edgesWithStats,
       getPath: (d: EdgeGeometry) => d.coordinates,
       getColor: (d: any) => {
         const value = hasDeltaValues ? d.delta_count : d.frequency
-        const colorStr = colorScale(value)
-        return getColor(colorStr)
+        return trafficStore.getColor(value)
       },
       getWidth: (d: any) => Math.max(2, Math.min(10, d.frequency * 100 + 2)),
       widthUnits: 'pixels',
