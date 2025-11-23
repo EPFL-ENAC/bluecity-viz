@@ -1,19 +1,17 @@
 FROM node:22-alpine AS build-stage
 WORKDIR /app
 
-# Copy package files
+# Copy package files (separate layer for better caching)
 COPY package*.json ./
 
-# Install dependencies
+# Install dependencies (cached unless package files change)
 RUN npm ci
 
-# Copy source files
+# Copy source files (changes here won't invalidate dependency cache)
 COPY public ./public
 COPY src ./src
 COPY index.html ./
-COPY *.ts ./
-COPY *.json ./
-COPY vite.config.ts ./
+COPY vite.config.ts tsconfig*.json env.d.ts ./
 
 # Build the app
 RUN npm run build
