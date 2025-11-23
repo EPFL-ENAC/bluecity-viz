@@ -1,10 +1,19 @@
 import { baseUrl } from '@/config/layerTypes'
+import { useApiKeyStore } from '@/stores/apiKey'
 import type { EdgeUsageStats, NodePair } from '@/stores/trafficAnalysis'
 
 const isDev = import.meta.env.DEV
 
 const API_BASE_URL = isDev ? 'http://localhost:8000/api/v1/routes' : '/api/v1/routes'
-const GEOJSON_URL = `${baseUrl}/lausanne.geojson`
+
+function getGeojsonUrl(): string {
+  const url = `${baseUrl}/lausanne.geojson`
+  if (!isDev) {
+    const apiKeyStore = useApiKeyStore()
+    return `${url}?apikey=${apiKeyStore.apiKey}`
+  }
+  return url
+}
 
 export interface EdgeGeometry {
   u: number
@@ -24,7 +33,7 @@ export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[
     console.time('[Frontend] Total fetch time')
 
     console.time('[Frontend] Network request')
-    const response = await fetch(GEOJSON_URL)
+    const response = await fetch(getGeojsonUrl())
     console.timeEnd('[Frontend] Network request')
 
     if (!response.ok) {
