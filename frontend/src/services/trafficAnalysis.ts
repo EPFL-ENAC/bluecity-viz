@@ -1,7 +1,10 @@
+import { baseUrl } from '@/config/layerTypes'
 import type { EdgeUsageStats, NodePair } from '@/stores/trafficAnalysis'
 
-const API_BASE_URL = 'http://localhost:8000/api/v1/routes'
-const GEOJSON_URL = 'http://localhost:8000/data/lausanne.geojson'
+const isDev = import.meta.env.DEV
+
+const API_BASE_URL = isDev ? 'http://localhost:8000/api/v1/routes' : '/api/v1/routes'
+const GEOJSON_URL = `${baseUrl}/lausanne.geojson`
 
 export interface EdgeGeometry {
   u: number
