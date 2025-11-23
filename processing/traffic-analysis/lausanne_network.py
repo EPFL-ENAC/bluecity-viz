@@ -168,7 +168,7 @@ for name, graph in networks.items():
 # %%
 # Save networks to disk
 for name, graph in networks.items():
-    ox.save_graphml(graph, f"data/graph/lausanne_{name}_enhanced.graphml")
+    ox.save_graphml(graph, f"data/graph/lausanne_{name}_enhanced.graphml",gephi=True)
 print("Saved:", ", ".join(f"lausanne_{name}_enhanced.graphml" for name in networks.keys()))
 
 # %%
