@@ -51,7 +51,7 @@ const initializeOverlay = () => {
 onMounted(async () => {
   // Wait for next tick to ensure map is ready
   await nextTick()
-  
+
   // Try to initialize, retry if map not ready
   const initialized = initializeOverlay()
   if (!initialized) {
