@@ -195,6 +195,7 @@ const toggleVisualization = (vizId: string) => {
                 { 'active-tool': enabledTools.has(tool.id) }
               ]"
               variant="outlined"
+              :disabled="true"
               density="compact"
               @click="toggleTool(tool.id)"
             >
@@ -281,6 +282,7 @@ const toggleVisualization = (vizId: string) => {
               ]"
               variant="outlined"
               density="compact"
+              disabled
               @click="toggleVisualization(viz.id)"
             >
               <v-card-text class="py-2 px-3">
