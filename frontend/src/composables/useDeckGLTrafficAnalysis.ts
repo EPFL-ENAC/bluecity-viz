@@ -175,6 +175,9 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       co2_delta: number
     })[]
 
+    // Sort edges by frequency (ascending) so larger edges are drawn last
+    edgesWithStats.sort((a, b) => a.frequency - b.frequency)
+
     console.log('[DEBUG] edgesWithStats length:', edgesWithStats.length)
     console.log(
       '[DEBUG] First 3 edgesWithStats:',
