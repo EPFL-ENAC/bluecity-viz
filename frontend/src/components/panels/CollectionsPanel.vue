@@ -30,6 +30,10 @@ const editingInvestigation = ref<string | null>(null)
 const editProjectName = ref('')
 const editInvestigationName = ref('')
 
+// Create new project functionality
+const creatingNewProject = ref(false)
+const newProjectName = ref('')
+
 function handleShare(investigationId: string) {
   // Switch to the investigation first to ensure it's active
   layersStore.switchToInvestigation(investigationId)
@@ -109,11 +113,71 @@ function saveInvestigationEdit() {
     editInvestigationName.value = ''
   }
 }
+
+// Create new project functions
+function startCreatingProject() {
+  creatingNewProject.value = true
+  newProjectName.value = 'New Project'
+}
+
+function cancelProjectCreation() {
+  creatingNewProject.value = false
+  newProjectName.value = ''
+}
+
+function saveNewProject() {
+  if (newProjectName.value.trim()) {
+    layersStore.createProject(newProjectName.value.trim())
+    creatingNewProject.value = false
+    newProjectName.value = ''
+  }
+}
 </script>
 
 <template>
   <v-card flat class="d-flex flex-column">
     <v-card-text class="flex-grow-1 overflow-y-auto pa-2">
+      <!-- Create New Project -->
+      <div v-if="creatingNewProject" class="mb-2">
+        <v-card variant="outlined" class="pa-3">
+          <div class="d-flex align-center">
+            <v-text-field
+              v-model="newProjectName"
+              variant="outlined"
+              density="compact"
+              hide-details
+              placeholder="Project name"
+              class="mr-2"
+              autofocus
+              @keyup.enter="saveNewProject"
+              @keyup.escape="cancelProjectCreation"
+            />
+            <v-btn
+              :icon="mdiCheck"
+              size="small"
+              variant="text"
+              color="success"
+              @click="saveNewProject"
+            />
+            <v-btn
+              :icon="mdiCancel"
+              size="small"
+              variant="text"
+              color="error"
+              @click="cancelProjectCreation"
+            />
+          </div>
+        </v-card>
+      </div>
+
+      <!-- Add Project Button -->
+      <div v-if="!creatingNewProject" class="mb-2">
+        <v-btn variant="outlined" color="primary" block @click="startCreatingProject">
+          <v-icon :icon="mdiPlus" class="mr-2" />
+          New Project
+        </v-btn>
+      </div>
+
       <!-- Projects List -->
       <div v-for="project in layersStore.projects" :key="project.id" class="mb-2">
         <v-card variant="flat">
@@ -179,7 +243,15 @@ function saveInvestigationEdit() {
                 :icon="mdiPlus"
                 size="small"
                 variant="text"
+                class="mr-1"
                 @click="layersStore.saveCurrentState(project.id)"
+              />
+              <v-btn
+                v-if="editingProject !== project.id"
+                :icon="mdiClose"
+                size="small"
+                variant="text"
+                @click="layersStore.removeProject(project.id)"
               />
             </div>
           </div>

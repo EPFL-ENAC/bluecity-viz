@@ -78,6 +78,44 @@ export function createInvestigationManagement(
     activeInvestigationId.value = newInvestigation.id
   }
 
+  // Create new project
+  function createProject(name: string) {
+    const newProject: Project = {
+      id: `project-${Date.now()}`,
+      name,
+      expanded: true,
+      investigations: []
+    }
+
+    projects.value.push(newProject)
+  }
+
+  // Remove project
+  function removeProject(projectId: string) {
+    const index = projects.value.findIndex((p) => p.id === projectId)
+    if (index === -1) return
+
+    const project = projects.value[index]
+
+    // Check if any investigation in this project is active
+    const hasActiveInvestigation = project.investigations.some(
+      (inv) => inv.id === activeInvestigationId.value
+    )
+
+    // Remove the project
+    projects.value.splice(index, 1)
+
+    // If we removed the project with the active investigation, switch to first available
+    if (hasActiveInvestigation) {
+      const firstInvestigation = projects.value.flatMap((p) => p.investigations)[0]
+      if (firstInvestigation) {
+        switchToInvestigation(firstInvestigation.id)
+      } else {
+        activeInvestigationId.value = null
+      }
+    }
+  }
+
   // Remove investigation
   function removeInvestigation(investigationId: string) {
     for (const project of projects.value) {
@@ -120,6 +158,8 @@ export function createInvestigationManagement(
     findInvestigation,
     switchToInvestigation,
     saveCurrentState,
+    createProject,
+    removeProject,
     removeInvestigation,
     updateCurrentInvestigation
   }

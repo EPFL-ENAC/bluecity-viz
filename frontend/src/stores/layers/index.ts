@@ -202,6 +202,8 @@ export const useLayersStore = defineStore('layers', () => {
     findInvestigation: investigationMgmt.findInvestigation,
     switchToInvestigation: investigationMgmt.switchToInvestigation,
     saveCurrentState: investigationMgmt.saveCurrentState,
+    createProject: investigationMgmt.createProject,
+    removeProject: investigationMgmt.removeProject,
     removeInvestigation: investigationMgmt.removeInvestigation,
 
     // Utility functions

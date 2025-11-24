@@ -14,10 +14,10 @@ export interface ImpactStats {
   max_time_increase_minutes: number
   avg_distance_increase_percent: number
   avg_time_increase_percent: number
-  total_co2_increase_grams: number
-  avg_co2_increase_grams: number
-  max_co2_increase_grams: number
-  avg_co2_increase_percent: number
+  total_co2_increase_grams?: number
+  avg_co2_increase_grams?: number
+  max_co2_increase_grams?: number
+  avg_co2_increase_percent?: number
 }
 
 interface Props {
@@ -94,7 +94,7 @@ function formatNumber(value: number, decimals: number = 2): string {
               >+{{ formatNumber(statistics.total_time_increase_minutes, 1) }} min</span
             >
           </div>
-          <div class="stat-row">
+          <div v-if="statistics.total_co2_increase_grams !== undefined" class="stat-row">
             <span class="stat-label">CO₂:</span>
             <span class="stat-value"
               >+{{ formatNumber(statistics.total_co2_increase_grams / 1000, 2) }} kg</span
@@ -123,12 +123,12 @@ function formatNumber(value: number, decimals: number = 2): string {
               >
             </span>
           </div>
-          <div class="stat-row">
+          <div v-if="statistics.avg_co2_increase_grams !== undefined" class="stat-row">
             <span class="stat-label">CO₂:</span>
             <span class="stat-value">
               +{{ formatNumber(statistics.avg_co2_increase_grams, 0) }} g
               <span class="stat-secondary"
-                >({{ formatNumber(statistics.avg_co2_increase_percent, 1) }}%)</span
+                >({{ formatNumber(statistics.avg_co2_increase_percent ?? 0, 1) }}%)</span
               >
             </span>
           </div>
@@ -149,7 +149,7 @@ function formatNumber(value: number, decimals: number = 2): string {
               >+{{ formatNumber(statistics.max_time_increase_minutes, 1) }} min</span
             >
           </div>
-          <div class="stat-row">
+          <div v-if="statistics.max_co2_increase_grams !== undefined" class="stat-row">
             <span class="stat-label">CO₂:</span>
             <span class="stat-value"
               >+{{ formatNumber(statistics.max_co2_increase_grams, 0) }} g</span
