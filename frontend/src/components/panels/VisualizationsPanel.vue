@@ -63,10 +63,17 @@ watch(
 
 // Watch for edge usage changes
 watch(
-  () => [trafficStore.originalEdgeUsage, trafficStore.newEdgeUsage],
-  ([originalUsage, newUsage]) => {
-    if (originalUsage.length > 0 && trafficStore.isOpen) {
+  () =>
+    [
+      trafficStore.originalEdgeUsage,
+      trafficStore.newEdgeUsage,
+      trafficStore.activeVisualization
+    ] as const,
+  ([originalUsage, newUsage, activeVis]) => {
+    if (originalUsage.length > 0 && trafficStore.isOpen && activeVis !== 'none') {
       deckGLTraffic.visualizeEdgeUsage(originalUsage, newUsage)
+    } else if (activeVis === 'none') {
+      deckGLTraffic.clearRoutes()
     }
   }
 )

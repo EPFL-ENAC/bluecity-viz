@@ -125,7 +125,7 @@ const generatedLayersWithColors = computed(() => {
 // Generate traffic analysis legend
 const trafficLegend = computed(() => {
   // Force reactivity by accessing these values
-  const mode = trafficStore.legendMode
+  const mode = trafficStore.activeVisualization // Use active visualization instead of legendMode
   const scale = trafficStore.colorScale
   const min = trafficStore.minValue
   const max = trafficStore.maxValue

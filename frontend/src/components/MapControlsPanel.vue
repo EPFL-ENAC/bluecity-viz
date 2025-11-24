@@ -219,7 +219,7 @@ watch(
               :disabled="trafficStore.isLoading"
               @click="shufflePairs"
             >
-              Generate New Pairs
+              Generate New OD
             </v-btn>
           </div>
 
@@ -299,16 +299,34 @@ watch(
             class="my-3"
           />
 
-          <!-- Info Text -->
-          <div class="mt-3 text-caption text-medium-emphasis">
-            <p>Traffic Analysis Visualization:</p>
-            <ul class="ml-4">
-              <li>Click edges to remove them</li>
-              <li class="text-red">Red: Increased traffic</li>
-              <li class="text-blue">Blue: Decreased traffic</li>
-              <li>White: No change</li>
-              <li>⚫ Dashed black: Removed edges</li>
-            </ul>
+          <!-- Visualization Layers List -->
+          <div v-if="trafficStore.availableVisualizations.length > 0" class="mt-3">
+            <div class="text-caption font-weight-medium mb-2">Visualization Layers</div>
+            <v-card
+              v-for="vis in trafficStore.availableVisualizations"
+              :key="vis.value"
+              class="visualization-card mb-1 cursor-pointer"
+              :class="{ 'active-visualization': trafficStore.activeVisualization === vis.value }"
+              variant="outlined"
+              density="compact"
+              @click="trafficStore.setActiveVisualization(vis.value)"
+            >
+              <v-card-text class="py-2 px-3">
+                <div class="d-flex align-center">
+                  <v-icon
+                    :icon="
+                      trafficStore.activeVisualization === vis.value
+                        ? 'mdi-radiobox-marked'
+                        : 'mdi-radiobox-blank'
+                    "
+                    size="small"
+                    class="mr-2"
+                    :color="trafficStore.activeVisualization === vis.value ? 'primary' : 'grey'"
+                  />
+                  <div class="text-body-2 font-weight-medium">{{ vis.label }}</div>
+                </div>
+              </v-card-text>
+            </v-card>
           </div>
         </div>
       </v-expand-transition>
@@ -414,5 +432,19 @@ watch(
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+.visualization-card {
+  transition: all 0.2s ease;
+  border-color: #e0e0e0;
+}
+
+.visualization-card:hover {
+  background-color: rgb(var(--v-theme-surface-variant));
+}
+
+.active-visualization {
+  background-color: rgb(var(--v-theme-primary-container)) !important;
+  border-color: rgb(var(--v-theme-primary)) !important;
 }
 </style>

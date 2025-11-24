@@ -42,8 +42,15 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // Visualization state
   const legendMode = ref<LegendMode>('none')
   const colorScale = ref<ColorScale>(null)
+  const frequencyColorScale = ref<ColorScale>(null)
+  const deltaColorScale = ref<ColorScale>(null)
   const minValue = ref<number>(0)
   const maxValue = ref<number>(0)
+  const frequencyMinValue = ref<number>(0)
+  const frequencyMaxValue = ref<number>(0)
+  const deltaMinValue = ref<number>(0)
+  const deltaMaxValue = ref<number>(0)
+  const activeVisualization = ref<'none' | 'frequency' | 'delta'>('none') // User-selected visualization
 
   // Computed
   const removedEdgesArray = computed(() => {
@@ -108,6 +115,22 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   const hasCalculatedRoutes = computed(() => originalEdgeUsage.value.length > 0)
 
+  // Available visualization modes based on calculated data
+  const availableVisualizations = computed(() => {
+    const modes: Array<{ value: 'frequency' | 'delta'; label: string }> = []
+    if (hasCalculatedRoutes.value) {
+      modes.push({ value: 'frequency', label: 'Edge Usage Frequency' })
+    }
+    // Check if we have delta data (recalculated with removed edges)
+    const hasDelta = newEdgeUsage.value.some(
+      (stat) => stat.delta_count !== undefined && Math.abs(stat.delta_count) > 0.001
+    )
+    if (hasDelta) {
+      modes.push({ value: 'delta', label: 'Traffic Change (Delta)' })
+    }
+    return modes
+  })
+
   // Actions
   function togglePanel() {
     isOpen.value = !isOpen.value
@@ -162,8 +185,16 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     if (newUsage.length === 0) {
       legendMode.value = 'none'
       colorScale.value = null
+      frequencyColorScale.value = null
+      deltaColorScale.value = null
       return
     }
+
+    // Always calculate frequency scale
+    const maxFreq = Math.max(...newUsage.map((d) => d.frequency), 0.01)
+    frequencyMinValue.value = 0
+    frequencyMaxValue.value = maxFreq
+    frequencyColorScale.value = scaleSequential(interpolateViridis).domain([0, maxFreq])
 
     // Check if we have delta values (recalculated routes)
     const hasDeltaValues = newUsage.some(
@@ -171,21 +202,21 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     )
 
     if (hasDeltaValues) {
-      // Delta mode: diverging scale
+      // Calculate delta scale
       const minDelta = Math.min(...newUsage.map((d) => d.delta_count ?? 0), -1)
       const maxDelta = Math.max(...newUsage.map((d) => d.delta_count ?? 0), 1)
-      minValue.value = minDelta
-      maxValue.value = maxDelta
-      legendMode.value = 'delta'
-      colorScale.value = scaleDiverging(interpolateRdBu).domain([maxDelta, 0, minDelta])
+      deltaMinValue.value = minDelta
+      deltaMaxValue.value = maxDelta
+      deltaColorScale.value = scaleDiverging(interpolateRdBu).domain([maxDelta, 0, minDelta])
+      // Auto-select delta visualization when available
+      activeVisualization.value = 'delta'
     } else {
-      // Frequency mode: sequential scale
-      const maxFreq = Math.max(...newUsage.map((d) => d.frequency), 0.01)
-      minValue.value = 0
-      maxValue.value = maxFreq
-      legendMode.value = 'frequency'
-      colorScale.value = scaleSequential(interpolateViridis).domain([0, maxFreq])
+      // Auto-select frequency visualization
+      activeVisualization.value = 'frequency'
     }
+
+    // Update active color scale based on selection
+    updateActiveColorScale()
   }
 
   function clearResults() {
@@ -193,8 +224,15 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     newEdgeUsage.value = []
     legendMode.value = 'none'
     colorScale.value = null
+    frequencyColorScale.value = null
+    deltaColorScale.value = null
     minValue.value = 0
     maxValue.value = 0
+    frequencyMinValue.value = 0
+    frequencyMaxValue.value = 0
+    deltaMinValue.value = 0
+    deltaMaxValue.value = 0
+    activeVisualization.value = 'none'
   }
 
   function setEdgeGeometries(geometries: EdgeGeometry[]) {
@@ -206,6 +244,30 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     const colorStr = colorScale.value(value)
     const color = rgb(colorStr)
     return [color.r, color.g, color.b]
+  }
+
+  function updateActiveColorScale() {
+    if (activeVisualization.value === 'frequency' && frequencyColorScale.value) {
+      colorScale.value = frequencyColorScale.value
+      minValue.value = frequencyMinValue.value
+      maxValue.value = frequencyMaxValue.value
+      legendMode.value = 'frequency'
+    } else if (activeVisualization.value === 'delta' && deltaColorScale.value) {
+      colorScale.value = deltaColorScale.value
+      minValue.value = deltaMinValue.value
+      maxValue.value = deltaMaxValue.value
+      legendMode.value = 'delta'
+    } else {
+      colorScale.value = null
+      minValue.value = 0
+      maxValue.value = 0
+      legendMode.value = 'none'
+    }
+  }
+
+  function setActiveVisualization(mode: 'none' | 'frequency' | 'delta') {
+    activeVisualization.value = mode
+    updateActiveColorScale()
   }
 
   return {
@@ -223,12 +285,14 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     colorScale,
     minValue,
     maxValue,
+    activeVisualization,
 
     // Computed
     removedEdgesArray,
     removedEdgesForDisplay,
     removedEdgesCount,
     hasCalculatedRoutes,
+    availableVisualizations,
 
     // Actions
     togglePanel,
@@ -242,6 +306,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     setEdgeUsage,
     clearResults,
     setEdgeGeometries,
-    getColor
+    getColor,
+    setActiveVisualization
   }
 })

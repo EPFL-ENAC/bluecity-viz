@@ -177,8 +177,9 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       }))
     )
 
-    // Determine which value to use for coloring
-    const hasDeltaValues = trafficStore.legendMode === 'delta'
+    // Determine which value to use for coloring based on active visualization
+    const activeMode = trafficStore.activeVisualization
+    const hasDeltaValues = activeMode === 'delta'
 
     // Create outline layer
     const outlineLayer = new PathLayer({
