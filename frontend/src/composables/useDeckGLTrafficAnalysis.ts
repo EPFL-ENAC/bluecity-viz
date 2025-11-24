@@ -116,9 +116,9 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       data: removedEdgeGeometries,
       getPath: (d: EdgeGeometry) => d.coordinates,
       getColor: [0, 0, 0, 255], // Solid black
-      getWidth: 6,
+      getWidth: 15,
       widthUnits: 'pixels',
-      getDashArray: [10, 5], // Dashed pattern: 10px line, 5px gap
+      getDashArray: [5, 5], // Dashed pattern: 10px line, 5px gap
       dashJustified: true,
       dashGapPickable: true,
       pickable: true,
