@@ -26,7 +26,6 @@ export interface EdgeUsageStats {
   count: number
   frequency: number
   delta_count?: number
-  delta_count?: number
 }
 
 export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {

@@ -2,7 +2,7 @@
 import MapLibreMap from '@/components/MapLibreMap.vue'
 import DeckGLOverlay from '@/components/DeckGLOverlay.vue'
 import LegendMap from '@/components/LegendMap.vue'
-import LayerSelector from '@/components/LayerSelector.vue'
+import MapControlsPanel from '@/components/MapControlsPanel.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
 import { useDeckGLTrafficAnalysis } from '@/composables/useDeckGLTrafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
@@ -99,12 +99,11 @@ onMounted(async () => {
     <!-- Deck.gl Canvas (always mounted, shows layers only when traffic analysis is active) -->
     <DeckGLOverlay
       :layers="trafficStore.isOpen ? deckGLTraffic.layers.value : []"
-      :on-click="handleDeckClick"
-      class="fill-height"
+      @click="handleDeckClick"
     />
 
-    <!-- Layer Selector (only shown when MapLibre is active) -->
-    <LayerSelector v-show="!trafficStore.isOpen" />
+    <!-- Unified Map Controls (Layers + Traffic Analysis) -->
+    <MapControlsPanel />
   </div>
 </template>
 

@@ -5,7 +5,6 @@ import type { MapLayerConfig } from '@/config/layerTypes'
 import { type LayerSpecification } from 'maplibre-gl'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { rgb } from 'd3-color'
 
 type LegendColor = {
   color: string
@@ -144,11 +143,10 @@ const trafficLegend = computed(() => {
       const t = i / (steps - 1)
       // Interpolate from max (positive, red) to min (negative, blue)
       const value = max - t * (max - min)
-      const colorStr = scale(value)
-      const color = rgb(colorStr)
+      const [r, g, b] = trafficStore.getColor(value)
       const count = Math.round(value)
       colors.push({
-        color: `rgb(${color.r}, ${color.g}, ${color.b})`,
+        color: `rgb(${r}, ${g}, ${b})`,
         label: value >= 0 ? `+${count}` : `${count}`
       })
     }
@@ -165,10 +163,9 @@ const trafficLegend = computed(() => {
     for (let i = 0; i < steps; i++) {
       const t = i / (steps - 1)
       const value = max * (1 - t)
-      const colorStr = scale(value)
-      const color = rgb(colorStr)
+      const [r, g, b] = trafficStore.getColor(value)
       colors.push({
-        color: `rgb(${color.r}, ${color.g}, ${color.b})`,
+        color: `rgb(${r}, ${g}, ${b})`,
         label: (value * 100).toFixed(0) + '%'
       })
     }

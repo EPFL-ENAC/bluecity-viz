@@ -52,10 +52,6 @@ async function calculateRoutes() {
 function removeEdge(u: number, v: number) {
   trafficStore.removeRemovedEdge(u, v)
 }
-
-function closePanel() {
-  trafficStore.closePanel()
-}
 </script>
 
 <template>
@@ -63,7 +59,6 @@ function closePanel() {
   <v-card v-if="trafficStore.isOpen" class="traffic-analysis-panel-deckgl" variant="outlined" flat>
     <v-card-title class="d-flex align-center justify-space-between pa-3 border-b-sm">
       <span class="text-subtitle-1">TRAFFIC ANALYSIS (DECK.GL)</span>
-      <v-btn :icon="mdiClose" variant="text" size="small" @click="closePanel" />
     </v-card-title>
 
     <v-card-text class="pa-3">
