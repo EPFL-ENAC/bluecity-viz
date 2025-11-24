@@ -1,7 +1,7 @@
 import type { ImpactStatistics } from '@/services/trafficAnalysis'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleSequential } from 'd3-scale'
-import { interpolateRdBu, interpolateViridis } from 'd3-scale-chromatic'
+import { interpolateSpectral, interpolateViridis } from 'd3-scale-chromatic'
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 
@@ -272,7 +272,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       const absDeltaMax = Math.max(...deltaValues.map(Math.abs), 0.01)
       deltaMinValue.value = -absDeltaMax
       deltaMaxValue.value = absDeltaMax
-      deltaColorScale.value = scaleDiverging(interpolateRdBu).domain([-absDeltaMax, 0, absDeltaMax])
+      deltaColorScale.value = scaleDiverging(interpolateSpectral).domain([
+        absDeltaMax,
+        0,
+        -absDeltaMax
+      ])
 
       // Calculate CO2 delta scale if we have CO2 data (symmetrical around zero)
       if (hasCO2) {
@@ -280,10 +284,10 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         const absCO2DeltaMax = Math.max(...co2Deltas.map(Math.abs), 0.01)
         co2DeltaMinValue.value = -absCO2DeltaMax
         co2DeltaMaxValue.value = absCO2DeltaMax
-        co2DeltaColorScale.value = scaleDiverging(interpolateRdBu).domain([
-          -absCO2DeltaMax,
+        co2DeltaColorScale.value = scaleDiverging(interpolateSpectral).domain([
+          absCO2DeltaMax,
           0,
-          absCO2DeltaMax
+          -absCO2DeltaMax
         ])
       }
 
@@ -372,6 +376,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     impactStatistics: any | null
     activeVisualization: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta'
   }) {
+    // Mark as restoring to prevent watchers from triggering
+    isRestoring.value = true
+
     // Apply all state changes in one batch to minimize reactivity overhead
     isOpen.value = state.isOpen
 
@@ -388,81 +395,24 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     removedEdges.value = edgeSet
     removedEdgesWithNames.value = edgeNamesMap
 
-    // Restore pairs and usage
+    // Restore pairs and usage - this will trigger setEdgeUsage to recalculate scales properly
     nodePairs.value = state.nodePairs
-    originalEdgeUsage.value = state.originalEdgeUsage
-    newEdgeUsage.value = state.newEdgeUsage
-    impactStatistics.value = state.impactStatistics
 
-    // Calculate color scales if we have usage data
+    // Use setEdgeUsage to restore data and recalculate scales properly
     if (state.newEdgeUsage.length > 0) {
-      // Calculate frequency scale
-      const maxFreq = Math.max(...state.newEdgeUsage.map((d) => d.frequency), 0.01)
-      frequencyMinValue.value = 0
-      frequencyMaxValue.value = maxFreq
-      frequencyColorScale.value = scaleSequential(interpolateViridis).domain([0, maxFreq])
-
-      // Check if we have CO2 data
-      const hasCO2 = state.newEdgeUsage.some(
-        (stat) => stat.co2_per_use !== undefined && stat.co2_per_use > 0
-      )
-
-      if (hasCO2) {
-        const co2Values = state.newEdgeUsage
-          .filter((stat) => stat.co2_per_use !== undefined && stat.co2_per_use > 0)
-          .map((stat) => (stat.co2_per_use ?? 0) * stat.count)
-        const maxCO2 = Math.max(...co2Values, 0.01)
-        co2MinValue.value = 0
-        co2MaxValue.value = maxCO2
-        co2ColorScale.value = scaleSequential(interpolateViridis).domain([0, maxCO2])
-      }
-
-      // Check if we have delta values
-      const hasDeltaValues = state.newEdgeUsage.some(
-        (stat) => stat.delta_count !== undefined && Math.abs(stat.delta_count) > 0.001
-      )
-
-      if (hasDeltaValues) {
-        const deltaValues = state.newEdgeUsage
-          .filter((stat) => stat.delta_count !== undefined)
-          .map((stat) => stat.delta_count ?? 0)
-        const absDeltaMax = Math.max(...deltaValues.map(Math.abs), 0.01)
-        deltaMinValue.value = -absDeltaMax
-        deltaMaxValue.value = absDeltaMax
-        deltaColorScale.value = scaleDiverging(interpolateRdBu).domain([
-          absDeltaMax,
-          0,
-          -absDeltaMax
-        ])
-
-        const hasCO2DeltaCheck = state.newEdgeUsage.some(
-          (stat) => stat.co2_per_use !== undefined && stat.co2_per_use > 0
-        )
-
-        if (hasCO2DeltaCheck) {
-          const co2DeltaValues = state.newEdgeUsage
-            .filter((stat) => stat.delta_count !== undefined && stat.co2_per_use !== undefined)
-            .map((stat) => (stat.co2_per_use ?? 0) * (stat.delta_count ?? 0))
-          const absCO2DeltaMax = Math.max(...co2DeltaValues.map(Math.abs), 0.01)
-          co2DeltaMinValue.value = -absCO2DeltaMax
-          co2DeltaMaxValue.value = absCO2DeltaMax
-          co2DeltaColorScale.value = scaleDiverging(interpolateRdBu).domain([
-            absCO2DeltaMax,
-            0,
-            -absCO2DeltaMax
-          ])
-        }
-      }
+      setEdgeUsage(state.originalEdgeUsage, state.newEdgeUsage, state.impactStatistics || undefined)
+      // Override the auto-selected visualization with the saved one
+      activeVisualization.value = state.activeVisualization
+      updateActiveColorScale()
+    } else {
+      originalEdgeUsage.value = state.originalEdgeUsage
+      newEdgeUsage.value = state.newEdgeUsage
+      impactStatistics.value = state.impactStatistics
+      activeVisualization.value = state.activeVisualization
     }
 
-    // Set active visualization (without calling updateActiveColorScale yet)
-    activeVisualization.value = state.activeVisualization
-
-    // Clear restoring flag first, then update color scale to trigger only one update
+    // Clear restoring flag
     isRestoring.value = false
-
-    // Now update color scale after restoring is complete
-    updateActiveColorScale()
   }
 
   return {
