@@ -12,15 +12,6 @@ type LegendColor = {
   variable?: string
 }
 
-type LegendLayer = {
-  label: string
-  unit?: string
-  colors: LegendColor[]
-  gradient?: string
-  isCategorical: boolean
-  showZero?: boolean
-}
-
 const props = defineProps<{
   layers: MapLayerConfig[]
 }>()

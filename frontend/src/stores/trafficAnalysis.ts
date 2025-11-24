@@ -20,12 +20,6 @@ export interface RemovedEdgeDisplay {
   isBidirectional: boolean
 }
 
-interface RemovedEdgeWithName {
-  u: number
-  v: number
-  name?: string
-}
-
 export interface EdgeUsageStats {
   u: number
   v: number
@@ -422,6 +416,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     isCalculating,
     isRestoring,
     removedEdges,
+    removedEdgesWithNames,
     nodePairs,
     originalEdgeUsage,
     newEdgeUsage,
