@@ -1,5 +1,5 @@
 import { computed, ref, type Ref } from 'vue'
-import type { Investigation, Project } from './types'
+import type { Investigation, Project, TrafficAnalysisState } from './types'
 
 export function createInvestigationManagement(
   projects: Ref<Project[]>,
@@ -8,7 +8,9 @@ export function createInvestigationManagement(
   selectedLayers: Ref<string[]>,
   updateAvailableResourceSources: (sourceIds: string[]) => void,
   updateActiveSources: (sourceIds: string[]) => void,
-  updateSelectedLayers: (selection: string[] | null) => void
+  updateSelectedLayers: (selection: string[] | null) => void,
+  getTrafficAnalysisState: () => TrafficAnalysisState,
+  applyTrafficAnalysisState: (state: TrafficAnalysisState) => void
 ) {
   // Track if we're currently loading an investigation to prevent auto-updates
   const isLoadingInvestigation = ref(false)
@@ -57,21 +59,27 @@ export function createInvestigationManagement(
     updateActiveSources(investigation.selectedSources)
     updateSelectedLayers(investigation.selectedLayers)
 
+    // Apply traffic analysis state if it exists
+    if (investigation.trafficAnalysis) {
+      applyTrafficAnalysisState(investigation.trafficAnalysis)
+    }
+
     // Clear loading flag
     isLoadingInvestigation.value = false
-  }
-
-  // Save current state as new investigation
+  } // Save current state as new investigation
   function saveCurrentState(projectId: string) {
     const project = projects.value.find((p) => p.id === projectId)
     if (!project) return
+
+    const trafficState = getTrafficAnalysisState()
 
     const newInvestigation: Investigation = {
       id: `inv-${Date.now()}`,
       name: `Investigation ${project.investigations.length + 1}`,
       selectedSources: [...availableResourceSources.value],
       selectedLayers: [...selectedLayers.value],
-      createdAt: new Date()
+      createdAt: new Date(),
+      trafficAnalysis: trafficState
     }
 
     project.investigations.push(newInvestigation)
@@ -149,6 +157,7 @@ export function createInvestigationManagement(
     // Update the investigation with current state
     investigation.selectedSources = [...availableResourceSources.value]
     investigation.selectedLayers = [...selectedLayers.value]
+    investigation.trafficAnalysis = getTrafficAnalysisState()
   }
 
   return {

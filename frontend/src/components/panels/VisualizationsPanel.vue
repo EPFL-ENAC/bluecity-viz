@@ -55,7 +55,7 @@ watch(
 watch(
   () => trafficStore.removedEdgesArray,
   (removedEdges) => {
-    if (trafficStore.isOpen) {
+    if (trafficStore.isOpen && !trafficStore.isRestoring) {
       deckGLTraffic.updateRemovedEdges(removedEdges)
     }
   }
@@ -70,10 +70,38 @@ watch(
       trafficStore.activeVisualization
     ] as const,
   ([originalUsage, newUsage, activeVis]) => {
+    if (trafficStore.isRestoring) return // Skip during batch restore
+
     if (originalUsage.length > 0 && trafficStore.isOpen && activeVis !== 'none') {
       deckGLTraffic.visualizeEdgeUsage(originalUsage, newUsage)
     } else if (activeVis === 'none') {
       deckGLTraffic.clearRoutes()
+    }
+  }
+)
+
+// Watch for restoration complete to trigger visualization update
+watch(
+  () => trafficStore.isRestoring,
+  (isRestoring, wasRestoring) => {
+    // When restoration completes (false after being true), update visualization
+    if (!isRestoring && wasRestoring) {
+      const originalUsage = trafficStore.originalEdgeUsage
+      const newUsage = trafficStore.newEdgeUsage
+      const activeVis = trafficStore.activeVisualization
+      const removedEdges = trafficStore.removedEdgesArray
+
+      if (trafficStore.isOpen) {
+        // Update removed edges visualization
+        deckGLTraffic.updateRemovedEdges(removedEdges)
+
+        // Update traffic visualization
+        if (originalUsage.length > 0 && activeVis !== 'none') {
+          deckGLTraffic.visualizeEdgeUsage(originalUsage, newUsage)
+        } else if (activeVis === 'none') {
+          deckGLTraffic.clearRoutes()
+        }
+      }
     }
   }
 )

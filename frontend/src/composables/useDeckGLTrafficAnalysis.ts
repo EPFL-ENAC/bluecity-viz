@@ -45,6 +45,48 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
    */
   async function loadGraphEdges(): Promise<void> {
     try {
+      // Check if edges are already loaded in the store
+      if (trafficStore.edgeGeometries.length > 0) {
+        console.log(`Using cached ${trafficStore.edgeGeometries.length} edge geometries from store`)
+        edgeGeometries.value = trafficStore.edgeGeometries
+
+        // Convert to GeoJSON format for Deck.gl
+        const geojsonData: any = {
+          type: 'FeatureCollection',
+          features: edgeGeometries.value.map((edge) => ({
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: edge.coordinates
+            },
+            properties: {
+              u: edge.u,
+              v: edge.v,
+              name: edge.name,
+              highway: edge.highway,
+              travel_time: edge.travel_time,
+              length: edge.length
+            }
+          }))
+        }
+
+        // Create single GeoJsonLayer for all edges (always pickable for removal)
+        baseLayer = new GeoJsonLayer({
+          id: 'traffic-graph-edges',
+          data: geojsonData,
+          lineWidthMinPixels: 3,
+          getLineColor: [136, 136, 136, 153],
+          getLineWidth: 2,
+          getFillColor: [136, 136, 136, 100],
+          pickable: true,
+          autoHighlight: true,
+          highlightColor: [0, 170, 255, 200]
+        })
+
+        layers.value = [baseLayer]
+        return
+      }
+
       console.time('Loading graph edges as GeoJSON')
 
       // Load all edge geometries at once

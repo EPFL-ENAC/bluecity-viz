@@ -1,4 +1,5 @@
 import { layerGroups as configLayerGroups } from '@/config/mapConfig'
+import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 
@@ -7,7 +8,7 @@ import { createInvestigationManagement } from './investigationManagement'
 import { createLayerManagement } from './layerManagement'
 import { clearPersistedData, loadPersistedState, saveStateToStorage } from './persistence'
 import { createSourceManagement } from './sourceManagement'
-import type { PersistedState, Project } from './types'
+import type { PersistedState, Project, TrafficAnalysisState } from './types'
 import { createUrlSharingComposable } from './urlSharing'
 
 // Re-export types for backward compatibility
@@ -83,6 +84,31 @@ export const useLayersStore = defineStore('layers', () => {
 
   const activeInvestigationId = ref<string | null>(persistedState.activeInvestigationId || 'inv-1')
 
+  // Traffic analysis state management functions
+  function getTrafficAnalysisState(): TrafficAnalysisState {
+    const trafficStore = useTrafficAnalysisStore()
+
+    // Convert to plain objects to avoid storing reactive proxies
+    return {
+      isOpen: trafficStore.isOpen,
+      removedEdges: JSON.parse(JSON.stringify(trafficStore.removedEdgesArray)),
+      nodePairs: JSON.parse(JSON.stringify(trafficStore.nodePairs)),
+      originalEdgeUsage: JSON.parse(JSON.stringify(trafficStore.originalEdgeUsage)),
+      newEdgeUsage: JSON.parse(JSON.stringify(trafficStore.newEdgeUsage)),
+      impactStatistics: trafficStore.impactStatistics
+        ? JSON.parse(JSON.stringify(trafficStore.impactStatistics))
+        : null,
+      activeVisualization: trafficStore.activeVisualization
+    }
+  }
+
+  function applyTrafficAnalysisState(state: TrafficAnalysisState): void {
+    const trafficStore = useTrafficAnalysisStore()
+
+    // Use batch restore to apply all changes at once (much faster)
+    trafficStore.restoreState(state)
+  }
+
   // Filter categories function
   function filterOutCategories(layerId: string, variable: string, categories: string[]) {
     filteredCategories.value[layerId][variable] = categories
@@ -107,7 +133,9 @@ export const useLayersStore = defineStore('layers', () => {
         selectedLayers.value.length = 0
       }
       investigationMgmt.updateCurrentInvestigation()
-    }
+    },
+    getTrafficAnalysisState,
+    applyTrafficAnalysisState
   )
 
   // Create layer management
@@ -137,6 +165,12 @@ export const useLayersStore = defineStore('layers', () => {
 
   // Initialize store
   function initializeInvestigations() {
+    // Restore traffic panel state
+    const trafficStore = useTrafficAnalysisStore()
+    if (persistedState.trafficPanelOpen) {
+      trafficStore.openPanel()
+    }
+
     // First try to load state from URL
     const loadedFromUrl = urlSharing.loadStateFromUrl()
 
@@ -148,6 +182,8 @@ export const useLayersStore = defineStore('layers', () => {
 
   // Persist state to localStorage
   function persistState() {
+    const trafficStore = useTrafficAnalysisStore()
+
     const stateToPersist: PersistedState = {
       selectedLayers: selectedLayers.value,
       availableResourceSources: availableResourceSources.value,
@@ -155,7 +191,8 @@ export const useLayersStore = defineStore('layers', () => {
       projects: projects.value,
       activeInvestigationId: activeInvestigationId.value,
       sp0Period: sp0Period.value,
-      expandedGroups: expandedGroups.value
+      expandedGroups: expandedGroups.value,
+      trafficPanelOpen: trafficStore.isOpen
     }
     saveStateToStorage(stateToPersist)
   }
@@ -178,6 +215,26 @@ export const useLayersStore = defineStore('layers', () => {
       }
     },
     { deep: true }
+  )
+
+  // Watch traffic store for changes to persist
+  const trafficStore = useTrafficAnalysisStore()
+  watch(
+    () => ({
+      isOpen: trafficStore.isOpen,
+      removedEdgesSize: trafficStore.removedEdges.size,
+      nodePairsLength: trafficStore.nodePairs.length,
+      originalEdgeUsageLength: trafficStore.originalEdgeUsage.length,
+      newEdgeUsageLength: trafficStore.newEdgeUsage.length,
+      hasImpactStatistics: trafficStore.impactStatistics !== null,
+      activeVisualization: trafficStore.activeVisualization
+    }),
+    () => {
+      if (!investigationMgmt.isLoadingInvestigation.value) {
+        investigationMgmt.updateCurrentInvestigation()
+        setTimeout(persistState, 100)
+      }
+    }
   )
 
   return {
