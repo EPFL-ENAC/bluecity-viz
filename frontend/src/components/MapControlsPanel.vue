@@ -7,6 +7,8 @@ import ImpactStatistics from './ImpactStatistics.vue'
 import {
   mdiChevronDown,
   mdiChevronRight,
+  mdiRadioboxMarked,
+  mdiRadioboxBlank,
   mdiRefresh,
   mdiCalculator,
   mdiDelete,
@@ -321,8 +323,8 @@ watch(
                   <v-icon
                     :icon="
                       trafficStore.activeVisualization === vis.value
-                        ? 'mdi-radiobox-marked'
-                        : 'mdi-radiobox-blank'
+                        ? mdiRadioboxMarked
+                        : mdiRadioboxBlank
                     "
                     size="small"
                     class="mr-2"
