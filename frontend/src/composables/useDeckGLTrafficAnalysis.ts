@@ -11,6 +11,7 @@ interface EdgeUsageStats {
   count: number
   frequency: number
   delta_count?: number
+  co2_per_use?: number
 }
 
 interface DeckGLTrafficAnalysisReturn {
@@ -152,7 +153,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       edgeMap.set(`${edge.u}-${edge.v}`, edge)
     })
 
-    // Use new usage stats (which include delta_count)
+    // Use new usage stats (which include delta_count and co2_per_use)
     const edgesWithStats = newUsage
       .map((stat) => {
         const edge = edgeMap.get(`${stat.u}-${stat.v}`)
@@ -160,11 +161,22 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
           ? {
               ...edge,
               frequency: stat.frequency,
-              delta_count: stat.delta_count ?? 0 // Use nullish coalescing to default to 0
+              delta_count: stat.delta_count ?? 0,
+              co2_per_use: stat.co2_per_use ?? 0,
+              count: stat.count,
+              co2_total: (stat.co2_per_use ?? 0) * stat.count,
+              co2_delta: (stat.co2_per_use ?? 0) * (stat.delta_count ?? 0)
             }
           : null
       })
-      .filter(Boolean) as (EdgeGeometry & { frequency: number; delta_count: number })[]
+      .filter(Boolean) as (EdgeGeometry & {
+      frequency: number
+      delta_count: number
+      co2_per_use: number
+      count: number
+      co2_total: number
+      co2_delta: number
+    })[]
 
     console.log('[DEBUG] edgesWithStats length:', edgesWithStats.length)
     console.log(
@@ -173,13 +185,14 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
         u: e.u,
         v: e.v,
         frequency: e.frequency,
-        delta_count: e.delta_count
+        delta_count: e.delta_count,
+        co2_total: e.co2_total,
+        co2_delta: e.co2_delta
       }))
     )
 
     // Determine which value to use for coloring based on active visualization
     const activeMode = trafficStore.activeVisualization
-    const hasDeltaValues = activeMode === 'delta'
 
     // Create outline layer
     const outlineLayer = new PathLayer({
@@ -200,7 +213,18 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       data: edgesWithStats,
       getPath: (d: EdgeGeometry) => d.coordinates,
       getColor: (d: any) => {
-        const value = hasDeltaValues ? d.delta_count : d.frequency
+        let value: number
+        if (activeMode === 'frequency') {
+          value = d.frequency
+        } else if (activeMode === 'delta') {
+          value = d.delta_count
+        } else if (activeMode === 'co2') {
+          value = d.co2_total
+        } else if (activeMode === 'co2_delta') {
+          value = d.co2_delta
+        } else {
+          value = d.frequency
+        }
         return trafficStore.getColor(value)
       },
       getWidth: (d: any) => Math.max(2, Math.min(10, d.frequency * 100 + 2)),

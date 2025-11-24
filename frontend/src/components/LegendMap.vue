@@ -158,6 +158,46 @@ const trafficLegend = computed(() => {
       gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false
     }
+  } else if (mode === 'co2_delta') {
+    // CO2 Delta mode: show CO2 emission changes
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1)
+      const value = max - t * (max - min)
+      const [r, g, b] = trafficStore.getColor(value)
+      const grams = Math.round(value)
+      colors.push({
+        color: `rgb(${r}, ${g}, ${b})`,
+        label: value >= 0 ? `+${grams}g` : `${grams}g`
+      })
+    }
+
+    return {
+      label: 'CO₂ Emissions Change',
+      unit: 'CO₂ Difference (grams)',
+      colors,
+      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      isCategorical: false
+    }
+  } else if (mode === 'co2') {
+    // CO2 mode: show total CO2 emissions per edge
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1)
+      const value = max * (1 - t)
+      const [r, g, b] = trafficStore.getColor(value)
+      const grams = Math.round(value)
+      colors.push({
+        color: `rgb(${r}, ${g}, ${b})`,
+        label: grams >= 1000 ? `${(grams / 1000).toFixed(1)}kg` : `${grams}g`
+      })
+    }
+
+    return {
+      label: 'CO₂ Emissions',
+      unit: 'Total CO₂ per Edge',
+      colors,
+      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      isCategorical: false
+    }
   } else {
     // Frequency mode: show actual max frequency from store
     for (let i = 0; i < steps; i++) {
