@@ -512,7 +512,7 @@ class GraphService:
 
         # Calculate impact by comparing original vs new routes for affected pairs
         total_routes = len(pairs)
-        affected_routes_count = len(pairs_to_recalculate)
+        affected_routes_count = 0  # Will count only routes with actual increases
         failed_routes_count = 0
         total_distance_increase = 0.0
         total_time_increase = 0.0
@@ -526,9 +526,23 @@ class GraphService:
 
         comparisons = []
 
+        # Create mapping of pair index to new route
+        new_routes_by_index = {}
+        new_route_idx = 0
+        for orig_idx in pairs_indices_to_recalculate:
+            if new_route_idx < len(new_routes):
+                new_routes_by_index[orig_idx] = new_routes[new_route_idx]
+                new_route_idx += 1
+
         # Build comparisons for affected routes
-        for idx, new_route in zip(pairs_indices_to_recalculate, new_routes):
-            orig_route = original_routes[idx]
+        for orig_idx in pairs_indices_to_recalculate:
+            orig_route = original_routes[orig_idx]
+            new_route = new_routes_by_index.get(orig_idx)
+
+            if new_route is None:
+                # Route not calculated (shouldn't happen but be safe)
+                failed_routes_count += 1
+                continue
 
             # Check if removed edge was on original path
             removed_on_path = None
@@ -552,34 +566,45 @@ class GraphService:
                 route_failed = True
                 failed_routes_count += 1
             else:
+                # Only count as affected if new route is longer (or equal)
+                is_actually_affected = False
+
                 # Calculate distance delta
                 if orig_route.distance is not None and new_route.distance is not None:
                     distance_delta = new_route.distance - orig_route.distance
-                    total_distance_increase += distance_delta
-                    max_distance_increase = max(max_distance_increase, distance_delta)
-                    if orig_route.distance > 0:
-                        distance_delta_percent = (distance_delta / orig_route.distance) * 100
-                        distance_percent_increases.append(distance_delta_percent)
+                    if distance_delta >= 0:  # Only count increases or equal
+                        is_actually_affected = True
+                        total_distance_increase += distance_delta
+                        max_distance_increase = max(max_distance_increase, distance_delta)
+                        if orig_route.distance > 0:
+                            distance_delta_percent = (distance_delta / orig_route.distance) * 100
+                            distance_percent_increases.append(distance_delta_percent)
 
                 # Calculate time delta
                 if orig_route.travel_time is not None and new_route.travel_time is not None:
                     time_delta = new_route.travel_time - orig_route.travel_time
-                    total_time_increase += time_delta
-                    max_time_increase = max(max_time_increase, time_delta)
+                    if time_delta >= 0:  # Only count increases or equal
+                        is_actually_affected = True
+                        total_time_increase += time_delta
+                        max_time_increase = max(max_time_increase, time_delta)
 
-                    if orig_route.travel_time > 0:
-                        time_delta_percent = (time_delta / orig_route.travel_time) * 100
-                        time_percent_increases.append(time_delta_percent)
+                        if orig_route.travel_time > 0:
+                            time_delta_percent = (time_delta / orig_route.travel_time) * 100
+                            time_percent_increases.append(time_delta_percent)
 
                 # Calculate CO2 delta
                 if orig_route.co2_emissions is not None and new_route.co2_emissions is not None:
                     co2_delta = new_route.co2_emissions - orig_route.co2_emissions
-                    total_co2_increase += co2_delta
-                    max_co2_increase = max(max_co2_increase, co2_delta)
+                    if co2_delta >= 0:  # Only count increases or equal
+                        total_co2_increase += co2_delta
+                        max_co2_increase = max(max_co2_increase, co2_delta)
 
-                    if orig_route.co2_emissions > 0:
-                        co2_delta_percent = (co2_delta / orig_route.co2_emissions) * 100
-                        co2_percent_increases.append(co2_delta_percent)
+                        if orig_route.co2_emissions > 0:
+                            co2_delta_percent = (co2_delta / orig_route.co2_emissions) * 100
+                            co2_percent_increases.append(co2_delta_percent)
+
+                if is_actually_affected:
+                    affected_routes_count += 1
 
             comparison = RouteComparison(
                 origin=orig_route.origin,
@@ -647,8 +672,8 @@ class GraphService:
         # Calculate edge usage statistics - need to create full new_routes list
         # Use original routes for unaffected, new routes for affected
         complete_new_routes = list(original_routes)
-        for idx, new_route in zip(pairs_indices_to_recalculate, new_routes):
-            complete_new_routes[idx] = new_route
+        for orig_idx, new_route in new_routes_by_index.items():
+            complete_new_routes[orig_idx] = new_route
 
         stats_start = time.time()
 
