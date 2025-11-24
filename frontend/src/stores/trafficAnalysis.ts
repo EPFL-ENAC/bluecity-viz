@@ -1,4 +1,4 @@
-import type { EdgeGeometry } from '@/services/trafficAnalysis'
+import type { EdgeGeometry, ImpactStatistics } from '@/services/trafficAnalysis'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleSequential } from 'd3-scale'
 import { interpolateRdBu, interpolateViridis } from 'd3-scale-chromatic'
@@ -38,6 +38,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const nodePairs = ref<NodePair[]>([])
   const originalEdgeUsage = ref<EdgeUsageStats[]>([])
   const newEdgeUsage = ref<EdgeUsageStats[]>([])
+  const impactStatistics = ref<ImpactStatistics | null>(null)
 
   // Visualization state
   const legendMode = ref<LegendMode>('none')
@@ -177,9 +178,14 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     nodePairs.value = pairs
   }
 
-  function setEdgeUsage(original: EdgeUsageStats[], newUsage: EdgeUsageStats[]) {
+  function setEdgeUsage(
+    original: EdgeUsageStats[],
+    newUsage: EdgeUsageStats[],
+    impact?: ImpactStatistics
+  ) {
     originalEdgeUsage.value = original
     newEdgeUsage.value = newUsage
+    impactStatistics.value = impact || null
 
     // Calculate color scale based on usage data
     if (newUsage.length === 0) {
@@ -222,6 +228,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   function clearResults() {
     originalEdgeUsage.value = []
     newEdgeUsage.value = []
+    impactStatistics.value = null
     legendMode.value = 'none'
     colorScale.value = null
     frequencyColorScale.value = null
@@ -279,6 +286,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     nodePairs,
     originalEdgeUsage,
     newEdgeUsage,
+    impactStatistics,
 
     // Visualization state
     legendMode,

@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { generateRandomPairs, recalculateRoutes } from '@/services/trafficAnalysis'
+import ImpactStatistics from './ImpactStatistics.vue'
 import {
   mdiChevronDown,
   mdiChevronRight,
@@ -110,7 +111,11 @@ async function calculateRoutes() {
   loadingMessage.value = 'Calculating routes...'
   try {
     const result = await recalculateRoutes(trafficStore.nodePairs, trafficStore.removedEdgesArray)
-    trafficStore.setEdgeUsage(result.original_edge_usage, result.new_edge_usage)
+    trafficStore.setEdgeUsage(
+      result.original_edge_usage,
+      result.new_edge_usage,
+      result.impact_statistics
+    )
     console.log(
       `Original: ${result.original_edge_usage.length} edges, New: ${result.new_edge_usage.length} edges`
     )
@@ -331,6 +336,12 @@ watch(
         </div>
       </v-expand-transition>
     </div>
+
+    <!-- Impact Statistics Section -->
+    <ImpactStatistics
+      v-if="trafficStore.impactStatistics"
+      :statistics="trafficStore.impactStatistics"
+    />
   </div>
 </template>
 

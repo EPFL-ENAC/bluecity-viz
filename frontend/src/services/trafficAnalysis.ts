@@ -99,6 +99,20 @@ export async function generateRandomPairs(
   return response.json()
 }
 
+export interface ImpactStatistics {
+  total_routes: number
+  affected_routes: number
+  failed_routes: number
+  total_distance_increase_km: number
+  total_time_increase_minutes: number
+  avg_distance_increase_km: number
+  avg_time_increase_minutes: number
+  max_distance_increase_km: number
+  max_time_increase_minutes: number
+  avg_distance_increase_percent: number
+  avg_time_increase_percent: number
+}
+
 export async function recalculateRoutes(
   pairs: NodePair[],
   edgesToRemove: { u: number; v: number }[]
@@ -106,6 +120,7 @@ export async function recalculateRoutes(
   removed_edges: { u: number; v: number }[]
   original_edge_usage: EdgeUsageStats[]
   new_edge_usage: EdgeUsageStats[]
+  impact_statistics: ImpactStatistics
 }> {
   const response = await fetch(`${API_BASE_URL}/recalculate`, {
     method: 'POST',

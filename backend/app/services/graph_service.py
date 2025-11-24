@@ -13,6 +13,7 @@ from app.models.route import (
     EdgeUsageStats,
     GraphData,
     GraphEdge,
+    ImpactStatistics,
     NodePair,
     PathGeometry,
     RecalculateResponse,
@@ -52,10 +53,21 @@ class GraphService:
 
         self.graph = ox.load_graphml(graph_path)
 
-        # Ensure graph has speed and travel time
-        if not any("speed_kph" in d for _, _, d in self.graph.edges(data=True)):
+        # Ensure graph has speed and travel time attributes
+        edges_with_speed = sum(
+            1 for _, _, d in self.graph.edges(data=True) if d.get("speed_kph", 0) > 0
+        )
+        edges_with_time = sum(
+            1 for _, _, d in self.graph.edges(data=True) if d.get("travel_time", 0) > 0
+        )
+        total_edges = len(self.graph.edges)
+
+        # Add/recalculate speeds if missing or invalid
+        if edges_with_speed < total_edges * 0.9:
             self.graph = ox.routing.add_edge_speeds(self.graph)
-        if not any("travel_time" in d for _, _, d in self.graph.edges(data=True)):
+
+        # Add/recalculate travel times if missing or invalid
+        if edges_with_time < total_edges * 0.9:
             self.graph = ox.routing.add_edge_travel_times(self.graph)
 
         print(f"Loaded graph: {len(self.graph.nodes)} nodes, {len(self.graph.edges)} edges")
@@ -163,22 +175,47 @@ class GraphService:
         return PathGeometry(coordinates=coordinates)
 
     def _calculate_route_metrics(self, path: List[int], weight: str) -> dict:
-        """Calculate travel time and distance for a path."""
-        if not self.graph or not path:
-            return {"travel_time": None, "distance": None}
+        """Calculate travel time, distance, and elevation gain for a path by summing edge attributes."""
+        if not self.graph or not path or len(path) < 2:
+            return {"travel_time": None, "distance": None, "elevation_gain": None}
 
-        travel_time = 0
-        distance = 0
+        travel_time = 0.0
+        distance = 0.0
+        elevation_gain = 0.0
 
         for i in range(len(path) - 1):
             u, v = path[i], path[i + 1]
-            edge_data = self.graph.get_edge_data(u, v)
 
-            if edge_data:
+            # For MultiGraph, get_edge_data returns dict of {edge_key: edge_data}
+            # We need to access the first edge (key=0) or iterate through all parallel edges
+            edge_data_dict = self.graph.get_edge_data(u, v)
+
+            if edge_data_dict:
+                # Get the first edge's data (key 0) or the data itself if not a MultiGraph
+                if isinstance(edge_data_dict, dict) and 0 in edge_data_dict:
+                    # MultiGraph: access first parallel edge
+                    edge_data = edge_data_dict[0]
+                else:
+                    # Regular Graph: edge_data_dict is the data itself
+                    edge_data = edge_data_dict
+
                 travel_time += edge_data.get("travel_time", 0)
                 distance += edge_data.get("length", 0)
 
-        return {"travel_time": travel_time, "distance": distance}
+                # Calculate elevation gain if node elevation data available
+                if "elevation" in self.graph.nodes[u] and "elevation" in self.graph.nodes[v]:
+                    elev_diff = self.graph.nodes[v]["elevation"] - self.graph.nodes[u]["elevation"]
+                    if elev_diff > 0:  # Only count uphill
+                        elevation_gain += elev_diff
+            else:
+                print(f"[WARNING] No edge data for {u}->{v} in path")
+
+        # Return actual values, not None - we need the numbers for delta calculations
+        return {
+            "travel_time": travel_time,
+            "distance": distance,
+            "elevation_gain": elevation_gain if elevation_gain > 0 else None,
+        }
 
     def _calculate_edge_usage_stats(
         self, routes: List[Route], total_routes: int, original_stats: Optional[dict] = None
@@ -300,7 +337,7 @@ class GraphService:
         # Build Route objects from paths
         build_start = time.time()
         routes = []
-        for pair, path in zip(pairs, paths):
+        for idx, (pair, path) in enumerate(zip(pairs, paths)):
             if path is None:
                 continue
 
@@ -315,6 +352,7 @@ class GraphService:
                     geometry=geometry,
                     travel_time=metrics["travel_time"],
                     distance=metrics["distance"],
+                    elevation_gain=metrics["elevation_gain"],
                 )
                 routes.append(route)
             except Exception as e:
@@ -363,26 +401,19 @@ class GraphService:
         # Build set of removed edges for fast lookup
         removed_edges_set = {(edge.u, edge.v) for edge in edges_to_remove}
 
-        # Find pairs that have removed edges in their original path
+        # Find routes that have removed edges in their original path
         pairs_to_recalculate = []
         pairs_indices_to_recalculate = []
 
-        filter_start = time.time()
         for i, route in enumerate(original_routes):
-            needs_recalc = False
             for j in range(len(route.path) - 1):
                 edge = (route.path[j], route.path[j + 1])
                 if edge in removed_edges_set:
-                    needs_recalc = True
+                    pairs_to_recalculate.append(pairs[i])
+                    pairs_indices_to_recalculate.append(i)
                     break
 
-            if needs_recalc:
-                pairs_to_recalculate.append(pairs[i])
-                pairs_indices_to_recalculate.append(i)
-
-        filter_time = time.time() - filter_start
-        print(f"[PERF] Filtering affected pairs took {filter_time:.3f}s")
-        print(f"[PERF] {len(pairs_to_recalculate)}/{len(pairs)} pairs need recalculation")
+        print(f"[PERF] {len(pairs_to_recalculate)}/{len(pairs)} routes need recalculation")
 
         # Create modified graph
         copy_start = time.time()
@@ -399,54 +430,142 @@ class GraphService:
         remove_time = time.time() - remove_start
         print(f"[PERF] Removing {len(removed)} edges took {remove_time:.2f}s")
 
-        # Calculate new routes only for affected pairs
-        new_routes = list(original_routes)  # Start with copy of original routes
-
+        # Recalculate only affected routes
+        new_routes = []
         if pairs_to_recalculate:
+            recalc_start = time.time()
+
             # Temporarily swap graphs
             original_graph = self.graph
             self.graph = G_modified
 
-            # Calculate new routes only for affected pairs
-            new_start = time.time()
-            recalculated_routes = await self.calculate_routes(pairs_to_recalculate, weight)
-            new_time = time.time() - new_start
-            print(f"[PERF] Recalculating {len(pairs_to_recalculate)} routes took {new_time:.2f}s")
+            # Calculate new routes for affected pairs only
+            new_routes = await self.calculate_routes(pairs_to_recalculate, weight)
 
             # Restore original graph
             self.graph = original_graph
 
-            # Update the affected routes
-            for idx, recalc_route in zip(pairs_indices_to_recalculate, recalculated_routes):
-                new_routes[idx] = recalc_route
-        else:
-            print("[PERF] No routes need recalculation " "(no removed edges on paths)")
+            recalc_time = time.time() - recalc_start
+            print(
+                f"[PERF] Recalculating {len(pairs_to_recalculate)} routes took {recalc_time:.2f}s"
+            )
 
-        # Build comparisons
+        # Calculate impact by comparing original vs new routes for affected pairs
+        total_routes = len(pairs)
+        affected_routes_count = len(pairs_to_recalculate)
+        failed_routes_count = 0
+        total_distance_increase = 0.0
+        total_time_increase = 0.0
+        max_distance_increase = 0.0
+        max_time_increase = 0.0
+        distance_percent_increases = []
+        time_percent_increases = []
+
         comparisons = []
-        for orig, new in zip(original_routes, new_routes):
+
+        # Build comparisons for affected routes
+        for idx, new_route in zip(pairs_indices_to_recalculate, new_routes):
+            orig_route = original_routes[idx]
+
             # Check if removed edge was on original path
             removed_on_path = None
             for edge in removed:
-                for i in range(len(orig.path) - 1):
-                    if orig.path[i] == edge.u and orig.path[i + 1] == edge.v:
+                for i in range(len(orig_route.path) - 1):
+                    if orig_route.path[i] == edge.u and orig_route.path[i + 1] == edge.v:
                         removed_on_path = edge
                         break
                 if removed_on_path:
                     break
 
+            # Calculate deltas
+            route_failed = False
+            distance_delta = None
+            distance_delta_percent = None
+            time_delta = None
+            time_delta_percent = None
+
+            if new_route.path is None or len(new_route.path) == 0:
+                # Route calculation failed
+                route_failed = True
+                failed_routes_count += 1
+            else:
+                # Calculate distance delta
+                if orig_route.distance is not None and new_route.distance is not None:
+                    distance_delta = new_route.distance - orig_route.distance
+                    total_distance_increase += distance_delta
+                    max_distance_increase = max(max_distance_increase, distance_delta)
+                    if orig_route.distance > 0:
+                        distance_delta_percent = (distance_delta / orig_route.distance) * 100
+                        distance_percent_increases.append(distance_delta_percent)
+
+                # Calculate time delta
+                if orig_route.travel_time is not None and new_route.travel_time is not None:
+                    time_delta = new_route.travel_time - orig_route.travel_time
+                    total_time_increase += time_delta
+                    max_time_increase = max(max_time_increase, time_delta)
+
+                    if orig_route.travel_time > 0:
+                        time_delta_percent = (time_delta / orig_route.travel_time) * 100
+                        time_percent_increases.append(time_delta_percent)
+
             comparison = RouteComparison(
-                origin=orig.origin,
-                destination=orig.destination,
-                original_route=orig,
-                new_route=new,
+                origin=orig_route.origin,
+                destination=orig_route.destination,
+                original_route=orig_route,
+                new_route=new_route,
                 removed_edge_on_path=removed_on_path,
+                distance_delta=distance_delta,
+                distance_delta_percent=distance_delta_percent,
+                time_delta=time_delta,
+                time_delta_percent=time_delta_percent,
+                is_affected=True,
+                route_failed=route_failed,
             )
             comparisons.append(comparison)
 
-        # Calculate edge usage statistics
+        # Calculate aggregate statistics
+        avg_distance_increase_km = (
+            (total_distance_increase / 1000.0 / affected_routes_count)
+            if affected_routes_count > 0
+            else 0.0
+        )
+        avg_time_increase_minutes = (
+            (total_time_increase / 60.0 / affected_routes_count)
+            if affected_routes_count > 0
+            else 0.0
+        )
+        avg_distance_percent = (
+            sum(distance_percent_increases) / len(distance_percent_increases)
+            if distance_percent_increases
+            else 0.0
+        )
+        avg_time_percent = (
+            sum(time_percent_increases) / len(time_percent_increases)
+            if time_percent_increases
+            else 0.0
+        )
+
+        impact_stats = ImpactStatistics(
+            total_routes=total_routes,
+            affected_routes=affected_routes_count,
+            failed_routes=failed_routes_count,
+            total_distance_increase_km=total_distance_increase / 1000.0,
+            total_time_increase_minutes=total_time_increase / 60.0,
+            avg_distance_increase_km=avg_distance_increase_km,
+            avg_time_increase_minutes=avg_time_increase_minutes,
+            max_distance_increase_km=max_distance_increase / 1000.0,
+            max_time_increase_minutes=max_time_increase / 60.0,
+            avg_distance_increase_percent=avg_distance_percent,
+            avg_time_increase_percent=avg_time_percent,
+        )
+
+        # Calculate edge usage statistics - need to create full new_routes list
+        # Use original routes for unaffected, new routes for affected
+        complete_new_routes = list(original_routes)
+        for idx, new_route in zip(pairs_indices_to_recalculate, new_routes):
+            complete_new_routes[idx] = new_route
+
         stats_start = time.time()
-        total_routes = len(pairs)
 
         # Calculate original edge usage
         original_edge_usage = self._calculate_edge_usage_stats(original_routes, total_routes)
@@ -459,7 +578,7 @@ class GraphService:
 
         # Calculate new edge usage with delta
         new_edge_usage = self._calculate_edge_usage_stats(
-            new_routes, total_routes, original_stats_dict
+            complete_new_routes, total_routes, original_stats_dict
         )
 
         stats_time = time.time() - stats_start
@@ -468,12 +587,25 @@ class GraphService:
         print(f"[PERF] Calculating edge usage stats took {stats_time:.2f}s")
         print(f"[PERF] Original: {len(original_edge_usage)} unique edges used")
         print(f"[PERF] New: {len(new_edge_usage)} unique edges used")
+        print(f"[IMPACT] Affected routes: {affected_routes_count}/{total_routes}")
+        print(f"[IMPACT] Failed routes: {failed_routes_count}")
+        print(
+            f"[IMPACT] Total distance increase: {total_distance_increase/1000.0:.2f} km (raw: {total_distance_increase:.2f}m)"
+        )
+        print(
+            f"[IMPACT] Total time increase: {total_time_increase/60.0:.2f} minutes (raw: {total_time_increase:.2f}s)"
+        )
+        print(f"[IMPACT] Max distance increase: {max_distance_increase/1000.0:.2f} km")
+        print(f"[IMPACT] Max time increase: {max_time_increase/60.0:.2f} minutes")
+        print(f"[IMPACT] Avg distance increase: {avg_distance_increase_km:.2f} km")
+        print(f"[IMPACT] Avg time increase: {avg_time_increase_minutes:.2f} minutes")
         print(f"[PERF] ===== Total recalculate took {total_time:.2f}s =====")
 
         return RecalculateResponse(
             removed_edges=removed,
             original_edge_usage=original_edge_usage,
             new_edge_usage=new_edge_usage,
+            impact_statistics=impact_stats,
         )
 
     def get_graph_data(self) -> GraphData:
