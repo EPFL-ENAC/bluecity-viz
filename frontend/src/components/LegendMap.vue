@@ -12,6 +12,15 @@ type LegendColor = {
   variable?: string
 }
 
+type LegendLayer = {
+  label: string
+  unit?: string
+  colors: LegendColor[]
+  gradient?: string
+  isCategorical: boolean
+  showZero?: boolean
+}
+
 const props = defineProps<{
   layers: MapLayerConfig[]
 }>()
@@ -112,7 +121,8 @@ const generateOneLayerWithColors = (layer: MapLayerConfig) => {
     variable: paintProperty[1][1],
     gradient: !isCategorical
       ? `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`
-      : undefined
+      : undefined,
+    showZero: false
   }
 }
 
@@ -156,7 +166,8 @@ const trafficLegend = computed(() => {
       unit: 'Vehicle Count Difference',
       colors,
       gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false
+      isCategorical: false,
+      showZero: true
     }
   } else if (mode === 'co2_delta') {
     // CO2 Delta mode: show CO2 emission changes
@@ -176,7 +187,8 @@ const trafficLegend = computed(() => {
       unit: 'CO₂ Difference (grams)',
       colors,
       gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false
+      isCategorical: false,
+      showZero: true
     }
   } else if (mode === 'co2') {
     // CO2 mode: show total CO2 emissions per edge
@@ -307,7 +319,8 @@ const shouldShowLegend = computed(() => {
           <div class="color-ramp" :style="{ background: layer.gradient }"></div>
           <div class="ramp-labels">
             <span>{{ layer.colors[0].label }}</span>
-            <span v-if="layer.colors.length > 2">{{
+            <span v-if="layer.showZero">0</span>
+            <span v-else-if="layer.colors.length > 2">{{
               layer.colors[~~((layer.colors.length - 1) / 2)].label
             }}</span>
             <span>{{ layer.colors[layer.colors.length - 1].label }}</span>

@@ -240,24 +240,23 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     )
 
     if (hasDeltaValues) {
-      // Calculate delta scale
-      const minDelta = Math.min(...newUsage.map((d) => d.delta_count ?? 0), -1)
-      const maxDelta = Math.max(...newUsage.map((d) => d.delta_count ?? 0), 1)
-      deltaMinValue.value = minDelta
-      deltaMaxValue.value = maxDelta
-      deltaColorScale.value = scaleDiverging(interpolateRdBu).domain([maxDelta, 0, minDelta])
+      // Calculate delta scale (symmetrical around zero)
+      const deltaValues = newUsage.map((d) => d.delta_count ?? 0)
+      const absDeltaMax = Math.max(...deltaValues.map(Math.abs), 0.01)
+      deltaMinValue.value = -absDeltaMax
+      deltaMaxValue.value = absDeltaMax
+      deltaColorScale.value = scaleDiverging(interpolateRdBu).domain([-absDeltaMax, 0, absDeltaMax])
 
-      // Calculate CO2 delta scale if we have CO2 data
+      // Calculate CO2 delta scale if we have CO2 data (symmetrical around zero)
       if (hasCO2) {
         const co2Deltas = newUsage.map((d) => (d.co2_per_use ?? 0) * (d.delta_count ?? 0))
-        const minCO2Delta = Math.min(...co2Deltas, -1)
-        const maxCO2Delta = Math.max(...co2Deltas, 1)
-        co2DeltaMinValue.value = minCO2Delta
-        co2DeltaMaxValue.value = maxCO2Delta
+        const absCO2DeltaMax = Math.max(...co2Deltas.map(Math.abs), 0.01)
+        co2DeltaMinValue.value = -absCO2DeltaMax
+        co2DeltaMaxValue.value = absCO2DeltaMax
         co2DeltaColorScale.value = scaleDiverging(interpolateRdBu).domain([
-          maxCO2Delta,
+          -absCO2DeltaMax,
           0,
-          minCO2Delta
+          absCO2DeltaMax
         ])
       }
 
@@ -402,9 +401,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         deltaMinValue.value = -absDeltaMax
         deltaMaxValue.value = absDeltaMax
         deltaColorScale.value = scaleDiverging(interpolateRdBu).domain([
-          -absDeltaMax,
+          absDeltaMax,
           0,
-          absDeltaMax
+          -absDeltaMax
         ])
 
         const hasCO2DeltaCheck = state.newEdgeUsage.some(
@@ -419,9 +418,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
           co2DeltaMinValue.value = -absCO2DeltaMax
           co2DeltaMaxValue.value = absCO2DeltaMax
           co2DeltaColorScale.value = scaleDiverging(interpolateRdBu).domain([
-            -absCO2DeltaMax,
+            absCO2DeltaMax,
             0,
-            absCO2DeltaMax
+            -absCO2DeltaMax
           ])
         }
       }
