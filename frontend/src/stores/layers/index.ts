@@ -88,10 +88,17 @@ export const useLayersStore = defineStore('layers', () => {
   function getTrafficAnalysisState(): TrafficAnalysisState {
     const trafficStore = useTrafficAnalysisStore()
 
+    // Convert removed edges with names
+    const removedEdgesWithNames = Array.from(trafficStore.removedEdges).map((key) => {
+      const [u, v] = key.split('-').map(Number)
+      const name = trafficStore.removedEdgesWithNames?.get(key)
+      return { u, v, name }
+    })
+
     // Convert to plain objects to avoid storing reactive proxies
     return {
       isOpen: trafficStore.isOpen,
-      removedEdges: JSON.parse(JSON.stringify(trafficStore.removedEdgesArray)),
+      removedEdges: removedEdgesWithNames,
       nodePairs: JSON.parse(JSON.stringify(trafficStore.nodePairs)),
       originalEdgeUsage: JSON.parse(JSON.stringify(trafficStore.originalEdgeUsage)),
       newEdgeUsage: JSON.parse(JSON.stringify(trafficStore.newEdgeUsage)),

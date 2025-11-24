@@ -1,4 +1,4 @@
-import type { EdgeGeometry, ImpactStatistics } from '@/services/trafficAnalysis'
+import type { ImpactStatistics } from '@/services/trafficAnalysis'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleSequential } from 'd3-scale'
 import { interpolateRdBu, interpolateViridis } from 'd3-scale-chromatic'
@@ -20,6 +20,12 @@ export interface RemovedEdgeDisplay {
   isBidirectional: boolean
 }
 
+interface RemovedEdgeWithName {
+  u: number
+  v: number
+  name?: string
+}
+
 export interface EdgeUsageStats {
   u: number
   v: number
@@ -36,7 +42,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const isCalculating = ref(false)
   const isRestoring = ref(false)
   const removedEdges = ref<Set<string>>(new Set())
-  const edgeGeometries = shallowRef<EdgeGeometry[]>([])
+  const removedEdgesWithNames = ref<Map<string, string>>(new Map()) // key -> name
   const nodePairs = shallowRef<NodePair[]>([])
   const originalEdgeUsage = shallowRef<EdgeUsageStats[]>([])
   const newEdgeUsage = shallowRef<EdgeUsageStats[]>([])
@@ -81,11 +87,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       // Skip if we've already processed the reverse edge
       if (displayed.has(key)) return
 
-      // Find edge info
-      const edge = edgeGeometries.value.find((e) => e.u === u && e.v === v)
       const reverseEdge = edges.includes(reverseKey)
-
-      const name = edge?.name || `Edge ${u}→${v}`
+      // Get name from the map, fallback to generic edge label
+      const name = removedEdgesWithNames.value.get(key) || `Edge ${u}→${v}`
 
       result.push({
         u,
@@ -163,11 +167,18 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     isOpen.value = false
   }
 
-  function addRemovedEdge(u: number, v: number) {
+  function addRemovedEdge(u: number, v: number, name?: string) {
     const key = `${u}-${v}`
     const newSet = new Set(removedEdges.value)
     newSet.add(key)
     removedEdges.value = newSet
+
+    // Store the name if provided
+    if (name) {
+      const newMap = new Map(removedEdgesWithNames.value)
+      newMap.set(key, name)
+      removedEdgesWithNames.value = newMap
+    }
   }
 
   function removeRemovedEdge(u: number, v: number) {
@@ -175,21 +186,37 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     const newSet = new Set(removedEdges.value)
     newSet.delete(key)
     removedEdges.value = newSet
+
+    // Also remove the name
+    const newMap = new Map(removedEdgesWithNames.value)
+    newMap.delete(key)
+    removedEdgesWithNames.value = newMap
   }
 
-  function toggleEdge(u: number, v: number) {
+  function toggleEdge(u: number, v: number, name?: string) {
     const key = `${u}-${v}`
     const newSet = new Set(removedEdges.value)
     if (newSet.has(key)) {
       newSet.delete(key)
+      // Remove name
+      const newMap = new Map(removedEdgesWithNames.value)
+      newMap.delete(key)
+      removedEdgesWithNames.value = newMap
     } else {
       newSet.add(key)
+      // Add name if provided
+      if (name) {
+        const newMap = new Map(removedEdgesWithNames.value)
+        newMap.set(key, name)
+        removedEdgesWithNames.value = newMap
+      }
     }
     removedEdges.value = newSet
   }
 
   function clearRemovedEdges() {
     removedEdges.value = new Set()
+    removedEdgesWithNames.value = new Map()
   }
 
   function setNodePairs(pairs: NodePair[]) {
@@ -294,10 +321,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     activeVisualization.value = 'none'
   }
 
-  function setEdgeGeometries(geometries: EdgeGeometry[]) {
-    edgeGeometries.value = geometries
-  }
-
   function getColor(value: number): [number, number, number] {
     if (!colorScale.value) return [136, 136, 136] // Gray fallback
     const colorStr = colorScale.value(value)
@@ -342,7 +365,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // Batch restore function for investigation switching (avoids multiple reactive updates)
   function restoreState(state: {
     isOpen: boolean
-    removedEdges: Array<{ u: number; v: number }>
+    removedEdges: Array<{ u: number; v: number; name?: string }>
     nodePairs: Array<{ origin: number; destination: number }>
     originalEdgeUsage: EdgeUsageStats[]
     newEdgeUsage: EdgeUsageStats[]
@@ -352,12 +375,18 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     // Apply all state changes in one batch to minimize reactivity overhead
     isOpen.value = state.isOpen
 
-    // Restore removed edges efficiently
+    // Restore removed edges with their names
     const edgeSet = new Set<string>()
+    const edgeNamesMap = new Map<string, string>()
     state.removedEdges.forEach((edge) => {
-      edgeSet.add(`${edge.u}-${edge.v}`)
+      const key = `${edge.u}-${edge.v}`
+      edgeSet.add(key)
+      if (edge.name) {
+        edgeNamesMap.set(key, edge.name)
+      }
     })
     removedEdges.value = edgeSet
+    removedEdgesWithNames.value = edgeNamesMap
 
     // Restore pairs and usage
     nodePairs.value = state.nodePairs
@@ -443,7 +472,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     isCalculating,
     isRestoring,
     removedEdges,
-    edgeGeometries,
     nodePairs,
     originalEdgeUsage,
     newEdgeUsage,
@@ -474,7 +502,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     setNodePairs,
     setEdgeUsage,
     clearResults,
-    setEdgeGeometries,
     getColor,
     setActiveVisualization,
     restoreState

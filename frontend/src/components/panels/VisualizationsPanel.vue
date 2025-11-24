@@ -36,15 +36,20 @@ function handleDeckClick(info: any) {
   deckGLTraffic.handleClick(info)
 }
 
+// Setup edge click callback (always active when traffic panel is open)
+function setupEdgeClickCallback() {
+  deckGLTraffic.setEdgeClickCallback((u, v, name) => {
+    trafficStore.toggleEdge(u, v, name)
+  })
+}
+
 // Watch for traffic panel open/close
 watch(
   () => trafficStore.isOpen,
   async (isOpen) => {
     if (isOpen) {
       await deckGLTraffic.loadGraphEdges()
-      deckGLTraffic.setEdgeClickCallback((u, v) => {
-        trafficStore.addRemovedEdge(u, v)
-      })
+      setupEdgeClickCallback()
     } else {
       deckGLTraffic.clearRoutes()
     }
@@ -109,6 +114,7 @@ watch(
 onMounted(async () => {
   if (trafficStore.isOpen) {
     await deckGLTraffic.loadGraphEdges()
+    setupEdgeClickCallback()
   }
 })
 </script>

@@ -21,7 +21,7 @@ interface DeckGLTrafficAnalysisReturn {
   visualizeEdgeUsage: (originalUsage: EdgeUsageStats[], newUsage: EdgeUsageStats[]) => void
   clearRoutes: () => void
   handleClick: (info: any) => void
-  setEdgeClickCallback: (callback: (u: number, v: number) => void) => void
+  setEdgeClickCallback: (callback: (u: number, v: number, name?: string) => void) => void
 }
 
 /**
@@ -32,7 +32,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   const layers = shallowRef<any[]>([])
   const edgeGeometries = shallowRef<EdgeGeometry[]>([])
   const removedEdgesSet = shallowRef<Set<string>>(new Set())
-  let edgeClickCallback: ((u: number, v: number) => void) | null = null
+  let edgeClickCallback: ((u: number, v: number, name?: string) => void) | null = null
 
   // Get store instance
   const trafficStore = useTrafficAnalysisStore()
@@ -45,56 +45,11 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
    */
   async function loadGraphEdges(): Promise<void> {
     try {
-      // Check if edges are already loaded in the store
-      if (trafficStore.edgeGeometries.length > 0) {
-        console.log(`Using cached ${trafficStore.edgeGeometries.length} edge geometries from store`)
-        edgeGeometries.value = trafficStore.edgeGeometries
-
-        // Convert to GeoJSON format for Deck.gl
-        const geojsonData: any = {
-          type: 'FeatureCollection',
-          features: edgeGeometries.value.map((edge) => ({
-            type: 'Feature',
-            geometry: {
-              type: 'LineString',
-              coordinates: edge.coordinates
-            },
-            properties: {
-              u: edge.u,
-              v: edge.v,
-              name: edge.name,
-              highway: edge.highway,
-              travel_time: edge.travel_time,
-              length: edge.length
-            }
-          }))
-        }
-
-        // Create single GeoJsonLayer for all edges (always pickable for removal)
-        baseLayer = new GeoJsonLayer({
-          id: 'traffic-graph-edges',
-          data: geojsonData,
-          lineWidthMinPixels: 3,
-          getLineColor: [136, 136, 136, 153],
-          getLineWidth: 2,
-          getFillColor: [136, 136, 136, 100],
-          pickable: true,
-          autoHighlight: true,
-          highlightColor: [0, 170, 255, 200]
-        })
-
-        layers.value = [baseLayer]
-        return
-      }
-
       console.time('Loading graph edges as GeoJSON')
 
-      // Load all edge geometries at once
+      // Always load edge geometries fresh (don't cache in store)
       const edges = await fetchEdgeGeometries()
       edgeGeometries.value = edges
-
-      // Populate the store with edge geometries for display purposes
-      trafficStore.setEdgeGeometries(edges)
 
       console.log(`Loaded ${edges.length} edge geometries`)
 
@@ -307,21 +262,27 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     const clickedEdge = info.object.properties || info.object
     if (clickedEdge.u === undefined || clickedEdge.v === undefined) return
 
+    // Get edge name
+    const edgeName = clickedEdge.name || `Edge ${clickedEdge.u}→${clickedEdge.v}`
+
+    // Call callback with edge info including name
+    edgeClickCallback(clickedEdge.u, clickedEdge.v, edgeName)
+
     // Also explicitly look for the reverse edge (u-v becomes v-u)
     const reverseEdge = edgeGeometries.value.find(
       (edge) => edge.u === clickedEdge.v && edge.v === clickedEdge.u
     )
-    edgeClickCallback(clickedEdge.u, clickedEdge.v)
 
     if (reverseEdge) {
-      edgeClickCallback(reverseEdge.u!, reverseEdge.v!)
+      const reverseName = reverseEdge.name || `Edge ${reverseEdge.u}→${reverseEdge.v}`
+      edgeClickCallback(reverseEdge.u!, reverseEdge.v!, reverseName)
     }
   }
 
   /**
    * Set callback for edge clicks
    */
-  function setEdgeClickCallback(callback: (u: number, v: number) => void): void {
+  function setEdgeClickCallback(callback: (u: number, v: number, name?: string) => void): void {
     edgeClickCallback = callback
   }
 

@@ -1,7 +1,7 @@
 // Traffic analysis state for an investigation
 export interface TrafficAnalysisState {
   isOpen: boolean
-  removedEdges: Array<{ u: number; v: number }>
+  removedEdges: Array<{ u: number; v: number; name?: string }>
   nodePairs: Array<{ origin: number; destination: number }>
   originalEdgeUsage: Array<{
     u: number
