@@ -1,5 +1,6 @@
 import { fetchEdgeGeometries, type EdgeGeometry } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { PathStyleExtension } from '@deck.gl/extensions'
 import { GeoJsonLayer, PathLayer } from '@deck.gl/layers'
 import type { Ref } from 'vue'
 import { shallowRef } from 'vue'
@@ -74,11 +75,11 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
         }))
       }
 
-      // Create single GeoJsonLayer for all edges
+      // Create single GeoJsonLayer for all edges (always pickable for removal)
       baseLayer = new GeoJsonLayer({
         id: 'traffic-graph-edges',
         data: geojsonData,
-        lineWidthMinPixels: 1,
+        lineWidthMinPixels: 3,
         getLineColor: [136, 136, 136, 153],
         getLineWidth: 2,
         getFillColor: [136, 136, 136, 100],
@@ -109,7 +110,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       return removedEdgesSet.value.has(key)
     })
 
-    // Create/update removed layer with dashed black arrows (more visible)
+    // Create/update removed layer with dashed black lines on top
     const removedLayer = new PathLayer({
       id: 'traffic-removed-edges',
       data: removedEdgeGeometries,
@@ -117,18 +118,21 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       getColor: [0, 0, 0, 255], // Solid black
       getWidth: 6,
       widthUnits: 'pixels',
-      getDashArray: [8, 4], // Dashed pattern: 8px line, 4px gap (more visible)
+      getDashArray: [10, 5], // Dashed pattern: 10px line, 5px gap
       dashJustified: true,
-      pickable: true
+      dashGapPickable: true,
+      pickable: true,
+      extensions: [new PathStyleExtension({ dash: true })]
     })
 
     // Keep route layers if they exist
-    const routeLayers = layers.value.filter((l) => l.id === 'traffic-routes')
+    const routeLayers = layers.value.filter((l) => l.id.startsWith('traffic-routes'))
 
+    // Removed edges should be on top of everything
     layers.value = [
       baseLayer,
-      ...(removedEdgeGeometries.length > 0 ? [removedLayer] : []),
-      ...routeLayers
+      ...routeLayers,
+      ...(removedEdgeGeometries.length > 0 ? [removedLayer] : [])
     ]
   }
 
@@ -206,11 +210,15 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       autoHighlight: true
     })
 
-    // Update layers array - preserve base and removed layers
+    // Update layers array - removed edges on top for visibility
     const removedLayer = layers.value.find((l) => l.id === 'traffic-removed-edges')
-    const preservedLayers = [baseLayer, removedLayer].filter(Boolean)
 
-    layers.value = [...preservedLayers, outlineLayer, trafficLayer]
+    layers.value = [
+      baseLayer,
+      outlineLayer,
+      trafficLayer,
+      ...(removedLayer ? [removedLayer] : [])
+    ].filter(Boolean)
   }
 
   /**
@@ -228,8 +236,8 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   function handleClick(info: any): void {
     if (!info.object || !edgeClickCallback) return
 
-    // Get all edges that share the same coordinates as the clicked edge
-    const clickedEdge = info.object as EdgeGeometry
+    // Handle both GeoJSON features and direct edge objects
+    const clickedEdge = info.object.properties || info.object
     if (clickedEdge.u === undefined || clickedEdge.v === undefined) return
 
     // Also explicitly look for the reverse edge (u-v becomes v-u)

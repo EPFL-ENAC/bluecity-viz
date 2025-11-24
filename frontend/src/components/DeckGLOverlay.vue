@@ -40,6 +40,12 @@ const initializeOverlay = () => {
       if (props.onHover) {
         props.onHover(info, event)
       }
+    },
+    // Control cursor: return 'pointer' when hovering pickable object, otherwise let MapLibre handle it
+    getCursor: ({ isHovering, isDragging }) => {
+      if (isDragging) return 'grabbing'
+      if (isHovering) return 'pointer'
+      return 'grab'
     }
   })
 

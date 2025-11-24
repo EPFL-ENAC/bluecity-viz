@@ -358,10 +358,6 @@ watch(
   width: 100%;
   position: relative;
 }
-
-.map:deep(.hovered-feature) {
-  cursor: pointer !important;
-}
 </style>
 
 <style>
