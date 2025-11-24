@@ -41,8 +41,9 @@ const hasFailedRoutes = computed(() => {
   return props.statistics && props.statistics.failed_routes > 0
 })
 
-function formatNumber(value: number, decimals: number = 2): string {
-  return value.toFixed(decimals)
+function formatWithSign(value: number, decimals: number = 2): string {
+  const formatted = value.toFixed(decimals)
+  return value > 0 ? `+${formatted}` : formatted
 }
 </script>
 
@@ -85,19 +86,19 @@ function formatNumber(value: number, decimals: number = 2): string {
           <div class="stat-row">
             <span class="stat-label">Distance:</span>
             <span class="stat-value"
-              >+{{ formatNumber(statistics.total_distance_increase_km, 2) }} km</span
+              >{{ formatWithSign(statistics.total_distance_increase_km, 2) }} km</span
             >
           </div>
           <div class="stat-row">
             <span class="stat-label">Time:</span>
             <span class="stat-value"
-              >+{{ formatNumber(statistics.total_time_increase_minutes, 1) }} min</span
+              >{{ formatWithSign(statistics.total_time_increase_minutes, 1) }} min</span
             >
           </div>
           <div v-if="statistics.total_co2_increase_grams !== undefined" class="stat-row">
             <span class="stat-label">CO₂:</span>
             <span class="stat-value"
-              >+{{ formatNumber(statistics.total_co2_increase_grams / 1000, 2) }} kg</span
+              >{{ formatWithSign(statistics.total_co2_increase_grams / 1000, 2) }} kg</span
             >
           </div>
         </div>
@@ -108,27 +109,27 @@ function formatNumber(value: number, decimals: number = 2): string {
           <div class="stat-row">
             <span class="stat-label">Distance:</span>
             <span class="stat-value">
-              +{{ formatNumber(statistics.avg_distance_increase_km, 2) }} km
+              {{ formatWithSign(statistics.avg_distance_increase_km, 2) }} km
               <span class="stat-secondary"
-                >({{ formatNumber(statistics.avg_distance_increase_percent, 1) }}%)</span
+                >({{ formatWithSign(statistics.avg_distance_increase_percent, 1) }}%)</span
               >
             </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Time:</span>
             <span class="stat-value">
-              +{{ formatNumber(statistics.avg_time_increase_minutes, 1) }} min
+              {{ formatWithSign(statistics.avg_time_increase_minutes, 1) }} min
               <span class="stat-secondary"
-                >({{ formatNumber(statistics.avg_time_increase_percent, 1) }}%)</span
+                >({{ formatWithSign(statistics.avg_time_increase_percent, 1) }}%)</span
               >
             </span>
           </div>
           <div v-if="statistics.avg_co2_increase_grams !== undefined" class="stat-row">
             <span class="stat-label">CO₂:</span>
             <span class="stat-value">
-              +{{ formatNumber(statistics.avg_co2_increase_grams, 0) }} g
+              {{ formatWithSign(statistics.avg_co2_increase_grams, 0) }} g
               <span class="stat-secondary"
-                >({{ formatNumber(statistics.avg_co2_increase_percent ?? 0, 1) }}%)</span
+                >({{ formatWithSign(statistics.avg_co2_increase_percent ?? 0, 1) }}%)</span
               >
             </span>
           </div>
@@ -140,19 +141,19 @@ function formatNumber(value: number, decimals: number = 2): string {
           <div class="stat-row">
             <span class="stat-label">Distance:</span>
             <span class="stat-value"
-              >+{{ formatNumber(statistics.max_distance_increase_km, 2) }} km</span
+              >{{ formatWithSign(statistics.max_distance_increase_km, 2) }} km</span
             >
           </div>
           <div class="stat-row">
             <span class="stat-label">Time:</span>
             <span class="stat-value"
-              >+{{ formatNumber(statistics.max_time_increase_minutes, 1) }} min</span
+              >{{ formatWithSign(statistics.max_time_increase_minutes, 1) }} min</span
             >
           </div>
           <div v-if="statistics.max_co2_increase_grams !== undefined" class="stat-row">
             <span class="stat-label">CO₂:</span>
             <span class="stat-value"
-              >+{{ formatNumber(statistics.max_co2_increase_grams, 0) }} g</span
+              >{{ formatWithSign(statistics.max_co2_increase_grams, 0) }} g</span
             >
           </div>
         </div>
