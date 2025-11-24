@@ -34,6 +34,12 @@ const editInvestigationName = ref('')
 const creatingNewProject = ref(false)
 const newProjectName = ref('')
 
+// Delete confirmation functionality
+const showDeleteDialog = ref(false)
+const deleteType = ref<'project' | 'investigation'>('project')
+const deleteTargetId = ref<string | null>(null)
+const deleteTargetName = ref('')
+
 function handleShare(investigationId: string) {
   // Switch to the investigation first to ensure it's active
   layersStore.switchToInvestigation(investigationId)
@@ -131,6 +137,56 @@ function saveNewProject() {
     creatingNewProject.value = false
     newProjectName.value = ''
   }
+}
+
+// Delete confirmation functions
+function confirmDeleteProject(projectId: string) {
+  const project = layersStore.projects.find((p) => p.id === projectId)
+  if (!project) return
+
+  // If project has no investigations, delete directly without confirmation
+  if (project.investigations.length === 0) {
+    layersStore.removeProject(projectId)
+    return
+  }
+
+  // Show confirmation dialog
+  deleteType.value = 'project'
+  deleteTargetId.value = projectId
+  deleteTargetName.value = project.name
+  showDeleteDialog.value = true
+}
+
+function confirmDeleteInvestigation(investigationId: string) {
+  const investigation = layersStore.findInvestigation(investigationId)
+  if (!investigation) return
+
+  // Show confirmation dialog (always for investigations)
+  deleteType.value = 'investigation'
+  deleteTargetId.value = investigationId
+  deleteTargetName.value = investigation.name
+  showDeleteDialog.value = true
+}
+
+function executeDelete() {
+  if (!deleteTargetId.value) return
+
+  if (deleteType.value === 'project') {
+    layersStore.removeProject(deleteTargetId.value)
+  } else {
+    layersStore.removeInvestigation(deleteTargetId.value)
+  }
+
+  // Reset dialog state
+  showDeleteDialog.value = false
+  deleteTargetId.value = null
+  deleteTargetName.value = ''
+}
+
+function cancelDelete() {
+  showDeleteDialog.value = false
+  deleteTargetId.value = null
+  deleteTargetName.value = ''
 }
 </script>
 
@@ -251,7 +307,7 @@ function saveNewProject() {
                 :icon="mdiClose"
                 size="small"
                 variant="text"
-                @click="layersStore.removeProject(project.id)"
+                @click="confirmDeleteProject(project.id)"
               />
             </div>
           </div>
@@ -358,7 +414,7 @@ function saveNewProject() {
                         size="x-small"
                         variant="text"
                         density="compact"
-                        @click.stop="layersStore.removeInvestigation(investigation.id)"
+                        @click.stop="confirmDeleteInvestigation(investigation.id)"
                       >
                       </v-btn>
                     </div>
@@ -370,6 +426,32 @@ function saveNewProject() {
         </v-card>
       </div>
     </v-card-text>
+
+    <!-- Delete Confirmation Dialog -->
+    <v-dialog v-model="showDeleteDialog" max-width="500px">
+      <v-card>
+        <v-card-title class="text-h6">
+          Delete {{ deleteType === 'project' ? 'Project' : 'Investigation' }}?
+        </v-card-title>
+        <v-card-text>
+          <p>
+            Are you sure you want to delete
+            <strong>{{ deleteTargetName }}</strong
+            >?
+          </p>
+          <p v-if="deleteType === 'project'" class="text-caption text-medium-emphasis mt-2">
+            This will also delete all investigations within this project. This action cannot be
+            undone.
+          </p>
+          <p v-else class="text-caption text-medium-emphasis mt-2">This action cannot be undone.</p>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="grey" variant="text" @click="cancelDelete">Cancel</v-btn>
+          <v-btn color="error" variant="elevated" @click="executeDelete">Delete</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- Share Dialog -->
     <v-dialog v-model="showShareDialog" max-width="500px">
