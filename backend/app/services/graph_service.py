@@ -1,4 +1,4 @@
-"""Graph service for route calculations."""
+"""Graph service orchestrator for route calculations."""
 
 import logging
 import os
@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+import networkx as nx
 import osmnx as ox
 from app.models.route import (
     Edge,
@@ -20,6 +21,7 @@ from app.models.route import (
     Route,
     RouteComparison,
 )
+from app.services.co2_calculator import CO2Calculator
 
 # Enable osmnx logging to see what it's doing
 logging.basicConfig(level=logging.INFO)
@@ -177,11 +179,12 @@ class GraphService:
     def _calculate_route_metrics(self, path: List[int], weight: str) -> dict:
         """Calculate travel time, distance, and elevation gain for a path by summing edge attributes."""
         if not self.graph or not path or len(path) < 2:
-            return {"travel_time": None, "distance": None, "elevation_gain": None}
+            return {"travel_time": None, "distance": None, "elevation_gain": None, "edges_data": []}
 
         travel_time = 0.0
         distance = 0.0
         elevation_gain = 0.0
+        edges_data = []  # Store edge data for CO2 calculation
 
         for i in range(len(path) - 1):
             u, v = path[i], path[i + 1]
@@ -199,14 +202,32 @@ class GraphService:
                     # Regular Graph: edge_data_dict is the data itself
                     edge_data = edge_data_dict
 
-                travel_time += edge_data.get("travel_time", 0)
-                distance += edge_data.get("length", 0)
+                edge_travel_time = edge_data.get("travel_time", 0)
+                edge_length = edge_data.get("length", 0)
+                travel_time += edge_travel_time
+                distance += edge_length
 
-                # Calculate elevation gain if node elevation data available
+                # Calculate elevation gain for this edge
+                edge_elevation_gain = 0.0
                 if "elevation" in self.graph.nodes[u] and "elevation" in self.graph.nodes[v]:
                     elev_diff = self.graph.nodes[v]["elevation"] - self.graph.nodes[u]["elevation"]
                     if elev_diff > 0:  # Only count uphill
                         elevation_gain += elev_diff
+                        edge_elevation_gain = elev_diff
+
+                # Calculate speed for this edge (km/h)
+                speed_kph = None
+                if edge_travel_time > 0 and edge_length > 0:
+                    speed_kph = (edge_length / 1000.0) / (edge_travel_time / 3600.0)
+
+                # Store edge data for CO2 calculation
+                edges_data.append(
+                    {
+                        "travel_time": edge_travel_time,
+                        "speed_kph": speed_kph,
+                        "elevation_gain": edge_elevation_gain,
+                    }
+                )
             else:
                 print(f"[WARNING] No edge data for {u}->{v} in path")
 
@@ -215,6 +236,7 @@ class GraphService:
             "travel_time": travel_time,
             "distance": distance,
             "elevation_gain": elevation_gain if elevation_gain > 0 else None,
+            "edges_data": edges_data,
         }
 
     def _calculate_edge_usage_stats(
@@ -248,6 +270,39 @@ class GraphService:
                 delta_count = count
                 delta_frequency = frequency
 
+            # Calculate CO2 per use for this edge
+            co2_per_use = None
+            edge_data_dict = self.graph.get_edge_data(u, v)
+            if edge_data_dict:
+                if isinstance(edge_data_dict, dict) and 0 in edge_data_dict:
+                    edge_data = edge_data_dict[0]
+                else:
+                    edge_data = edge_data_dict
+
+                edge_travel_time = edge_data.get("travel_time", 0)
+                edge_length = edge_data.get("length", 0)
+
+                # Calculate speed
+                speed_kph = None
+                if edge_travel_time > 0 and edge_length > 0:
+                    speed_kph = (edge_length / 1000.0) / (edge_travel_time / 3600.0)
+
+                # Calculate elevation gain for this edge
+                edge_elevation_gain = 0.0
+                if u in self.graph.nodes and v in self.graph.nodes:
+                    if "elevation" in self.graph.nodes[u] and "elevation" in self.graph.nodes[v]:
+                        elev_diff = (
+                            self.graph.nodes[v]["elevation"] - self.graph.nodes[u]["elevation"]
+                        )
+                        if elev_diff > 0:
+                            edge_elevation_gain = elev_diff
+
+                co2_per_use = CO2Calculator.calculate_edge_co2(
+                    travel_time=edge_travel_time,
+                    speed_kph=speed_kph,
+                    elevation_gain=edge_elevation_gain,
+                )
+
             stats.append(
                 EdgeUsageStats(
                     u=u,
@@ -256,6 +311,7 @@ class GraphService:
                     frequency=frequency,
                     delta_count=delta_count,
                     delta_frequency=delta_frequency,
+                    co2_per_use=co2_per_use,
                 )
             )
 
@@ -345,6 +401,9 @@ class GraphService:
                 geometry = self._build_path_geometry(path)
                 metrics = self._calculate_route_metrics(path, weight)
 
+                # Calculate CO2 emissions
+                co2_emissions = CO2Calculator.calculate_route_co2(metrics["edges_data"])
+
                 route = Route(
                     origin=pair.origin,
                     destination=pair.destination,
@@ -353,6 +412,7 @@ class GraphService:
                     travel_time=metrics["travel_time"],
                     distance=metrics["distance"],
                     elevation_gain=metrics["elevation_gain"],
+                    co2_emissions=co2_emissions,
                 )
                 routes.append(route)
             except Exception as e:
@@ -456,10 +516,13 @@ class GraphService:
         failed_routes_count = 0
         total_distance_increase = 0.0
         total_time_increase = 0.0
+        total_co2_increase = 0.0
         max_distance_increase = 0.0
         max_time_increase = 0.0
+        max_co2_increase = 0.0
         distance_percent_increases = []
         time_percent_increases = []
+        co2_percent_increases = []
 
         comparisons = []
 
@@ -508,6 +571,16 @@ class GraphService:
                         time_delta_percent = (time_delta / orig_route.travel_time) * 100
                         time_percent_increases.append(time_delta_percent)
 
+                # Calculate CO2 delta
+                if orig_route.co2_emissions is not None and new_route.co2_emissions is not None:
+                    co2_delta = new_route.co2_emissions - orig_route.co2_emissions
+                    total_co2_increase += co2_delta
+                    max_co2_increase = max(max_co2_increase, co2_delta)
+
+                    if orig_route.co2_emissions > 0:
+                        co2_delta_percent = (co2_delta / orig_route.co2_emissions) * 100
+                        co2_percent_increases.append(co2_delta_percent)
+
             comparison = RouteComparison(
                 origin=orig_route.origin,
                 destination=orig_route.destination,
@@ -534,6 +607,9 @@ class GraphService:
             if affected_routes_count > 0
             else 0.0
         )
+        avg_co2_increase_grams = (
+            (total_co2_increase / affected_routes_count) if affected_routes_count > 0 else 0.0
+        )
         avg_distance_percent = (
             sum(distance_percent_increases) / len(distance_percent_increases)
             if distance_percent_increases
@@ -542,6 +618,11 @@ class GraphService:
         avg_time_percent = (
             sum(time_percent_increases) / len(time_percent_increases)
             if time_percent_increases
+            else 0.0
+        )
+        avg_co2_percent = (
+            sum(co2_percent_increases) / len(co2_percent_increases)
+            if co2_percent_increases
             else 0.0
         )
 
@@ -557,6 +638,10 @@ class GraphService:
             max_time_increase_minutes=max_time_increase / 60.0,
             avg_distance_increase_percent=avg_distance_percent,
             avg_time_increase_percent=avg_time_percent,
+            total_co2_increase_grams=total_co2_increase,
+            avg_co2_increase_grams=avg_co2_increase_grams,
+            max_co2_increase_grams=max_co2_increase,
+            avg_co2_increase_percent=avg_co2_percent,
         )
 
         # Calculate edge usage statistics - need to create full new_routes list
@@ -595,10 +680,15 @@ class GraphService:
         print(
             f"[IMPACT] Total time increase: {total_time_increase/60.0:.2f} minutes (raw: {total_time_increase:.2f}s)"
         )
+        print(
+            f"[IMPACT] Total CO2 increase: {total_co2_increase:.2f} grams ({total_co2_increase/1000.0:.3f} kg)"
+        )
         print(f"[IMPACT] Max distance increase: {max_distance_increase/1000.0:.2f} km")
         print(f"[IMPACT] Max time increase: {max_time_increase/60.0:.2f} minutes")
+        print(f"[IMPACT] Max CO2 increase: {max_co2_increase:.2f} grams")
         print(f"[IMPACT] Avg distance increase: {avg_distance_increase_km:.2f} km")
         print(f"[IMPACT] Avg time increase: {avg_time_increase_minutes:.2f} minutes")
+        print(f"[IMPACT] Avg CO2 increase: {avg_co2_increase_grams:.2f} grams")
         print(f"[PERF] ===== Total recalculate took {total_time:.2f}s =====")
 
         return RecalculateResponse(

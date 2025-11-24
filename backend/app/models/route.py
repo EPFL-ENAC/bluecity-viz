@@ -35,6 +35,7 @@ class Route(BaseModel):
     travel_time: Optional[float] = Field(None, description="Total travel time in seconds")
     distance: Optional[float] = Field(None, description="Total distance in meters")
     elevation_gain: Optional[float] = Field(None, description="Total elevation gain in meters")
+    co2_emissions: Optional[float] = Field(None, description="Total CO2 emissions in grams")
 
 
 class RouteRequest(BaseModel):
@@ -97,6 +98,9 @@ class EdgeUsageStats(BaseModel):
     delta_frequency: Optional[float] = Field(
         None, description="Change in frequency (new - original)"
     )
+    co2_per_use: Optional[float] = Field(
+        None, description="CO2 emissions per use of this edge in grams"
+    )
 
 
 class ImpactStatistics(BaseModel):
@@ -128,6 +132,18 @@ class ImpactStatistics(BaseModel):
     )
     avg_time_increase_percent: float = Field(
         0.0, description="Average percentage increase in travel time for affected routes"
+    )
+    total_co2_increase_grams: float = Field(
+        0.0, description="Total additional CO2 emissions across all routes (grams)"
+    )
+    avg_co2_increase_grams: float = Field(
+        0.0, description="Average additional CO2 emissions per affected route (grams)"
+    )
+    max_co2_increase_grams: float = Field(
+        0.0, description="Maximum additional CO2 emissions for a single route (grams)"
+    )
+    avg_co2_increase_percent: float = Field(
+        0.0, description="Average percentage increase in CO2 emissions for affected routes"
     )
 
 

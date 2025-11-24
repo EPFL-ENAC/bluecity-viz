@@ -14,6 +14,10 @@ export interface ImpactStats {
   max_time_increase_minutes: number
   avg_distance_increase_percent: number
   avg_time_increase_percent: number
+  total_co2_increase_grams: number
+  avg_co2_increase_grams: number
+  max_co2_increase_grams: number
+  avg_co2_increase_percent: number
 }
 
 interface Props {
@@ -90,6 +94,12 @@ function formatNumber(value: number, decimals: number = 2): string {
               >+{{ formatNumber(statistics.total_time_increase_minutes, 1) }} min</span
             >
           </div>
+          <div class="stat-row">
+            <span class="stat-label">CO₂:</span>
+            <span class="stat-value"
+              >+{{ formatNumber(statistics.total_co2_increase_grams / 1000, 2) }} kg</span
+            >
+          </div>
         </div>
 
         <!-- Average Impact -->
@@ -113,6 +123,15 @@ function formatNumber(value: number, decimals: number = 2): string {
               >
             </span>
           </div>
+          <div class="stat-row">
+            <span class="stat-label">CO₂:</span>
+            <span class="stat-value">
+              +{{ formatNumber(statistics.avg_co2_increase_grams, 0) }} g
+              <span class="stat-secondary"
+                >({{ formatNumber(statistics.avg_co2_increase_percent, 1) }}%)</span
+              >
+            </span>
+          </div>
         </div>
 
         <!-- Maximum Impact -->
@@ -128,6 +147,12 @@ function formatNumber(value: number, decimals: number = 2): string {
             <span class="stat-label">Time:</span>
             <span class="stat-value"
               >+{{ formatNumber(statistics.max_time_increase_minutes, 1) }} min</span
+            >
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">CO₂:</span>
+            <span class="stat-value"
+              >+{{ formatNumber(statistics.max_co2_increase_grams, 0) }} g</span
             >
           </div>
         </div>
@@ -150,7 +175,7 @@ function formatNumber(value: number, decimals: number = 2): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 8px 12px;
   cursor: pointer;
   user-select: none;
 }
@@ -160,18 +185,19 @@ function formatNumber(value: number, decimals: number = 2): string {
 }
 
 .section-title {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 500;
   text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .section-content {
-  padding: 0 16px 16px 16px;
+  padding: 0 12px 8px 12px;
 }
 
 .stat-group {
-  margin-bottom: 8px;
-  padding-bottom: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
   border-bottom: 1px solid #f0f0f0;
 }
 
@@ -182,11 +208,11 @@ function formatNumber(value: number, decimals: number = 2): string {
 }
 
 .stat-group-label {
-  font-size: 0.688rem;
+  font-size: 0.625rem;
   font-weight: 500;
   text-transform: uppercase;
   color: rgba(var(--v-theme-on-surface), 0.6);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   letter-spacing: 0.5px;
 }
 
@@ -194,8 +220,8 @@ function formatNumber(value: number, decimals: number = 2): string {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 2px 0;
-  font-size: 0.813rem;
+  padding: 1px 0;
+  font-size: 0.75rem;
 }
 
 .stat-label {
@@ -211,7 +237,7 @@ function formatNumber(value: number, decimals: number = 2): string {
 }
 
 .stat-secondary {
-  font-size: 0.75rem;
+  font-size: 0.688rem;
   color: rgba(var(--v-theme-on-surface), 0.5);
   margin-left: 4px;
   font-weight: 400;
