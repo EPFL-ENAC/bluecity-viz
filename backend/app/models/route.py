@@ -55,8 +55,12 @@ class RouteResponse(BaseModel):
 class RecalculateRequest(BaseModel):
     """Request to recalculate routes with removed edges."""
 
-    pairs: List[NodePair] = Field(..., description="List of origin-destination pairs")
-    edges_to_remove: List[Edge] = Field(..., description="Edges to remove from graph")
+    pairs: Optional[List[NodePair]] = Field(
+        None, description="List of origin-destination pairs (uses default if not provided)"
+    )
+    edges_to_remove: List[Edge] = Field(
+        default_factory=list, description="Edges to remove from graph"
+    )
     weight: str = Field(default="travel_time", description="Edge weight attribute")
     include_geometry: bool = Field(default=True, description="Include path geometry")
 

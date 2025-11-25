@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { generateRandomPairs, recalculateRoutes } from '@/services/trafficAnalysis'
+import { recalculateRoutes } from '@/services/trafficAnalysis'
 import ImpactStatistics from './ImpactStatistics.vue'
 import {
   mdiChevronDown,
@@ -88,31 +88,11 @@ function handleLayerSelection(layerId: string, checked: boolean) {
 }
 
 // Traffic analysis logic
-onMounted(async () => {
-  if (trafficStore.isOpen) {
-    await shufflePairs()
-  }
-})
-
-async function shufflePairs() {
-  trafficStore.isLoading = true
-  loadingMessage.value = 'Generating random pairs...'
-  try {
-    const pairs = await generateRandomPairs(1000, undefined, 4)
-    trafficStore.setNodePairs(pairs)
-    trafficStore.clearResults()
-  } catch (error) {
-    console.error('Failed to generate pairs:', error)
-  } finally {
-    trafficStore.isLoading = false
-  }
-}
-
 async function calculateRoutes() {
   trafficStore.isCalculating = true
   loadingMessage.value = 'Calculating routes...'
   try {
-    const result = await recalculateRoutes(trafficStore.nodePairs, trafficStore.removedEdgesArray)
+    const result = await recalculateRoutes(trafficStore.removedEdgesArray)
     trafficStore.setEdgeUsage(
       result.original_edge_usage,
       result.new_edge_usage,
@@ -139,7 +119,6 @@ watch(
   async (isOpen) => {
     if (isOpen) {
       trafficExpanded.value = true
-      await shufflePairs()
     }
   }
 )
@@ -293,7 +272,7 @@ watch(
             block
             variant="outlined"
             :prepend-icon="mdiCalculator"
-            :disabled="trafficStore.isCalculating || trafficStore.nodePairs.length === 0"
+            :disabled="trafficStore.isCalculating"
             @click="calculateRoutes"
           >
             Calculate Routes

@@ -43,6 +43,8 @@ class GraphService:
         self.graph_path = graph_path
         self.route_cache = {}  # Cache for original routes by pairs hash
         self.pairs_cache = None  # Cache the last node pairs for comparison
+        self.default_pairs = None  # Default OD pairs generated on startup
+        self.default_routes = None  # Pre-calculated routes for default pairs
 
         if graph_path:
             self.load_graph(graph_path)
@@ -73,6 +75,38 @@ class GraphService:
             self.graph = ox.routing.add_edge_travel_times(self.graph)
 
         print(f"Loaded graph: {len(self.graph.nodes)} nodes, {len(self.graph.edges)} edges")
+
+    async def initialize_default_routes(
+        self, count: int = 500, radius_km: float = 2.0, seed: int = 42
+    ):
+        """
+        Generate default OD pairs and pre-calculate routes on startup.
+
+        Args:
+            count: Number of OD pairs to generate
+            radius_km: Radius from city center to sample nodes
+            seed: Random seed for reproducible pairs
+        """
+        if not self.graph:
+            raise RuntimeError("Graph not loaded")
+
+        print(f"[STARTUP] Generating {count} default OD pairs...")
+        self.default_pairs = self.generate_random_pairs(count=count, seed=seed, radius_km=radius_km)
+
+        print(f"[STARTUP] Pre-calculating routes for {len(self.default_pairs)} pairs...")
+        start_time = time.time()
+        self.default_routes = await self.calculate_routes(
+            pairs=self.default_pairs, weight="travel_time"
+        )
+        elapsed = time.time() - start_time
+
+        # Cache these routes
+        pairs_key = tuple((p.origin, p.destination) for p in self.default_pairs)
+        self.pairs_cache = pairs_key
+        self.route_cache[pairs_key] = self.default_routes
+
+        print(f"[STARTUP] Pre-calculated {len(self.default_routes)} routes in {elapsed:.2f}s")
+        print(f"[STARTUP] Default routes cached and ready")
 
     def get_edge_geometries(self, limit: Optional[int] = None) -> List[dict]:
         """
@@ -428,13 +462,24 @@ class GraphService:
 
     async def recalculate_with_removed_edges(
         self,
-        pairs: List[NodePair],
-        edges_to_remove: List[Edge],
+        pairs: Optional[List[NodePair]] = None,
+        edges_to_remove: List[Edge] = None,
         weight: str = "travel_time",
     ) -> RecalculateResponse:
         """Recalculate routes after removing specified edges."""
         if not self.graph:
             raise RuntimeError("Graph not loaded")
+
+        # Use default pairs if none provided
+        if pairs is None:
+            if self.default_pairs is None:
+                raise RuntimeError(
+                    "No default pairs available. Call initialize_default_routes first."
+                )
+            pairs = self.default_pairs
+
+        if edges_to_remove is None:
+            edges_to_remove = []
 
         total_start = time.time()
         print("[PERF] ===== Starting recalculate_with_removed_edges =====")

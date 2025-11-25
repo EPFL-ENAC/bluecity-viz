@@ -1,6 +1,6 @@
 import { baseUrl } from '@/config/layerTypes'
 import { useApiKeyStore } from '@/stores/apiKey'
-import type { EdgeUsageStats, NodePair } from '@/stores/trafficAnalysis'
+import type { EdgeUsageStats } from '@/stores/trafficAnalysis'
 
 const isDev = import.meta.env.DEV
 
@@ -81,24 +81,6 @@ export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[
   }
 }
 
-export async function generateRandomPairs(
-  count: number = 500,
-  seed?: number,
-  radiusKm: number = 1
-): Promise<NodePair[]> {
-  const response = await fetch(`${API_BASE_URL}/random-pairs`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ count, seed, radius_km: radiusKm })
-  })
-  if (!response.ok) {
-    throw new Error('Failed to generate random pairs')
-  }
-  return response.json()
-}
-
 export interface ImpactStatistics {
   total_routes: number
   affected_routes: number
@@ -113,10 +95,7 @@ export interface ImpactStatistics {
   avg_time_increase_percent: number
 }
 
-export async function recalculateRoutes(
-  pairs: NodePair[],
-  edgesToRemove: { u: number; v: number }[]
-): Promise<{
+export async function recalculateRoutes(edgesToRemove: { u: number; v: number }[]): Promise<{
   removed_edges: { u: number; v: number }[]
   original_edge_usage: EdgeUsageStats[]
   new_edge_usage: EdgeUsageStats[]
@@ -128,7 +107,6 @@ export async function recalculateRoutes(
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      pairs,
       edges_to_remove: edgesToRemove,
       weight: 'travel_time',
       include_geometry: false

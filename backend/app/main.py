@@ -27,6 +27,11 @@ async def lifespan(app: FastAPI):
         print(f"Loading graph from: {full_path}")
         routes.graph_service.load_graph(str(full_path))
         print("Graph loaded successfully")
+
+        # Generate default OD pairs and pre-calculate routes
+        print("Initializing default routes...")
+        await routes.graph_service.initialize_default_routes(count=1000, radius_km=4.0, seed=42)
+        print("Default routes initialized")
     else:
         print(f"Warning: Graph file not found at {full_path}")
         print("API will be available but route endpoints will fail")

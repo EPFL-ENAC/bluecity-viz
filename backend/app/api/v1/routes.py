@@ -69,9 +69,10 @@ async def calculate_routes(request: RouteRequest):
 async def recalculate_routes(request: RecalculateRequest):
     """
     Recalculate shortest paths after removing specified edges.
+    Uses default pre-calculated pairs if none provided in request.
 
     Args:
-        request: Recalculation request with edges to remove and route pairs
+        request: Recalculation request with edges to remove and optional route pairs
 
     Returns:
         Original and recalculated routes with comparison data
