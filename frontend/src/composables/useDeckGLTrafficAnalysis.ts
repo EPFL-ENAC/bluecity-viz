@@ -38,7 +38,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   // Animation state for TripsLayer
   const animationTime = ref(0)
   const animationLoop = ref<number | null>(null)
-  const trailLength = 20 // seconds (short trail for fast disappearing)
+  const trailLength = 40 // seconds (longer trail for better visibility)
   const loopLength = 300 // 5 minutes in seconds for fast cycles
 
   // Get store instance
@@ -284,6 +284,14 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
 
     console.log(`[DEBUG] Visualizing ${routes.length} routes with TripsLayer`)
 
+    // Log first route geometry for debugging
+    if (routes.length > 0 && routes[0].geometry) {
+      console.log(
+        `[DEBUG] First route has ${routes[0].geometry.coordinates.length} coordinate points`
+      )
+      console.log(`[DEBUG] First 3 coordinates:`, routes[0].geometry.coordinates.slice(0, 3))
+    }
+
     // Prepare trips data for TripsLayer
     const trips = routes
       .filter(
@@ -312,7 +320,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
         const color = colorVariants[index % colorVariants.length]
 
         // Vary width slightly (6-10 pixels)
-        const width = 6 + (index % 5)
+        const width = 6 + (index % 10)
 
         return {
           path: coords,
@@ -331,8 +339,9 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       getPath: (d: any) => d.path,
       getTimestamps: (d: any) => d.timestamps,
       getColor: (d: any) => d.color,
-      opacity: 0.6,
-      widthMinPixels: 5,
+      getWidth: (d: any) => d.width,
+      opacity: 0.7,
+      widthMinPixels: 4,
       jointRounded: true,
       capRounded: true,
       trailLength: trailLength,
@@ -360,7 +369,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     const startTime = Date.now()
     const animate = () => {
       const elapsed = (Date.now() - startTime) / 1000 // seconds
-      animationTime.value = (elapsed * 60) % loopLength // Speed up by 60x for fast movement
+      animationTime.value = (elapsed * 40) % loopLength // Speed up by 40x for balanced movement
 
       // Update the trips layer with new time by recreating it
       const tripsLayerIndex = layers.value.findIndex((l) => l.id === 'traffic-routes-trips')

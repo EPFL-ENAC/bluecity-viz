@@ -188,25 +188,40 @@ class GraphService:
         }
 
     def _build_path_geometry(self, path: List[int]) -> PathGeometry:
-        """Build geometry for a path."""
+        """Build geometry for a path using actual road geometries from graph edges."""
         if not self.graph:
             return PathGeometry(coordinates=[])
 
         coordinates = []
+        edges_with_geometry = 0
+        edges_without_geometry = 0
+
         for i in range(len(path) - 1):
             u, v = path[i], path[i + 1]
             edge_data = self.graph.get_edge_data(u, v)
 
             if edge_data and "geometry" in edge_data:
+                # Extract coordinates from Shapely LineString geometry
                 coords = list(edge_data["geometry"].coords)
+                edges_with_geometry += 1
+
+                # Add all points for first edge, skip first point for subsequent edges to avoid duplication
                 if i == 0:
                     coordinates.extend([[lon, lat] for lon, lat in coords])
                 else:
                     coordinates.extend([[lon, lat] for lon, lat in coords[1:]])
             else:
+                # Fallback to straight line between nodes
+                edges_without_geometry += 1
                 if i == 0:
                     coordinates.append([self.graph.nodes[u]["x"], self.graph.nodes[u]["y"]])
                 coordinates.append([self.graph.nodes[v]["x"], self.graph.nodes[v]["y"]])
+
+        # Only log occasionally to avoid spam (e.g., first route)
+        if len(coordinates) > 0 and edges_with_geometry + edges_without_geometry <= 10:
+            print(
+                f"[GEOM] Built path with {len(coordinates)} points from {edges_with_geometry} edges with geometry, {edges_without_geometry} without"
+            )
 
         return PathGeometry(coordinates=coordinates)
 
