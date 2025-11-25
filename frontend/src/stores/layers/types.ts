@@ -20,7 +20,7 @@ export interface TrafficAnalysisState {
     co2_per_use?: number
   }>
   impactStatistics: any | null
-  activeVisualization: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta'
+  activeVisualization: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'routes'
 }
 
 // Investigation interface

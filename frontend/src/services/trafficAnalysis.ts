@@ -95,11 +95,25 @@ export interface ImpactStatistics {
   avg_time_increase_percent: number
 }
 
+export interface Route {
+  origin: number
+  destination: number
+  path: number[]
+  geometry?: {
+    coordinates: [number, number][]
+  }
+  travel_time?: number
+  distance?: number
+  elevation_gain?: number
+  co2_emissions?: number
+}
+
 export async function recalculateRoutes(edgesToRemove: { u: number; v: number }[]): Promise<{
   removed_edges: { u: number; v: number }[]
   original_edge_usage: EdgeUsageStats[]
   new_edge_usage: EdgeUsageStats[]
   impact_statistics: ImpactStatistics
+  routes: Route[]
 }> {
   const response = await fetch(`${API_BASE_URL}/recalculate`, {
     method: 'POST',
@@ -109,7 +123,7 @@ export async function recalculateRoutes(edgesToRemove: { u: number; v: number }[
     body: JSON.stringify({
       edges_to_remove: edgesToRemove,
       weight: 'travel_time',
-      include_geometry: false
+      include_geometry: true // Request geometry for trips visualization
     })
   })
   if (!response.ok) {

@@ -1,9 +1,10 @@
 import { fetchEdgeGeometries, type EdgeGeometry } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { PathStyleExtension } from '@deck.gl/extensions'
+import { TripsLayer } from '@deck.gl/geo-layers'
 import { GeoJsonLayer, PathLayer } from '@deck.gl/layers'
 import type { Ref } from 'vue'
-import { shallowRef } from 'vue'
+import { ref, shallowRef } from 'vue'
 
 interface EdgeUsageStats {
   u: number
@@ -33,6 +34,12 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   const edgeGeometries = shallowRef<EdgeGeometry[]>([])
   const removedEdgesSet = shallowRef<Set<string>>(new Set())
   let edgeClickCallback: ((u: number, v: number, name?: string) => void) | null = null
+
+  // Animation state for TripsLayer
+  const animationTime = ref(0)
+  const animationLoop = ref<number | null>(null)
+  const trailLength = 20 // seconds (short trail for fast disappearing)
+  const loopLength = 300 // 5 minutes in seconds for fast cycles
 
   // Get store instance
   const trafficStore = useTrafficAnalysisStore()
@@ -194,6 +201,12 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     // Determine which value to use for coloring based on active visualization
     const activeMode = trafficStore.activeVisualization
 
+    // Handle routes visualization separately with TripsLayer
+    if (activeMode === 'routes') {
+      visualizeRoutes()
+      return
+    }
+
     // Create outline layer
     const outlineLayer = new PathLayer({
       id: 'traffic-routes-outline',
@@ -250,9 +263,122 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
    * Clear all route visualizations
    */
   function clearRoutes(): void {
+    // Stop animation if running
+    if (animationLoop.value !== null) {
+      cancelAnimationFrame(animationLoop.value)
+      animationLoop.value = null
+    }
+    animationTime.value = 0
+
     // Keep only the base graph edges and removed edges layers
     const removedLayer = layers.value.find((l) => l.id === 'traffic-removed-edges')
     layers.value = [baseLayer, removedLayer].filter(Boolean)
+  }
+
+  /**
+   * Visualize routes as animated trips using TripsLayer
+   */
+  function visualizeRoutes(): void {
+    const routes = trafficStore.routes
+    if (!routes || routes.length === 0) return
+
+    console.log(`[DEBUG] Visualizing ${routes.length} routes with TripsLayer`)
+
+    // Prepare trips data for TripsLayer
+    const trips = routes
+      .filter(
+        (route: any) =>
+          route.geometry && route.geometry.coordinates && route.geometry.coordinates.length > 0
+      )
+      .map((route: any, index: number) => {
+        const coords = route.geometry.coordinates
+        const travelTime = route.travel_time || 300 // Default 5 minutes if not specified
+
+        // Create timestamps for each coordinate point
+        // Spread them evenly across the travel time with some offset for variety
+        const timeOffset = (index % 10) * 5 // Stagger routes slightly
+        const timestamps = coords.map((_: any, i: number) => {
+          return timeOffset + (i / (coords.length - 1)) * travelTime
+        })
+
+        // Vary colors using a vibrant palette for visual multiplicity
+        const colorVariants = [
+          [255, 107, 107], // Coral Red
+          [78, 205, 196], // Turquoise
+          [255, 195, 113], // Warm Yellow
+          [162, 155, 254], // Soft Purple
+          [255, 121, 198] // Hot Pink
+        ]
+        const color = colorVariants[index % colorVariants.length]
+
+        // Vary width slightly (6-10 pixels)
+        const width = 6 + (index % 5)
+
+        return {
+          path: coords,
+          timestamps: timestamps,
+          color: color,
+          width: width
+        }
+      })
+
+    console.log(`[DEBUG] Prepared ${trips.length} trips for visualization`)
+
+    // Create TripsLayer
+    const tripsLayer = new TripsLayer({
+      id: 'traffic-routes-trips',
+      data: trips,
+      getPath: (d: any) => d.path,
+      getTimestamps: (d: any) => d.timestamps,
+      getColor: (d: any) => d.color,
+      opacity: 0.6,
+      widthMinPixels: 5,
+      jointRounded: true,
+      capRounded: true,
+      trailLength: trailLength,
+      currentTime: animationTime.value,
+      shadowEnabled: false
+    })
+
+    // Update layers
+    const removedLayer = layers.value.find((l) => l.id === 'traffic-removed-edges')
+    layers.value = [baseLayer, tripsLayer, ...(removedLayer ? [removedLayer] : [])].filter(Boolean)
+
+    // Start animation loop
+    startAnimation()
+  }
+
+  /**
+   * Start the animation loop for TripsLayer
+   */
+  function startAnimation(): void {
+    // Stop existing animation if any
+    if (animationLoop.value !== null) {
+      cancelAnimationFrame(animationLoop.value)
+    }
+
+    const startTime = Date.now()
+    const animate = () => {
+      const elapsed = (Date.now() - startTime) / 1000 // seconds
+      animationTime.value = (elapsed * 60) % loopLength // Speed up by 60x for fast movement
+
+      // Update the trips layer with new time by recreating it
+      const tripsLayerIndex = layers.value.findIndex((l) => l.id === 'traffic-routes-trips')
+      if (tripsLayerIndex !== -1) {
+        const oldLayer = layers.value[tripsLayerIndex]
+        // Create new layer with updated currentTime
+        const newLayer = oldLayer.clone({ currentTime: animationTime.value })
+        layers.value = [
+          ...layers.value.slice(0, tripsLayerIndex),
+          newLayer,
+          ...layers.value.slice(tripsLayerIndex + 1)
+        ]
+      }
+
+      animationLoop.value = requestAnimationFrame(animate)
+    }
+
+    animationLoop.value = requestAnimationFrame(animate)
   }
 
   /**

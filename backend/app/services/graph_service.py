@@ -761,11 +761,13 @@ class GraphService:
         print(f"[IMPACT] Avg CO2 increase: {avg_co2_increase_grams:.2f} grams")
         print(f"[PERF] ===== Total recalculate took {total_time:.2f}s =====")
 
+        # Return routes for visualization (use complete_new_routes which includes both original and recalculated)
         return RecalculateResponse(
             removed_edges=removed,
             original_edge_usage=original_edge_usage,
             new_edge_usage=new_edge_usage,
             impact_statistics=impact_stats,
+            routes=complete_new_routes,  # Return all routes for trips visualization
         )
 
     def get_graph_data(self) -> GraphData:

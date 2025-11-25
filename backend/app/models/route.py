@@ -164,6 +164,9 @@ class RecalculateResponse(BaseModel):
     impact_statistics: ImpactStatistics = Field(
         ..., description="Aggregate statistics about the impact of removed edges"
     )
+    routes: List[Route] = Field(
+        default_factory=list, description="Calculated routes with paths for visualization"
+    )
 
 
 class GraphEdge(BaseModel):

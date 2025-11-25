@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { recalculateRoutes } from '@/services/trafficAnalysis'
@@ -9,7 +9,6 @@ import {
   mdiChevronRight,
   mdiRadioboxMarked,
   mdiRadioboxBlank,
-  mdiRefresh,
   mdiCalculator,
   mdiDelete,
   mdiClose
@@ -96,10 +95,11 @@ async function calculateRoutes() {
     trafficStore.setEdgeUsage(
       result.original_edge_usage,
       result.new_edge_usage,
-      result.impact_statistics
+      result.impact_statistics,
+      result.routes
     )
     console.log(
-      `Original: ${result.original_edge_usage.length} edges, New: ${result.new_edge_usage.length} edges`
+      `Original: ${result.original_edge_usage.length} edges, New: ${result.new_edge_usage.length} edges, Routes: ${result.routes.length}`
     )
   } catch (error) {
     console.error('Failed to calculate routes:', error)
@@ -196,19 +196,6 @@ watch(
       </div>
       <v-expand-transition>
         <div v-show="trafficExpanded" class="section-content">
-          <!-- Regenerate Pairs -->
-          <div class="mb-3">
-            <v-btn
-              block
-              variant="outlined"
-              :prepend-icon="mdiRefresh"
-              :disabled="trafficStore.isLoading"
-              @click="shufflePairs"
-            >
-              Generate New OD
-            </v-btn>
-          </div>
-
           <!-- Removed Edges -->
           <div class="mb-3">
             <div class="d-flex align-center justify-space-between mb-2">
