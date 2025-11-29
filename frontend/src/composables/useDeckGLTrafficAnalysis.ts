@@ -40,7 +40,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   const animationTime = ref(0)
   const animationLoop = ref<number | null>(null)
   const trailLength = 40 // seconds (longer trail for better visibility)
-  const loopLength = 300 // 5 minutes in seconds for fast cycles
+  const loopLength = ref<number>(1000)
 
   // Get store instance
   const trafficStore = useTrafficAnalysisStore()
@@ -281,75 +281,82 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     if (!routes || routes.length === 0) return
 
     console.log(`[DEBUG] Visualizing ${routes.length} routes with TripsLayer`)
+    let maxTimeTravel = 0
 
     // Prepare trips data for TripsLayer
-    const trips = routes
-      .map((route: Route, index: number) => {
-        // Convert path (list of node IDs) to list of edges
-        const nodeIds = route.path
-        if (nodeIds.length < 2) return null
+    const trips = routes.map((route: Route, index: number) => {
+      // Convert path (list of node IDs) to list of edges
+      const nodeIds = route.path
+      if (nodeIds.length < 2) return null
 
-        // Build edges from consecutive node pairs
-        const edges: Array<{ u: number; v: number }> = []
-        for (let i = 0; i < nodeIds.length - 1; i++) {
-          edges.push({ u: nodeIds[i], v: nodeIds[i + 1] })
+      // Build edges from consecutive node pairs
+      const edges: Array<{ u: number; v: number }> = []
+      for (let i = 0; i < nodeIds.length - 1; i++) {
+        edges.push({ u: nodeIds[i], v: nodeIds[i + 1] })
+      }
+
+      // Aggregate coordinates and timestamps from all edges
+      const coords: number[][] = []
+      const timestamps: number[] = []
+      let accumulatedTime = 0
+
+      // Add time offset for visual staggering
+      const timeOffset = (index % 20) * 20
+      const randomOffsetWidth = 0.0005 * (Math.random() - 0.5) // Small random offset to avoid exact overlaps
+      const randomOffsetHeight = 0.0005 * (Math.random() - 0.5) // Small random offset to avoid exact overlaps
+
+      for (const edge of edges) {
+        const edgeData = edgeMap.value.get(`${edge.u}-${edge.v}`)
+        if (!edgeData) continue
+
+        const edgeCoords = edgeData.coordinates
+        const edgeTravelTime = edgeData.travel_time || 10 // Default 10s if not specified
+        const numPoints = edgeCoords.length
+
+        // For each coordinate in this edge, calculate its timestamp
+        for (let i = 0; i < numPoints; i++) {
+          // Skip first point of subsequent edges to avoid duplicates
+          if (coords.length > 0 && i === 0) continue
+
+          coords.push([edgeCoords[i][0] + randomOffsetWidth, edgeCoords[i][1] + randomOffsetHeight])
+          // Timestamp increases proportionally within the edge
+          const pointTime = accumulatedTime + (i / Math.max(1, numPoints - 1)) * edgeTravelTime
+          timestamps.push(timeOffset + pointTime)
         }
 
-        // Aggregate coordinates and timestamps from all edges
-        const coords: number[][] = []
-        const timestamps: number[] = []
-        let accumulatedTime = 0
+        accumulatedTime += edgeTravelTime
+      }
 
-        // Add time offset for visual staggering
-        const timeOffset = (index % 20) * 15 // Stagger routes more
+      if (coords.length === 0) return null
 
-        for (const edge of edges) {
-          const edgeData = edgeMap.value.get(`${edge.u}-${edge.v}`)
-          if (!edgeData) continue
+      // Vary colors using a vibrant palette for visual multiplicity
+      const colorVariants = [
+        [255, 107, 107], // Coral Red
+        [78, 205, 196], // Turquoise
+        [255, 195, 113], // Warm Yellow
+        [162, 155, 254], // Soft Purple
+        [255, 121, 198] // Hot Pink
+      ]
+      const color = colorVariants[index % colorVariants.length]
 
-          const edgeCoords = edgeData.coordinates
-          const edgeTravelTime = edgeData.travel_time || 10 // Default 10s if not specified
-          const numPoints = edgeCoords.length
+      // Vary width slightly (4-8 pixels)
+      const width = 4 + (index % 5)
 
-          // For each coordinate in this edge, calculate its timestamp
-          for (let i = 0; i < numPoints; i++) {
-            // Skip first point of subsequent edges to avoid duplicates
-            if (coords.length > 0 && i === 0) continue
+      maxTimeTravel = Math.max(maxTimeTravel, accumulatedTime)
 
-            coords.push(edgeCoords[i])
-            // Timestamp increases proportionally within the edge
-            const pointTime = accumulatedTime + (i / Math.max(1, numPoints - 1)) * edgeTravelTime
-            timestamps.push(timeOffset + pointTime)
-          }
+      return {
+        path: coords,
+        timestamps: timestamps,
+        color: color,
+        width: width
+      }
+    })
 
-          accumulatedTime += edgeTravelTime
-        }
+    loopLength.value = maxTimeTravel
 
-        if (coords.length === 0) return null
-
-        // Vary colors using a vibrant palette for visual multiplicity
-        const colorVariants = [
-          [255, 107, 107], // Coral Red
-          [78, 205, 196], // Turquoise
-          [255, 195, 113], // Warm Yellow
-          [162, 155, 254], // Soft Purple
-          [255, 121, 198] // Hot Pink
-        ]
-        const color = colorVariants[index % colorVariants.length]
-
-        // Vary width slightly (4-8 pixels)
-        const width = 4 + (index % 5)
-
-        return {
-          path: coords,
-          timestamps: timestamps,
-          color: color,
-          width: width
-        }
-      })
-      .filter(Boolean)
-
-    console.log(`[DEBUG] Prepared ${trips.length} trips for visualization`)
+    console.log(
+      `[DEBUG] Prepared ${trips.length} trips for visualization with animation time ${loopLength.value}`
+    )
     if (trips.length > 0) {
       const firstTrip = trips[0] as any
       console.log(
@@ -398,7 +405,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     const startTime = Date.now()
     const animate = () => {
       const elapsed = (Date.now() - startTime) / 1000 // seconds
-      animationTime.value = (elapsed * 40) % loopLength // Speed up by 40x for balanced movement
+      animationTime.value = (elapsed * 40) % loopLength.value // Speed up by 40x for balanced movement
 
       // Update the trips layer with new time by recreating it
       const tripsLayerIndex = layers.value.findIndex((l) => l.id === 'traffic-routes-trips')
