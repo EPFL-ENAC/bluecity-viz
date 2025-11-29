@@ -31,7 +31,6 @@ class Route(BaseModel):
     origin: int
     destination: int
     path: List[int] = Field(..., description="List of node IDs in the path")
-    geometry: Optional[PathGeometry] = None
     travel_time: Optional[float] = Field(None, description="Total travel time in seconds")
     distance: Optional[float] = Field(None, description="Total distance in meters")
     elevation_gain: Optional[float] = Field(None, description="Total elevation gain in meters")
@@ -43,7 +42,7 @@ class RouteRequest(BaseModel):
 
     pairs: List[NodePair] = Field(..., description="List of origin-destination pairs")
     weight: str = Field(default="travel_time", description="Edge weight attribute")
-    include_geometry: bool = Field(default=True, description="Include path geometry")
+    include_geometry: bool = Field(default=False, description="Include path geometry")
 
 
 class RouteResponse(BaseModel):
@@ -62,7 +61,7 @@ class RecalculateRequest(BaseModel):
         default_factory=list, description="Edges to remove from graph"
     )
     weight: str = Field(default="travel_time", description="Edge weight attribute")
-    include_geometry: bool = Field(default=True, description="Include path geometry")
+    include_geometry: bool = Field(default=False, description="Include path geometry")
 
 
 class RouteComparison(BaseModel):

@@ -68,10 +68,12 @@ class GraphService:
 
         # Add/recalculate speeds if missing or invalid
         if edges_with_speed < total_edges * 0.9:
+            print(f"[WARNING] Graph doesn't have fully populated edge speeds")
             self.graph = ox.routing.add_edge_speeds(self.graph)
 
         # Add/recalculate travel times if missing or invalid
         if edges_with_time < total_edges * 0.9:
+            print(f"[WARNING] Graph doesn't have fully populated edge travel times")
             self.graph = ox.routing.add_edge_travel_times(self.graph)
 
         print(f"Loaded graph: {len(self.graph.nodes)} nodes, {len(self.graph.edges)} edges")
@@ -447,7 +449,6 @@ class GraphService:
                 continue
 
             try:
-                geometry = self._build_path_geometry(path)
                 metrics = self._calculate_route_metrics(path, weight)
 
                 # Calculate CO2 emissions
@@ -457,7 +458,6 @@ class GraphService:
                     origin=pair.origin,
                     destination=pair.destination,
                     path=path,
-                    geometry=geometry,
                     travel_time=metrics["travel_time"],
                     distance=metrics["distance"],
                     elevation_gain=metrics["elevation_gain"],

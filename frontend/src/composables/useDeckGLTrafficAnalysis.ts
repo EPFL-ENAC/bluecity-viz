@@ -1,4 +1,4 @@
-import { fetchEdgeGeometries, type EdgeGeometry } from '@/services/trafficAnalysis'
+import { fetchEdgeGeometries, type EdgeGeometry, type Route } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { PathStyleExtension } from '@deck.gl/extensions'
 import { TripsLayer } from '@deck.gl/geo-layers'
@@ -19,7 +19,7 @@ interface DeckGLTrafficAnalysisReturn {
   layers: Ref<any[]>
   loadGraphEdges: () => Promise<void>
   updateRemovedEdges: (removedEdges: { u: number; v: number }[]) => void
-  visualizeEdgeUsage: (originalUsage: EdgeUsageStats[], newUsage: EdgeUsageStats[]) => void
+  visualizeEdgeUsage: (newUsage: EdgeUsageStats[]) => void
   clearRoutes: () => void
   handleClick: (info: any) => void
   setEdgeClickCallback: (callback: (u: number, v: number, name?: string) => void) => void
@@ -32,6 +32,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   // Use shallowRef for large arrays to avoid deep reactivity overhead
   const layers = shallowRef<any[]>([])
   const edgeGeometries = shallowRef<EdgeGeometry[]>([])
+  const edgeMap = shallowRef<Map<string, EdgeGeometry>>(new Map())
   const removedEdgesSet = shallowRef<Set<string>>(new Set())
   let edgeClickCallback: ((u: number, v: number, name?: string) => void) | null = null
 
@@ -57,6 +58,9 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       // Always load edge geometries fresh (don't cache in store)
       const edges = await fetchEdgeGeometries()
       edgeGeometries.value = edges
+      edgeGeometries.value.forEach((edge) => {
+        edgeMap.value.set(`${edge.u}-${edge.v}`, edge)
+      })
 
       console.log(`Loaded ${edges.length} edge geometries`)
 
@@ -144,23 +148,17 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   /**
    * Visualize edge usage statistics using delta frequency for color coding
    */
-  function visualizeEdgeUsage(originalUsage: EdgeUsageStats[], newUsage: EdgeUsageStats[]): void {
+  function visualizeEdgeUsage(newUsage: EdgeUsageStats[]): void {
     clearRoutes()
 
     console.log('[DEBUG] visualizeEdgeUsage called')
     console.log('[DEBUG] newUsage length:', newUsage.length)
     console.log('[DEBUG] First 3 newUsage entries:', newUsage.slice(0, 3))
 
-    // Build lookup map for edges
-    const edgeMap = new Map<string, EdgeGeometry>()
-    edgeGeometries.value.forEach((edge) => {
-      edgeMap.set(`${edge.u}-${edge.v}`, edge)
-    })
-
     // Use new usage stats (which include delta_count and co2_per_use)
     const edgesWithStats = newUsage
       .map((stat) => {
-        const edge = edgeMap.get(`${stat.u}-${stat.v}`)
+        const edge = edgeMap.value.get(`${stat.u}-${stat.v}`)
         return edge
           ? {
               ...edge,
@@ -284,30 +282,50 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
 
     console.log(`[DEBUG] Visualizing ${routes.length} routes with TripsLayer`)
 
-    // Log first route geometry for debugging
-    if (routes.length > 0 && routes[0].geometry) {
-      console.log(
-        `[DEBUG] First route has ${routes[0].geometry.coordinates.length} coordinate points`
-      )
-      console.log(`[DEBUG] First 3 coordinates:`, routes[0].geometry.coordinates.slice(0, 3))
-    }
-
     // Prepare trips data for TripsLayer
     const trips = routes
-      .filter(
-        (route: any) =>
-          route.geometry && route.geometry.coordinates && route.geometry.coordinates.length > 0
-      )
-      .map((route: any, index: number) => {
-        const coords = route.geometry.coordinates
-        const travelTime = route.travel_time || 300 // Default 5 minutes if not specified
+      .map((route: Route, index: number) => {
+        // Convert path (list of node IDs) to list of edges
+        const nodeIds = route.path
+        if (nodeIds.length < 2) return null
 
-        // Create timestamps for each coordinate point
-        // Spread them evenly across the travel time with some offset for variety
-        const timeOffset = (index % 10) * 5 // Stagger routes slightly
-        const timestamps = coords.map((_: any, i: number) => {
-          return timeOffset + (i / (coords.length - 1)) * travelTime
-        })
+        // Build edges from consecutive node pairs
+        const edges: Array<{ u: number; v: number }> = []
+        for (let i = 0; i < nodeIds.length - 1; i++) {
+          edges.push({ u: nodeIds[i], v: nodeIds[i + 1] })
+        }
+
+        // Aggregate coordinates and timestamps from all edges
+        const coords: number[][] = []
+        const timestamps: number[] = []
+        let accumulatedTime = 0
+
+        // Add time offset for visual staggering
+        const timeOffset = (index % 20) * 15 // Stagger routes more
+
+        for (const edge of edges) {
+          const edgeData = edgeMap.value.get(`${edge.u}-${edge.v}`)
+          if (!edgeData) continue
+
+          const edgeCoords = edgeData.coordinates
+          const edgeTravelTime = edgeData.travel_time || 10 // Default 10s if not specified
+          const numPoints = edgeCoords.length
+
+          // For each coordinate in this edge, calculate its timestamp
+          for (let i = 0; i < numPoints; i++) {
+            // Skip first point of subsequent edges to avoid duplicates
+            if (coords.length > 0 && i === 0) continue
+
+            coords.push(edgeCoords[i])
+            // Timestamp increases proportionally within the edge
+            const pointTime = accumulatedTime + (i / Math.max(1, numPoints - 1)) * edgeTravelTime
+            timestamps.push(timeOffset + pointTime)
+          }
+
+          accumulatedTime += edgeTravelTime
+        }
+
+        if (coords.length === 0) return null
 
         // Vary colors using a vibrant palette for visual multiplicity
         const colorVariants = [
@@ -319,8 +337,8 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
         ]
         const color = colorVariants[index % colorVariants.length]
 
-        // Vary width slightly (6-10 pixels)
-        const width = 6 + (index % 10)
+        // Vary width slightly (4-8 pixels)
+        const width = 4 + (index % 5)
 
         return {
           path: coords,
@@ -329,8 +347,19 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
           width: width
         }
       })
+      .filter(Boolean)
 
     console.log(`[DEBUG] Prepared ${trips.length} trips for visualization`)
+    if (trips.length > 0) {
+      const firstTrip = trips[0] as any
+      console.log(
+        `[DEBUG] First trip: ${
+          firstTrip.path.length
+        } coords, timestamps range: ${firstTrip.timestamps[0].toFixed(1)} - ${firstTrip.timestamps[
+          firstTrip.timestamps.length - 1
+        ].toFixed(1)}`
+      )
+    }
 
     // Create TripsLayer
     const tripsLayer = new TripsLayer({

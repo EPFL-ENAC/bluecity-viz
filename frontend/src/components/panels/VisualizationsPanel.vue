@@ -78,7 +78,7 @@ watch(
     if (trafficStore.isRestoring) return // Skip during batch restore
 
     if (originalUsage.length > 0 && trafficStore.isOpen && activeVis !== 'none') {
-      deckGLTraffic.visualizeEdgeUsage(originalUsage, newUsage)
+      deckGLTraffic.visualizeEdgeUsage(newUsage)
     } else if (activeVis === 'none') {
       deckGLTraffic.clearRoutes()
     }
@@ -102,7 +102,7 @@ watch(
 
         // Update traffic visualization
         if (originalUsage.length > 0 && activeVis !== 'none') {
-          deckGLTraffic.visualizeEdgeUsage(originalUsage, newUsage)
+          deckGLTraffic.visualizeEdgeUsage(newUsage)
         } else if (activeVis === 'none') {
           deckGLTraffic.clearRoutes()
         }

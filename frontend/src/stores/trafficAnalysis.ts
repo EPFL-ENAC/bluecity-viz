@@ -29,6 +29,16 @@ export interface EdgeUsageStats {
   co2_per_use?: number
 }
 
+export interface Route {
+  origin: number
+  destination: number
+  path: number[]
+  travel_time?: number
+  distance?: number
+  elevation_gain?: number
+  co2_emissions?: number
+}
+
 export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // State
   const isOpen = ref(false)
@@ -41,7 +51,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const originalEdgeUsage = shallowRef<EdgeUsageStats[]>([])
   const newEdgeUsage = shallowRef<EdgeUsageStats[]>([])
   const impactStatistics = ref<ImpactStatistics | null>(null)
-  const routes = shallowRef<any[]>([]) // Store calculated routes for trips visualization
+  const routes = shallowRef<Route[]>([]) // Store calculated routes for trips visualization
 
   // Visualization state
   const legendMode = ref<LegendMode>('none')
@@ -231,7 +241,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     original: EdgeUsageStats[],
     newUsage: EdgeUsageStats[],
     impact?: ImpactStatistics,
-    calculatedRoutes?: any[]
+    calculatedRoutes?: Route[]
   ) {
     originalEdgeUsage.value = original
     newEdgeUsage.value = newUsage
