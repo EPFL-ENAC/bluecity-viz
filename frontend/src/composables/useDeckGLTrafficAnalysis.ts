@@ -286,6 +286,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     }
 
     // Create hull outline data - compute offset paths for each edge
+    // Hull width in meters - will scale naturally with zoom
     const hullWidth = 8 // meters
     const hullPathsData: Array<{ path: number[][]; color: [number, number, number, number] }> = []
 
@@ -296,14 +297,17 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       hullPathsData.push({ path: rightPath, color })
     }
 
-    // Create hull outline layer with thin dashed lines
+    // Create hull outline layer with dashed lines
+    // Use meters for width so it scales with zoom
     const hullOutlineLayer = new PathLayer({
       id: 'traffic-modified-edges-hull',
       data: hullPathsData,
       getPath: (d: any) => d.path,
       getColor: (d: any) => d.color,
-      getWidth: 3,
-      widthUnits: 'pixels',
+      getWidth: 2, // meters
+      widthUnits: 'meters',
+      widthMinPixels: 2,
+      widthMaxPixels: 8,
       getDashArray: [6, 4],
       dashJustified: true,
       pickable: false,
@@ -338,12 +342,14 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       data: endCapData,
       getPath: (d: any) => d.path,
       getColor: (d: any) => d.color,
-      getWidth: 3,
-      widthUnits: 'pixels',
+      getWidth: 2, // meters - same as hull outline
+      widthUnits: 'meters',
+      widthMinPixels: 2,
+      widthMaxPixels: 8,
       pickable: false
     })
 
-    // Prepare data for speed limit icons (only for speed modifications, not removals)
+    // Prepare data for speed limit icons (for speed modifications)
     // European speed limit signs: white circle with red border, black text
     const speedLimitData = modifiedEdgeData
       .filter((d) => d.action !== 'remove')
@@ -351,6 +357,13 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
         position: getPathMidpoint(d.coordinates),
         text: SPEED_LIMIT_TEXT[d.action],
         action: d.action
+      }))
+
+    // Prepare data for removed edge icons (black circle with white X)
+    const removedEdgeData = modifiedEdgeData
+      .filter((d) => d.action === 'remove')
+      .map((d) => ({
+        position: getPathMidpoint(d.coordinates)
       }))
 
     // Create text layer for speed limit icons (European style: white bg, red border, black text)
@@ -376,11 +389,41 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       pickable: false
     })
 
+    // Create text layer for removed edge icons (black circle with white X - "no entry" style)
+    const removedEdgeLayer = new TextLayer({
+      id: 'traffic-modified-edges-removed-icons',
+      data: removedEdgeData,
+      getPosition: (d: any) => d.position,
+      getText: () => '✕',
+      getColor: [255, 255, 255, 255], // White X
+      getSize: 12,
+      fontWeight: 'bold',
+      getBackgroundColor: [0, 0, 0, 255], // Black background
+      background: true,
+      backgroundPadding: [6, 6, 6, 6],
+      backgroundBorderRadius: 30, // Circular
+      getBorderColor: [0, 0, 0, 255], // Black border
+      getBorderWidth: 2,
+      getTextAnchor: 'middle',
+      getAlignmentBaseline: 'center',
+      fontFamily: 'Arial, sans-serif',
+      billboard: true,
+      sizeUnits: 'pixels',
+      pickable: false
+    })
+
     // Keep route layers if they exist
     const routeLayers = layers.value.filter((l) => l.id.startsWith('traffic-routes'))
 
-    // Stack: base → routes → hull outline → end caps → speed icons
-    layers.value = [baseLayer, ...routeLayers, hullOutlineLayer, endCapsLayer, speedLimitLayer]
+    // Stack: base → routes → hull outline → end caps → speed icons → removed icons
+    layers.value = [
+      baseLayer,
+      ...routeLayers,
+      hullOutlineLayer,
+      endCapsLayer,
+      speedLimitLayer,
+      removedEdgeLayer
+    ]
   }
 
   /**
