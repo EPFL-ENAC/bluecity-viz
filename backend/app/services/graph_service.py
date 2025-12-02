@@ -129,6 +129,7 @@ class GraphService:
                     "coordinates": coords,
                     "travel_time": data.get("travel_time"),
                     "length": data.get("length"),
+                    "speed_kph": data.get("speed_kph"),
                     "name": name,
                     "highway": highway,
                 }
@@ -210,28 +211,42 @@ class GraphService:
         else:
             original_routes = self.route_cache[pairs_key]
 
-        modified_set = {(m.u, m.v) for m in edge_modifications}
-        affected_indices = find_affected_routes(original_routes, modified_set)
-
-        # Create modified graph and apply modifications
+        # Create modified graph and apply only effective modifications
         G_mod = self.graph.copy()
         applied = []
+        effective_modified_set = set()  # Only edges that actually change
+
         for mod in edge_modifications:
             if not G_mod.has_edge(mod.u, mod.v):
                 continue
-            applied.append(mod)
+
             if mod.action == "remove":
                 G_mod.remove_edge(mod.u, mod.v)
+                applied.append(mod)
+                effective_modified_set.add((mod.u, mod.v))
+
             elif mod.action == "modify" and mod.speed_kph is not None:
-                # Update speed and recalculate travel_time
+                # Check if speed actually changes before applying
                 edge_data = G_mod.get_edge_data(mod.u, mod.v)
                 if isinstance(edge_data, dict) and 0 in edge_data:
                     edge_data = edge_data[0]
+
+                current_speed = edge_data.get("speed_kph", 0)
+                # Skip if speed is already the same (within tolerance)
+                if abs(current_speed - mod.speed_kph) < 0.1:
+                    continue
+
+                # Apply the modification
                 length = edge_data.get("length", 0)
                 edge_data["speed_kph"] = mod.speed_kph
                 edge_data["travel_time"] = (
                     (length / 1000) / (mod.speed_kph / 3600) if mod.speed_kph > 0 else 0
                 )
+                applied.append(mod)
+                effective_modified_set.add((mod.u, mod.v))
+
+        # Recalculate affected indices based on actually modified edges
+        affected_indices = find_affected_routes(original_routes, effective_modified_set)
 
         # Recalculate affected routes
         new_routes_by_index = {}
