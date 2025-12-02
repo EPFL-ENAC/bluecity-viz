@@ -2,28 +2,28 @@
 
 from typing import List, Tuple
 
-from app.models.route import Edge, ImpactStatistics, Route, RouteComparison
+from app.models.route import EdgeModification, ImpactStatistics, Route, RouteComparison
 
 
-def find_affected_routes(
-    original_routes: List[Route], removed_edges_set: set
-) -> Tuple[List[int], List[Route]]:
-    """Find routes that pass through removed edges. Returns (indices, routes)."""
+def find_affected_routes(original_routes: List[Route], modified_edges_set: set) -> List[int]:
+    """Find routes that pass through modified edges. Returns indices."""
     indices = []
     for i, route in enumerate(original_routes):
         for j in range(len(route.path) - 1):
-            if (route.path[j], route.path[j + 1]) in removed_edges_set:
+            if (route.path[j], route.path[j + 1]) in modified_edges_set:
                 indices.append(i)
                 break
     return indices
 
 
-def find_removed_edge_on_path(route: Route, removed_edges: List[Edge]) -> Edge | None:
-    """Find which removed edge was on a route's original path."""
-    for edge in removed_edges:
+def find_modified_edge_on_path(
+    route: Route, modifications: List[EdgeModification]
+) -> EdgeModification | None:
+    """Find which modified edge was on a route's original path."""
+    for mod in modifications:
         for i in range(len(route.path) - 1):
-            if route.path[i] == edge.u and route.path[i + 1] == edge.v:
-                return edge
+            if route.path[i] == mod.u and route.path[i + 1] == mod.v:
+                return mod
     return None
 
 
@@ -65,7 +65,7 @@ def compute_impact_statistics(
     original_routes: List[Route],
     new_routes_by_index: dict,
     affected_indices: List[int],
-    removed_edges: List[Edge],
+    modifications: List[EdgeModification],
 ) -> Tuple[ImpactStatistics, List[RouteComparison]]:
     """Compute impact statistics and route comparisons."""
     total = len(original_routes)
@@ -121,7 +121,7 @@ def compute_impact_statistics(
                 destination=orig.destination,
                 original_route=orig,
                 new_route=new,
-                removed_edge_on_path=find_removed_edge_on_path(orig, removed_edges),
+                modified_edge_on_path=find_modified_edge_on_path(orig, modifications),
                 distance_delta=deltas["distance_delta"],
                 distance_delta_percent=deltas["distance_delta_percent"],
                 time_delta=deltas["time_delta"],

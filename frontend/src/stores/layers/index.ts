@@ -88,17 +88,18 @@ export const useLayersStore = defineStore('layers', () => {
   function getTrafficAnalysisState(): TrafficAnalysisState {
     const trafficStore = useTrafficAnalysisStore()
 
-    // Convert removed edges with names
-    const removedEdgesWithNames = Array.from(trafficStore.removedEdges).map((key) => {
-      const [u, v] = key.split('-').map(Number)
-      const name = trafficStore.removedEdgesWithNames?.get(key)
-      return { u, v, name }
-    })
+    // Convert edge modifications to serializable array
+    const edgeModificationsArray = Array.from(trafficStore.edgeModifications.entries()).map(
+      ([key, value]) => {
+        const [u, v] = key.split('-').map(Number)
+        return { u, v, action: value.action, name: value.name }
+      }
+    )
 
     // Convert to plain objects to avoid storing reactive proxies
     return {
       isOpen: trafficStore.isOpen,
-      removedEdges: removedEdgesWithNames,
+      edgeModifications: edgeModificationsArray,
       nodePairs: JSON.parse(JSON.stringify(trafficStore.nodePairs)),
       originalEdgeUsage: JSON.parse(JSON.stringify(trafficStore.originalEdgeUsage)),
       newEdgeUsage: JSON.parse(JSON.stringify(trafficStore.newEdgeUsage)),
@@ -229,7 +230,7 @@ export const useLayersStore = defineStore('layers', () => {
   watch(
     () => ({
       isOpen: trafficStore.isOpen,
-      removedEdgesSize: trafficStore.removedEdges.size,
+      edgeModificationsSize: trafficStore.edgeModifications.size,
       nodePairsLength: trafficStore.nodePairs.length,
       originalEdgeUsageLength: trafficStore.originalEdgeUsage.length,
       newEdgeUsageLength: trafficStore.newEdgeUsage.length,

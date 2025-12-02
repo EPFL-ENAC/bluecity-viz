@@ -39,7 +39,7 @@ function handleDeckClick(info: any) {
 // Setup edge click callback (always active when traffic panel is open)
 function setupEdgeClickCallback() {
   deckGLTraffic.setEdgeClickCallback((u, v, name) => {
-    trafficStore.toggleEdge(u, v, name)
+    trafficStore.cycleEdgeModification(u, v, name)
   })
 }
 
@@ -56,14 +56,15 @@ watch(
   }
 )
 
-// Watch for removed edges changes
+// Watch for edge modifications changes
 watch(
-  () => trafficStore.removedEdgesArray,
-  (removedEdges) => {
+  () => trafficStore.edgeModifications,
+  () => {
     if (trafficStore.isOpen && !trafficStore.isRestoring) {
-      deckGLTraffic.updateRemovedEdges(removedEdges)
+      deckGLTraffic.updateModifiedEdges()
     }
-  }
+  },
+  { deep: true }
 )
 
 // Watch for edge usage changes
@@ -94,11 +95,10 @@ watch(
       const originalUsage = trafficStore.originalEdgeUsage
       const newUsage = trafficStore.newEdgeUsage
       const activeVis = trafficStore.activeVisualization
-      const removedEdges = trafficStore.removedEdgesArray
 
       if (trafficStore.isOpen) {
-        // Update removed edges visualization
-        deckGLTraffic.updateRemovedEdges(removedEdges)
+        // Update modified edges visualization
+        deckGLTraffic.updateModifiedEdges()
 
         // Update traffic visualization
         if (originalUsage.length > 0 && activeVis !== 'none') {

@@ -9,7 +9,7 @@ from typing import List, Optional
 
 import osmnx as ox
 from app.models.route import (
-    Edge,
+    EdgeModification,
     GraphData,
     GraphEdge,
     NodePair,
@@ -185,20 +185,20 @@ class GraphService:
 
         return routes
 
-    async def recalculate_with_removed_edges(
+    async def recalculate_with_modifications(
         self,
         pairs: Optional[List[NodePair]] = None,
-        edges_to_remove: List[Edge] = None,
+        edge_modifications: List[EdgeModification] = None,
         weight: str = "travel_time",
     ) -> RecalculateResponse:
-        """Recalculate routes after removing specified edges."""
+        """Recalculate routes after applying edge modifications (remove or change speed)."""
         if not self.graph:
             raise RuntimeError("Graph not loaded")
 
         pairs = pairs or self.default_pairs
         if pairs is None:
             raise RuntimeError("No pairs available")
-        edges_to_remove = edges_to_remove or []
+        edge_modifications = edge_modifications or []
 
         pairs_key = tuple((p.origin, p.destination) for p in pairs)
 
@@ -210,14 +210,28 @@ class GraphService:
         else:
             original_routes = self.route_cache[pairs_key]
 
-        removed_set = {(e.u, e.v) for e in edges_to_remove}
-        affected_indices = find_affected_routes(original_routes, removed_set)
+        modified_set = {(m.u, m.v) for m in edge_modifications}
+        affected_indices = find_affected_routes(original_routes, modified_set)
 
-        # Create modified graph and remove edges
+        # Create modified graph and apply modifications
         G_mod = self.graph.copy()
-        removed = [e for e in edges_to_remove if G_mod.has_edge(e.u, e.v)]
-        for e in removed:
-            G_mod.remove_edge(e.u, e.v)
+        applied = []
+        for mod in edge_modifications:
+            if not G_mod.has_edge(mod.u, mod.v):
+                continue
+            applied.append(mod)
+            if mod.action == "remove":
+                G_mod.remove_edge(mod.u, mod.v)
+            elif mod.action == "modify" and mod.speed_kph is not None:
+                # Update speed and recalculate travel_time
+                edge_data = G_mod.get_edge_data(mod.u, mod.v)
+                if isinstance(edge_data, dict) and 0 in edge_data:
+                    edge_data = edge_data[0]
+                length = edge_data.get("length", 0)
+                edge_data["speed_kph"] = mod.speed_kph
+                edge_data["travel_time"] = (
+                    (length / 1000) / (mod.speed_kph / 3600) if mod.speed_kph > 0 else 0
+                )
 
         # Recalculate affected routes
         new_routes_by_index = {}
@@ -231,9 +245,9 @@ class GraphService:
                 if i < len(new_routes):
                     new_routes_by_index[idx] = new_routes[i]
 
-        # Compute impact stats (single calculation)
+        # Compute impact stats
         impact_stats, _ = compute_impact_statistics(
-            original_routes, new_routes_by_index, affected_indices, removed
+            original_routes, new_routes_by_index, affected_indices, applied
         )
 
         # Build complete routes list
@@ -241,13 +255,13 @@ class GraphService:
         for idx, route in new_routes_by_index.items():
             complete_routes[idx] = route
 
-        # Edge usage stats: calculate original counts once, reuse for delta
+        # Edge usage stats
         original_counts = count_edge_usage(original_routes)
         original_usage = build_edge_usage_stats(self.graph, original_routes, len(pairs))
         new_usage = build_edge_usage_stats(self.graph, complete_routes, len(pairs), original_counts)
 
         return RecalculateResponse(
-            removed_edges=removed,
+            applied_modifications=applied,
             original_edge_usage=original_usage,
             new_edge_usage=new_usage,
             impact_statistics=impact_stats,

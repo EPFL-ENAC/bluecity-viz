@@ -108,8 +108,15 @@ export interface Route {
   co2_emissions?: number
 }
 
-export async function recalculateRoutes(edgesToRemove: { u: number; v: number }[]): Promise<{
-  removed_edges: { u: number; v: number }[]
+export interface EdgeModification {
+  u: number
+  v: number
+  action: 'remove' | 'modify'
+  speed_kph?: number
+}
+
+export async function recalculateRoutes(edgeModifications: EdgeModification[]): Promise<{
+  applied_modifications: EdgeModification[]
   original_edge_usage: EdgeUsageStats[]
   new_edge_usage: EdgeUsageStats[]
   impact_statistics: ImpactStatistics
@@ -121,9 +128,9 @@ export async function recalculateRoutes(edgesToRemove: { u: number; v: number }[
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      edges_to_remove: edgesToRemove,
+      edge_modifications: edgeModifications,
       weight: 'travel_time',
-      include_geometry: true // Request geometry for trips visualization
+      include_geometry: true
     })
   })
   if (!response.ok) {

@@ -1,10 +1,18 @@
 import { fetchEdgeGeometries, type EdgeGeometry, type Route } from '@/services/trafficAnalysis'
-import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { useTrafficAnalysisStore, type ModificationAction } from '@/stores/trafficAnalysis'
 import { PathStyleExtension } from '@deck.gl/extensions'
 import { TripsLayer } from '@deck.gl/geo-layers'
 import { GeoJsonLayer, PathLayer } from '@deck.gl/layers'
 import type { Ref } from 'vue'
 import { ref, shallowRef } from 'vue'
+
+// Colors for different modification types
+const MODIFICATION_COLORS: Record<ModificationAction, [number, number, number, number]> = {
+  remove: [0, 0, 0, 180], // Black for removed
+  speed50: [220, 38, 38, 200], // Red for 10 km/h
+  speed30: [251, 146, 60, 200], // Orange for 30 km/h
+  speed10: [250, 204, 21, 200] // Yellow for 50 km/h
+}
 
 interface EdgeUsageStats {
   u: number
@@ -18,7 +26,7 @@ interface EdgeUsageStats {
 interface DeckGLTrafficAnalysisReturn {
   layers: Ref<any[]>
   loadGraphEdges: () => Promise<void>
-  updateRemovedEdges: (removedEdges: { u: number; v: number }[]) => void
+  updateModifiedEdges: () => void
   visualizeEdgeUsage: (newUsage: EdgeUsageStats[]) => void
   clearRoutes: () => void
   handleClick: (info: any) => void
@@ -33,7 +41,6 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   const layers = shallowRef<any[]>([])
   const edgeGeometries = shallowRef<EdgeGeometry[]>([])
   const edgeMap = shallowRef<Map<string, EdgeGeometry>>(new Map())
-  const removedEdgesSet = shallowRef<Set<string>>(new Set())
   let edgeClickCallback: ((u: number, v: number, name?: string) => void) | null = null
 
   // Animation state for TripsLayer
@@ -106,28 +113,40 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   }
 
   /**
-   * Update removed edges visualization
+   * Update modified edges visualization with colors based on modification type
    */
-  function updateRemovedEdges(removedEdges: { u: number; v: number }[]): void {
-    removedEdgesSet.value = new Set(removedEdges.map((e) => `${e.u}-${e.v}`))
-
+  function updateModifiedEdges(): void {
     if (edgeGeometries.value.length === 0 || !baseLayer) return
 
-    // Filter removed edges efficiently (only once)
-    const removedEdgeGeometries = edgeGeometries.value.filter((edge) => {
-      const key = `${edge.u}-${edge.v}`
-      return removedEdgesSet.value.has(key)
+    const modifications = trafficStore.edgeModifications
+
+    // Group edges by modification type
+    const modifiedEdgeData: Array<EdgeGeometry & { action: ModificationAction }> = []
+
+    modifications.forEach((mod, key) => {
+      const edge = edgeMap.value.get(key)
+      if (edge) {
+        modifiedEdgeData.push({ ...edge, action: mod.action })
+      }
     })
 
-    // Create/update removed layer with dashed black lines on top
-    const removedLayer = new PathLayer({
-      id: 'traffic-removed-edges',
-      data: removedEdgeGeometries,
+    if (modifiedEdgeData.length === 0) {
+      // Keep only base and route layers
+      const routeLayers = layers.value.filter((l) => l.id.startsWith('traffic-routes'))
+      layers.value = [baseLayer, ...routeLayers]
+      return
+    }
+
+    // Create layer for modified edges with color based on action
+    const modifiedLayer = new PathLayer({
+      id: 'traffic-modified-edges',
+      data: modifiedEdgeData,
       getPath: (d: EdgeGeometry) => d.coordinates,
-      getColor: [0, 0, 0, 100], // Solid black
-      getWidth: 15,
+      getColor: (d: EdgeGeometry & { action: ModificationAction }) => MODIFICATION_COLORS[d.action],
+      getWidth: 12,
       widthUnits: 'pixels',
-      getDashArray: [5, 5], // Dashed pattern: 10px line, 5px gap
+      getDashArray: (d: EdgeGeometry & { action: ModificationAction }) =>
+        d.action === 'remove' ? [8, 4] : [0, 0], // Dashed for removed, solid for speed limits
       dashJustified: true,
       dashGapPickable: true,
       pickable: true,
@@ -137,12 +156,8 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     // Keep route layers if they exist
     const routeLayers = layers.value.filter((l) => l.id.startsWith('traffic-routes'))
 
-    // Removed edges should be on top of everything
-    layers.value = [
-      baseLayer,
-      ...routeLayers,
-      ...(removedEdgeGeometries.length > 0 ? [removedLayer] : [])
-    ]
+    // Modified edges on top
+    layers.value = [baseLayer, ...routeLayers, modifiedLayer]
   }
 
   /**
@@ -463,7 +478,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   return {
     layers,
     loadGraphEdges,
-    updateRemovedEdges,
+    updateModifiedEdges,
     visualizeEdgeUsage,
     clearRoutes,
     handleClick,

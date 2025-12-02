@@ -11,7 +11,8 @@ import {
   mdiRadioboxBlank,
   mdiCalculator,
   mdiDelete,
-  mdiClose
+  mdiClose,
+  mdiCancel
 } from '@mdi/js'
 
 // Stores
@@ -21,10 +22,25 @@ const trafficStore = useTrafficAnalysisStore()
 // Expansion states
 const layersExpanded = ref(true)
 const trafficExpanded = ref(false)
-const removedEdgesExpanded = ref(true)
+const modifiedEdgesExpanded = ref(true)
 
 // Traffic analysis state
 const loadingMessage = ref('')
+
+// Modification action display helpers
+const actionLabels = {
+  remove: 'Removed',
+  speed50: '10 km/h',
+  speed30: '30 km/h',
+  speed10: '50 km/h'
+}
+
+const actionColors = {
+  remove: '#000000',
+  speed50: '#dc2626',
+  speed30: '#fb923c',
+  speed10: '#facc15'
+}
 
 // Layer selector logic
 const availableLayersFromActiveSources = computed(() => {
@@ -91,7 +107,7 @@ async function calculateRoutes() {
   trafficStore.isCalculating = true
   loadingMessage.value = 'Calculating routes...'
   try {
-    const result = await recalculateRoutes(trafficStore.removedEdgesArray)
+    const result = await recalculateRoutes(trafficStore.edgeModificationsArray)
     trafficStore.setEdgeUsage(
       result.original_edge_usage,
       result.new_edge_usage,
@@ -109,7 +125,7 @@ async function calculateRoutes() {
 }
 
 function removeEdge(u: number, v: number) {
-  trafficStore.removeRemovedEdge(u, v)
+  trafficStore.removeEdgeModification(u, v)
 }
 
 // Watch for traffic panel opening
@@ -196,46 +212,68 @@ watch(
       </div>
       <v-expand-transition>
         <div v-show="trafficExpanded" class="section-content">
-          <!-- Removed Edges -->
+          <!-- Modified Edges -->
           <div class="mb-3">
             <div class="d-flex align-center justify-space-between mb-2">
               <div class="d-flex align-center">
                 <v-btn
-                  :icon="removedEdgesExpanded ? mdiChevronDown : mdiChevronRight"
+                  :icon="modifiedEdgesExpanded ? mdiChevronDown : mdiChevronRight"
                   size="x-small"
                   variant="text"
-                  @click="removedEdgesExpanded = !removedEdgesExpanded"
+                  @click="modifiedEdgesExpanded = !modifiedEdgesExpanded"
                 />
                 <span class="text-caption font-weight-medium">
-                  Removed Edges ({{ trafficStore.removedEdgesCount }})
+                  Modified Edges ({{ trafficStore.edgeModificationsCount }})
                 </span>
               </div>
               <v-btn
-                v-if="trafficStore.removedEdgesCount > 0"
+                v-if="trafficStore.edgeModificationsCount > 0"
                 :icon="mdiDelete"
                 size="x-small"
                 variant="outlined"
-                @click="trafficStore.clearRemovedEdges()"
+                @click="trafficStore.clearEdgeModifications()"
               />
             </div>
             <v-expand-transition>
               <v-card
-                v-show="removedEdgesExpanded"
+                v-show="modifiedEdgesExpanded"
                 variant="outlined"
                 flat
                 max-height="200px"
                 class="overflow-y-auto"
               >
-                <v-list v-if="trafficStore.removedEdgesCount > 0" density="compact" class="pa-0">
+                <v-list
+                  v-if="trafficStore.edgeModificationsCount > 0"
+                  density="compact"
+                  class="pa-0"
+                >
                   <v-list-item
-                    v-for="edge in trafficStore.removedEdgesForDisplay"
+                    v-for="edge in trafficStore.edgeModificationsForDisplay"
                     :key="`${edge.u}-${edge.v}`"
-                    class="px-3"
+                    class="px-2"
                   >
+                    <template #prepend>
+                      <div
+                        class="modification-icon mr-2"
+                        :style="{ borderColor: actionColors[edge.action] }"
+                      >
+                        <span v-if="edge.action === 'remove'">
+                          <v-icon :icon="mdiCancel" size="12" />
+                        </span>
+                        <span v-else class="speed-label">
+                          {{
+                            edge.action === 'speed10'
+                              ? '10'
+                              : edge.action === 'speed30'
+                              ? '30'
+                              : '50'
+                          }}
+                        </span>
+                      </div>
+                    </template>
                     <v-list-item-title class="text-caption">
                       {{ edge.name }}
                       <span v-if="edge.isBidirectional" class="text-grey"> (↔)</span>
-                      <span v-else class="text-grey"> ({{ edge.u }}→{{ edge.v }})</span>
                     </v-list-item-title>
                     <template #append>
                       <v-btn
@@ -248,7 +286,7 @@ watch(
                   </v-list-item>
                 </v-list>
                 <div v-else class="text-center py-4 text-caption text-medium-emphasis">
-                  No edges removed. Click on edges in the visualization to remove them.
+                  Click on edges to modify them (cycles: remove → 10 → 30 → 50 km/h)
                 </div>
               </v-card>
             </v-expand-transition>
@@ -425,5 +463,22 @@ watch(
 .active-visualization {
   background-color: rgb(var(--v-theme-primary-container)) !important;
   border-color: rgb(var(--v-theme-primary)) !important;
+}
+
+.modification-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.speed-label {
+  font-size: 10px;
+  font-weight: bold;
+  line-height: 1;
 }
 </style>

@@ -19,6 +19,15 @@ class Edge(BaseModel):
     v: int = Field(..., description="End node ID")
 
 
+class EdgeModification(BaseModel):
+    """Edge modification: remove or change properties."""
+
+    u: int = Field(..., description="Start node ID")
+    v: int = Field(..., description="End node ID")
+    action: str = Field(default="remove", description="Action: 'remove' or 'modify'")
+    speed_kph: Optional[float] = Field(None, description="New speed in km/h (for 'modify' action)")
+
+
 class PathGeometry(BaseModel):
     """Path geometry as list of coordinates."""
 
@@ -52,13 +61,13 @@ class RouteResponse(BaseModel):
 
 
 class RecalculateRequest(BaseModel):
-    """Request to recalculate routes with removed edges."""
+    """Request to recalculate routes with edge modifications."""
 
     pairs: Optional[List[NodePair]] = Field(
         None, description="List of origin-destination pairs (uses default if not provided)"
     )
-    edges_to_remove: List[Edge] = Field(
-        default_factory=list, description="Edges to remove from graph"
+    edge_modifications: List[EdgeModification] = Field(
+        default_factory=list, description="Edge modifications (remove or change speed)"
     )
     weight: str = Field(default="travel_time", description="Edge weight attribute")
     include_geometry: bool = Field(default=False, description="Include path geometry")
@@ -71,7 +80,7 @@ class RouteComparison(BaseModel):
     destination: int
     original_route: Route
     new_route: Route
-    removed_edge_on_path: Optional[Edge] = None
+    modified_edge_on_path: Optional[EdgeModification] = None
     distance_delta: Optional[float] = Field(
         None, description="Additional distance in meters (new - original)"
     )
@@ -84,7 +93,9 @@ class RouteComparison(BaseModel):
     time_delta_percent: Optional[float] = Field(
         None, description="Percentage increase in travel time"
     )
-    is_affected: bool = Field(False, description="Whether this route was affected by removed edges")
+    is_affected: bool = Field(
+        False, description="Whether this route was affected by edge modifications"
+    )
     route_failed: bool = Field(
         False, description="Whether route calculation failed (no path found)"
     )
@@ -153,7 +164,7 @@ class ImpactStatistics(BaseModel):
 class RecalculateResponse(BaseModel):
     """Response with edge usage statistics."""
 
-    removed_edges: List[Edge]
+    applied_modifications: List[EdgeModification]
     original_edge_usage: List[EdgeUsageStats] = Field(
         ..., description="Edge usage in original routes"
     )
@@ -161,7 +172,7 @@ class RecalculateResponse(BaseModel):
         ..., description="Edge usage in new routes with delta"
     )
     impact_statistics: ImpactStatistics = Field(
-        ..., description="Aggregate statistics about the impact of removed edges"
+        ..., description="Aggregate statistics about the impact of edge modifications"
     )
     routes: List[Route] = Field(
         default_factory=list, description="Calculated routes with paths for visualization"

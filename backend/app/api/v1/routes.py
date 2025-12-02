@@ -68,19 +68,20 @@ async def calculate_routes(request: RouteRequest):
 @router.post("/recalculate", response_model=RecalculateResponse)
 async def recalculate_routes(request: RecalculateRequest):
     """
-    Recalculate shortest paths after removing specified edges.
+    Recalculate shortest paths after applying edge modifications.
+    Modifications can remove edges or change their speed.
     Uses default pre-calculated pairs if none provided in request.
 
     Args:
-        request: Recalculation request with edges to remove and optional route pairs
+        request: Recalculation request with edge modifications and optional route pairs
 
     Returns:
         Original and recalculated routes with comparison data
     """
     try:
-        result = await graph_service.recalculate_with_removed_edges(
+        result = await graph_service.recalculate_with_modifications(
             pairs=request.pairs,
-            edges_to_remove=request.edges_to_remove,
+            edge_modifications=request.edge_modifications,
             weight=request.weight,
         )
         return result
