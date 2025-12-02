@@ -2,16 +2,138 @@ import { fetchEdgeGeometries, type EdgeGeometry, type Route } from '@/services/t
 import { useTrafficAnalysisStore, type ModificationAction } from '@/stores/trafficAnalysis'
 import { PathStyleExtension } from '@deck.gl/extensions'
 import { TripsLayer } from '@deck.gl/geo-layers'
-import { GeoJsonLayer, PathLayer } from '@deck.gl/layers'
+import { GeoJsonLayer, PathLayer, TextLayer } from '@deck.gl/layers'
 import type { Ref } from 'vue'
 import { ref, shallowRef } from 'vue'
 
-// Colors for different modification types
+// Colors for different modification types (outline colors)
 const MODIFICATION_COLORS: Record<ModificationAction, [number, number, number, number]> = {
-  remove: [0, 0, 0, 180], // Black for removed
-  speed50: [220, 38, 38, 200], // Red for 10 km/h
-  speed30: [251, 146, 60, 200], // Orange for 30 km/h
-  speed10: [250, 204, 21, 200] // Yellow for 50 km/h
+  remove: [220, 38, 38, 255], // Red for removed
+  speed50: [37, 99, 235, 255], // Blue for 50 km/h
+  speed30: [234, 88, 12, 255], // Orange for 30 km/h
+  speed10: [22, 163, 74, 255] // Green for 10 km/h
+}
+
+// Speed limit text for each action
+const SPEED_LIMIT_TEXT: Record<ModificationAction, string> = {
+  remove: '✕',
+  speed10: '10',
+  speed30: '30',
+  speed50: '50'
+}
+
+// Helper to get midpoint of a path
+function getPathMidpoint(coordinates: number[][]): [number, number] {
+  if (coordinates.length === 0) return [0, 0]
+  if (coordinates.length === 1) return [coordinates[0][0], coordinates[0][1]]
+
+  // Calculate total length and find midpoint
+  let totalLength = 0
+  const segmentLengths: number[] = []
+
+  for (let i = 1; i < coordinates.length; i++) {
+    const dx = coordinates[i][0] - coordinates[i - 1][0]
+    const dy = coordinates[i][1] - coordinates[i - 1][1]
+    const len = Math.sqrt(dx * dx + dy * dy)
+    segmentLengths.push(len)
+    totalLength += len
+  }
+
+  const halfLength = totalLength / 2
+  let accumulated = 0
+
+  for (let i = 0; i < segmentLengths.length; i++) {
+    if (accumulated + segmentLengths[i] >= halfLength) {
+      const ratio = (halfLength - accumulated) / segmentLengths[i]
+      const x = coordinates[i][0] + ratio * (coordinates[i + 1][0] - coordinates[i][0])
+      const y = coordinates[i][1] + ratio * (coordinates[i + 1][1] - coordinates[i][1])
+      return [x, y]
+    }
+    accumulated += segmentLengths[i]
+  }
+
+  const last = coordinates[coordinates.length - 1]
+  return [last[0], last[1]]
+}
+
+// Helper to compute offset path (parallel line at given distance)
+// offsetMeters is approximate - we convert to degrees roughly
+function computeOffsetPath(coordinates: number[][], offsetMeters: number): number[][] {
+  if (coordinates.length < 2) return coordinates
+
+  // Rough conversion: 1 degree ≈ 111,000 meters at equator
+  // For latitude ~46° (Lausanne), longitude degree ≈ 77,000 meters
+  const metersPerDegreeLat = 111000
+  const metersPerDegreeLon = 77000
+
+  const offsetPath: number[][] = []
+
+  for (let i = 0; i < coordinates.length; i++) {
+    let nx = 0,
+      ny = 0
+
+    if (i === 0) {
+      // First point: use direction to next point
+      const dx = coordinates[1][0] - coordinates[0][0]
+      const dy = coordinates[1][1] - coordinates[0][1]
+      const len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 0) {
+        nx = -dy / len
+        ny = dx / len
+      }
+    } else if (i === coordinates.length - 1) {
+      // Last point: use direction from previous point
+      const dx = coordinates[i][0] - coordinates[i - 1][0]
+      const dy = coordinates[i][1] - coordinates[i - 1][1]
+      const len = Math.sqrt(dx * dx + dy * dy)
+      if (len > 0) {
+        nx = -dy / len
+        ny = dx / len
+      }
+    } else {
+      // Middle points: average normals from both segments
+      const dx1 = coordinates[i][0] - coordinates[i - 1][0]
+      const dy1 = coordinates[i][1] - coordinates[i - 1][1]
+      const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1)
+
+      const dx2 = coordinates[i + 1][0] - coordinates[i][0]
+      const dy2 = coordinates[i + 1][1] - coordinates[i][1]
+      const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2)
+
+      if (len1 > 0 && len2 > 0) {
+        const nx1 = -dy1 / len1
+        const ny1 = dx1 / len1
+        const nx2 = -dy2 / len2
+        const ny2 = dx2 / len2
+        nx = (nx1 + nx2) / 2
+        ny = (ny1 + ny2) / 2
+        // Normalize
+        const nlen = Math.sqrt(nx * nx + ny * ny)
+        if (nlen > 0) {
+          nx /= nlen
+          ny /= nlen
+        }
+      }
+    }
+
+    // Apply offset in degrees
+    const offsetLon = (offsetMeters / metersPerDegreeLon) * nx
+    const offsetLat = (offsetMeters / metersPerDegreeLat) * ny
+
+    offsetPath.push([coordinates[i][0] + offsetLon, coordinates[i][1] + offsetLat])
+  }
+
+  return offsetPath
+}
+
+// Create hull outline paths (left and right offset + end caps)
+function createHullPaths(coordinates: number[][], widthMeters: number): number[][][] {
+  const halfWidth = widthMeters / 2
+  const leftPath = computeOffsetPath(coordinates, halfWidth)
+  const rightPath = computeOffsetPath(coordinates, -halfWidth)
+
+  // Return as separate paths for the two sides
+  return [leftPath, rightPath]
 }
 
 interface EdgeUsageStats {
@@ -113,7 +235,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   }
 
   /**
-   * Update modified edges visualization with colors based on modification type
+   * Update modified edges visualization with hollow outlines and speed limit icons
    */
   function updateModifiedEdges(): void {
     if (edgeGeometries.value.length === 0 || !baseLayer) return
@@ -137,27 +259,99 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       return
     }
 
-    // Create layer for modified edges with color based on action
-    const modifiedLayer = new PathLayer({
-      id: 'traffic-modified-edges',
-      data: modifiedEdgeData,
-      getPath: (d: EdgeGeometry) => d.coordinates,
-      getColor: (d: EdgeGeometry & { action: ModificationAction }) => MODIFICATION_COLORS[d.action],
-      getWidth: 12,
+    // Create hull outline data - compute offset paths for each edge
+    const hullWidth = 8 // meters
+    const hullPathsData: Array<{ path: number[][]; color: [number, number, number, number] }> = []
+
+    for (const edge of modifiedEdgeData) {
+      const [leftPath, rightPath] = createHullPaths(edge.coordinates, hullWidth)
+      const color = MODIFICATION_COLORS[edge.action]
+      hullPathsData.push({ path: leftPath, color })
+      hullPathsData.push({ path: rightPath, color })
+    }
+
+    // Create hull outline layer with thin dashed lines
+    const hullOutlineLayer = new PathLayer({
+      id: 'traffic-modified-edges-hull',
+      data: hullPathsData,
+      getPath: (d: any) => d.path,
+      getColor: (d: any) => d.color,
+      getWidth: 3,
       widthUnits: 'pixels',
-      getDashArray: (d: EdgeGeometry & { action: ModificationAction }) =>
-        d.action === 'remove' ? [8, 4] : [0, 0], // Dashed for removed, solid for speed limits
+      getDashArray: [6, 4],
       dashJustified: true,
-      dashGapPickable: true,
-      pickable: true,
+      pickable: false,
       extensions: [new PathStyleExtension({ dash: true })]
+    })
+
+    // Create end caps as small perpendicular lines at start and end of each edge
+    const endCapData: Array<{ path: number[][]; color: [number, number, number, number] }> = []
+    for (const edge of modifiedEdgeData) {
+      const coords = edge.coordinates
+      if (coords.length < 2) continue
+
+      const color = MODIFICATION_COLORS[edge.action]
+      const [leftPath, rightPath] = createHullPaths(coords, hullWidth)
+
+      // Start cap: connect left[0] to right[0]
+      endCapData.push({
+        path: [leftPath[0], rightPath[0]],
+        color
+      })
+
+      // End cap: connect left[last] to right[last]
+      endCapData.push({
+        path: [leftPath[leftPath.length - 1], rightPath[rightPath.length - 1]],
+        color
+      })
+    }
+
+    // Create end caps layer
+    const endCapsLayer = new PathLayer({
+      id: 'traffic-modified-edges-caps',
+      data: endCapData,
+      getPath: (d: any) => d.path,
+      getColor: (d: any) => d.color,
+      getWidth: 3,
+      widthUnits: 'pixels',
+      pickable: false
+    })
+
+    // Prepare data for speed limit icons (only for speed modifications, not removals)
+    const speedLimitData = modifiedEdgeData
+      .filter((d) => d.action !== 'remove')
+      .map((d) => ({
+        position: getPathMidpoint(d.coordinates),
+        text: SPEED_LIMIT_TEXT[d.action],
+        color: MODIFICATION_COLORS[d.action],
+        action: d.action
+      }))
+
+    // Create text layer for speed limit icons
+    const speedLimitLayer = new TextLayer({
+      id: 'traffic-modified-edges-speed-icons',
+      data: speedLimitData,
+      getPosition: (d: any) => d.position,
+      getText: (d: any) => d.text,
+      getColor: [255, 255, 255, 255],
+      getSize: 14,
+      fontWeight: 'bold',
+      getBackgroundColor: (d: any) => d.color,
+      background: true,
+      backgroundPadding: [4, 2, 4, 2],
+      getBorderColor: [255, 255, 255, 255],
+      getBorderWidth: 1,
+      getTextAnchor: 'middle',
+      getAlignmentBaseline: 'center',
+      fontFamily: 'Arial, sans-serif',
+      pickable: false
     })
 
     // Keep route layers if they exist
     const routeLayers = layers.value.filter((l) => l.id.startsWith('traffic-routes'))
 
-    // Modified edges on top
-    layers.value = [baseLayer, ...routeLayers, modifiedLayer]
+    // Stack: base → routes → hull outline → end caps → speed icons
+    layers.value = [baseLayer, ...routeLayers, hullOutlineLayer, endCapsLayer, speedLimitLayer]
   }
 
   /**
