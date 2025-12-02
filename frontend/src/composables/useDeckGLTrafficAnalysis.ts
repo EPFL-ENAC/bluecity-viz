@@ -145,13 +145,33 @@ interface EdgeUsageStats {
   co2_per_use?: number
 }
 
+// Tooltip data structure
+export interface EdgeTooltipData {
+  x: number
+  y: number
+  name: string
+  highway?: string
+  length?: number
+  travel_time?: number
+  speed_kph?: number
+  // Route calculation stats (when available)
+  frequency?: number
+  count?: number
+  delta_count?: number
+  co2_per_use?: number
+  co2_total?: number
+  co2_delta?: number
+}
+
 interface DeckGLTrafficAnalysisReturn {
   layers: Ref<any[]>
+  tooltipData: Ref<EdgeTooltipData | null>
   loadGraphEdges: () => Promise<void>
   updateModifiedEdges: () => void
   visualizeEdgeUsage: (newUsage: EdgeUsageStats[]) => void
   clearRoutes: () => void
   handleClick: (info: any) => void
+  handleHover: (info: any) => void
   setEdgeClickCallback: (callback: (u: number, v: number, name?: string) => void) => void
 }
 
@@ -164,6 +184,12 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   const edgeGeometries = shallowRef<EdgeGeometry[]>([])
   const edgeMap = shallowRef<Map<string, EdgeGeometry>>(new Map())
   let edgeClickCallback: ((u: number, v: number, name?: string) => void) | null = null
+
+  // Tooltip state
+  const tooltipData = ref<EdgeTooltipData | null>(null)
+
+  // Cache for edge stats from route calculation
+  const edgeStatsMap = shallowRef<Map<string, EdgeUsageStats>>(new Map())
 
   // Animation state for TripsLayer
   const animationTime = ref(0)
@@ -366,6 +392,13 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     console.log('[DEBUG] visualizeEdgeUsage called')
     console.log('[DEBUG] newUsage length:', newUsage.length)
     console.log('[DEBUG] First 3 newUsage entries:', newUsage.slice(0, 3))
+
+    // Cache edge stats for tooltip display
+    const statsMap = new Map<string, EdgeUsageStats>()
+    newUsage.forEach((stat) => {
+      statsMap.set(`${stat.u}-${stat.v}`, stat)
+    })
+    edgeStatsMap.value = statsMap
 
     // Use new usage stats (which include delta_count and co2_per_use)
     const edgesWithStats = newUsage
@@ -667,6 +700,52 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   }
 
   /**
+   * Handle hover events on edges to show tooltips
+   */
+  function handleHover(info: any): void {
+    if (!info.object) {
+      tooltipData.value = null
+      return
+    }
+
+    // Handle both GeoJSON features and direct edge objects
+    const hoveredEdge = info.object.properties || info.object
+    if (hoveredEdge.u === undefined || hoveredEdge.v === undefined) {
+      tooltipData.value = null
+      return
+    }
+
+    const edgeKey = `${hoveredEdge.u}-${hoveredEdge.v}`
+    const edgeGeom = edgeMap.value.get(edgeKey)
+    const edgeStats = edgeStatsMap.value.get(edgeKey)
+
+    // Calculate speed from length and travel_time if available
+    const length = hoveredEdge.length || edgeGeom?.length
+    const travelTime = hoveredEdge.travel_time || edgeGeom?.travel_time
+    let speedKph: number | undefined
+    if (length && travelTime && travelTime > 0) {
+      speedKph = Math.round(length / 1000 / (travelTime / 3600)) // km/h
+    }
+
+    tooltipData.value = {
+      x: info.x,
+      y: info.y,
+      name: hoveredEdge.name || edgeGeom?.name || `Edge ${hoveredEdge.u}→${hoveredEdge.v}`,
+      highway: hoveredEdge.highway || edgeGeom?.highway,
+      length: length,
+      travel_time: travelTime,
+      speed_kph: speedKph,
+      // Add route stats if available
+      frequency: edgeStats?.frequency ?? hoveredEdge.frequency,
+      count: edgeStats?.count ?? hoveredEdge.count,
+      delta_count: edgeStats?.delta_count ?? hoveredEdge.delta_count,
+      co2_per_use: edgeStats?.co2_per_use ?? hoveredEdge.co2_per_use,
+      co2_total: hoveredEdge.co2_total,
+      co2_delta: hoveredEdge.co2_delta
+    }
+  }
+
+  /**
    * Set callback for edge clicks
    */
   function setEdgeClickCallback(callback: (u: number, v: number, name?: string) => void): void {
@@ -675,11 +754,13 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
 
   return {
     layers,
+    tooltipData,
     loadGraphEdges,
     updateModifiedEdges,
     visualizeEdgeUsage,
     clearRoutes,
     handleClick,
+    handleHover,
     setEdgeClickCallback
   }
 }

@@ -3,6 +3,7 @@ import MapLibreMap from '@/components/MapLibreMap.vue'
 import DeckGLOverlay from '@/components/DeckGLOverlay.vue'
 import LegendMap from '@/components/LegendMap.vue'
 import MapControlsPanel from '@/components/MapControlsPanel.vue'
+import EdgeTooltip from '@/components/EdgeTooltip.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
 import { useDeckGLTrafficAnalysis } from '@/composables/useDeckGLTrafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
@@ -34,6 +35,11 @@ watch(
 // Handle Deck.gl click events
 function handleDeckClick(info: any) {
   deckGLTraffic.handleClick(info)
+}
+
+// Handle Deck.gl hover events for tooltips
+function handleDeckHover(info: any) {
+  deckGLTraffic.handleHover(info)
 }
 
 // Setup edge click callback (always active when traffic panel is open)
@@ -151,8 +157,12 @@ onMounted(async () => {
     <!-- Deck.gl Canvas (always mounted, shows layers only when traffic analysis is active) -->
     <DeckGLOverlay
       :layers="trafficStore.isOpen ? deckGLTraffic.layers.value : []"
-      @click="handleDeckClick"
+      :on-click="handleDeckClick"
+      :on-hover="handleDeckHover"
     />
+
+    <!-- Edge Tooltip -->
+    <EdgeTooltip :data="deckGLTraffic.tooltipData.value" />
 
     <!-- Unified Map Controls (Layers + Traffic Analysis) -->
     <MapControlsPanel />
