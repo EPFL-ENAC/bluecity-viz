@@ -115,6 +115,17 @@ onMounted(async () => {
   if (trafficStore.isOpen) {
     await deckGLTraffic.loadGraphEdges()
     setupEdgeClickCallback()
+
+    // Restore modified edges visualization if any exist
+    if (trafficStore.edgeModifications.size > 0) {
+      deckGLTraffic.updateModifiedEdges()
+    }
+
+    // Restore traffic visualization if data exists
+    const activeVis = trafficStore.activeVisualization
+    if (trafficStore.originalEdgeUsage.length > 0 && activeVis !== 'none') {
+      deckGLTraffic.visualizeEdgeUsage(trafficStore.newEdgeUsage)
+    }
   }
 })
 </script>

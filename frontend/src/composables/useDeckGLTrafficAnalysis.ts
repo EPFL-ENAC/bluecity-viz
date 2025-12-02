@@ -6,12 +6,12 @@ import { GeoJsonLayer, PathLayer, TextLayer } from '@deck.gl/layers'
 import type { Ref } from 'vue'
 import { ref, shallowRef } from 'vue'
 
-// Colors for different modification types (outline colors)
+// Colors for different modification types (matching MapControlsPanel actionColors)
 const MODIFICATION_COLORS: Record<ModificationAction, [number, number, number, number]> = {
-  remove: [220, 38, 38, 255], // Red for removed
-  speed50: [37, 99, 235, 255], // Blue for 50 km/h
-  speed30: [234, 88, 12, 255], // Orange for 30 km/h
-  speed10: [22, 163, 74, 255] // Green for 10 km/h
+  remove: [0, 0, 0, 255], // Black for removed (#000000)
+  speed50: [220, 38, 38, 255], // Red for 50 km/h (#dc2626)
+  speed30: [251, 146, 60, 255], // Orange for 30 km/h (#fb923c)
+  speed10: [250, 204, 21, 255] // Yellow for 10 km/h (#facc15)
 }
 
 // Speed limit text for each action
@@ -318,32 +318,35 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     })
 
     // Prepare data for speed limit icons (only for speed modifications, not removals)
+    // European speed limit signs: white circle with red border, black text
     const speedLimitData = modifiedEdgeData
       .filter((d) => d.action !== 'remove')
       .map((d) => ({
         position: getPathMidpoint(d.coordinates),
         text: SPEED_LIMIT_TEXT[d.action],
-        color: MODIFICATION_COLORS[d.action],
         action: d.action
       }))
 
-    // Create text layer for speed limit icons
+    // Create text layer for speed limit icons (European style: white bg, red border, black text)
     const speedLimitLayer = new TextLayer({
       id: 'traffic-modified-edges-speed-icons',
       data: speedLimitData,
       getPosition: (d: any) => d.position,
       getText: (d: any) => d.text,
-      getColor: [255, 255, 255, 255],
-      getSize: 14,
+      getColor: [0, 0, 0, 255], // Black text
+      getSize: 12,
       fontWeight: 'bold',
-      getBackgroundColor: (d: any) => d.color,
+      getBackgroundColor: [255, 255, 255, 255], // White background
       background: true,
-      backgroundPadding: [4, 2, 4, 2],
-      getBorderColor: [255, 255, 255, 255],
-      getBorderWidth: 1,
+      backgroundPadding: [6, 4, 6, 4],
+      backgroundBorderRadius: 30,
+      getBorderColor: [220, 38, 38, 255], // Red border (European style)
+      getBorderWidth: 3,
       getTextAnchor: 'middle',
       getAlignmentBaseline: 'center',
       fontFamily: 'Arial, sans-serif',
+      billboard: true, // Always face camera
+      sizeUnits: 'pixels',
       pickable: false
     })
 
@@ -455,15 +458,12 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       autoHighlight: true
     })
 
-    // Update layers array - removed edges on top for visibility
-    const removedLayer = layers.value.find((l) => l.id === 'traffic-removed-edges')
+    // Preserve modified edges layers (hull, caps, speed icons)
+    const modifiedEdgesLayers = layers.value.filter((l) =>
+      l.id.startsWith('traffic-modified-edges')
+    )
 
-    layers.value = [
-      baseLayer,
-      outlineLayer,
-      trafficLayer,
-      ...(removedLayer ? [removedLayer] : [])
-    ].filter(Boolean)
+    layers.value = [baseLayer, outlineLayer, trafficLayer, ...modifiedEdgesLayers].filter(Boolean)
   }
 
   /**
@@ -477,9 +477,11 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     }
     animationTime.value = 0
 
-    // Keep only the base graph edges and removed edges layers
-    const removedLayer = layers.value.find((l) => l.id === 'traffic-removed-edges')
-    layers.value = [baseLayer, removedLayer].filter(Boolean)
+    // Keep base layer and modified edges layers
+    const modifiedEdgesLayers = layers.value.filter((l) =>
+      l.id.startsWith('traffic-modified-edges')
+    )
+    layers.value = [baseLayer, ...modifiedEdgesLayers].filter(Boolean)
   }
 
   /**
@@ -594,9 +596,11 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       shadowEnabled: false
     })
 
-    // Update layers
-    const removedLayer = layers.value.find((l) => l.id === 'traffic-removed-edges')
-    layers.value = [baseLayer, tripsLayer, ...(removedLayer ? [removedLayer] : [])].filter(Boolean)
+    // Preserve modified edges layers
+    const modifiedEdgesLayers = layers.value.filter((l) =>
+      l.id.startsWith('traffic-modified-edges')
+    )
+    layers.value = [baseLayer, tripsLayer, ...modifiedEdgesLayers].filter(Boolean)
 
     // Start animation loop
     startAnimation()
