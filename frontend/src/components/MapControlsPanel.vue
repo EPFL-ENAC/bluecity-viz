@@ -27,14 +27,6 @@ const modifiedEdgesExpanded = ref(true)
 // Traffic analysis state
 const loadingMessage = ref('')
 
-// Modification action display helpers
-const actionLabels = {
-  remove: 'Removed',
-  speed50: '10 km/h',
-  speed30: '30 km/h',
-  speed10: '50 km/h'
-}
-
 const actionColors = {
   remove: '#000000',
   speed50: '#dc2626',
