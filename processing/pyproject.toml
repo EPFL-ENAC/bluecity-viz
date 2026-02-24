@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "bluecity-viz-processing"
 version = "0.1.0"
@@ -17,6 +21,7 @@ dependencies = [
     "pydeck>=0.9.1",
     "rasterio>=1.4.3",
     "rio-vrt>=0.3.1",
+    "openpyxl>=3.1.5",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +45,9 @@ dev-dependencies = [
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
 ]
+
+[tool.setuptools]
+packages = []
 
 [tool.black]
 line-length = 88
