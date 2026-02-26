@@ -17,6 +17,9 @@ dependencies = [
     "pydeck>=0.9.1",
     "rasterio>=1.4.3",
     "rio-vrt>=0.3.1",
+    "python-dotenv>=1.2.1",
+    "contextily>=1.7.0",
+    "h3>=4.4.2",
 ]
 
 [project.optional-dependencies]
