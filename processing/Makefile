@@ -49,6 +49,12 @@ run-sp7: ## Run SP7 processing
 run-waste: ## Run waste processing
 	uv run python SP04_Waste/process.py
 
+run-sparrow: ## Run Sparrow CO2 processing
+	cd storylines && $(MAKE) generate-data
+
+run-sparrow-fresh: ## Fetch fresh Sparrow data and process
+	cd storylines && $(MAKE) fetch-data
+
 # Jupyter notebook
 notebook: ## Start Jupyter notebook
 	uv run jupyter notebook
