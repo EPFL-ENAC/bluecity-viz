@@ -1,16 +1,24 @@
 [project]
-
 name = "traffic-analysis"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "osmnx>=1.9.0",
+    # Graph download and analysis
+    "osmnx>=2.0.0",
     "networkx>=3.2",
+    # Geospatial data handling
     "geopandas>=0.14.0",
-    "matplotlib>=3.8.0",
+    "shapely>=2.0.0",
+    # Elevation raster processing (Swiss ALTI3D)
+    "rasterio>=1.4.0",
+    "rio-vrt>=0.3.1",  # required by osmnx to merge multiple rasters into a VRT
+    # General data processing
     "pandas>=2.1.0",
     "numpy>=1.26.0",
+    # HTTP downloads (elevation data)
+    "requests>=2.31.0",
+    # Interactive exploration (notebooks only)
+    "matplotlib>=3.8.0",
     "folium>=0.15.0",
     "jupyter>=1.0.0",
-    "scikit-learn>=1.0.0"
 ]

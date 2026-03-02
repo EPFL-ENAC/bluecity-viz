@@ -1,84 +1,137 @@
-.PHONY: help tiles clean
+.PHONY: help elevation network geojson tiles copy all clean clean-all
 
+# ---------------------------------------------------------------------------
 # Paths
-GRAPH_DIR := data/graph
-ELEVATION_DIR := data/elevation
-FRONTEND_GEODATA_DIR := ../../frontend/public/geodata
-BACKEND_DATA_DIR := ../../backend/data
+# ---------------------------------------------------------------------------
 
-# Files
-DRIVE_GRAPHML := $(GRAPH_DIR)/lausanne_drive.graphml
-DRIVE_GEOJSON := $(GRAPH_DIR)/lausanne_drive.geojson
-DRIVE_PMTILES := $(GRAPH_DIR)/lausanne_drive.pmtiles
-FRONTEND_PMTILES := $(FRONTEND_GEODATA_DIR)/lausanne_drive.pmtiles
-BACKEND_GEOJSON := $(BACKEND_DATA_DIR)/lausanne.geojson
+GRAPH_DIR          := data/graph
+ELEVATION_DIR      := data/elevation
+FRONTEND_GEODATA   := ../../frontend/public/geodata
+BACKEND_DATA       := ../../backend/data
+
+# ---------------------------------------------------------------------------
+# Derived file names
+# ---------------------------------------------------------------------------
+
+DRIVE_GRAPHML      := $(GRAPH_DIR)/lausanne_drive.graphml
+DRIVE_GEOJSON      := $(GRAPH_DIR)/lausanne_drive.geojson
+DRIVE_PMTILES      := $(GRAPH_DIR)/lausanne_drive.pmtiles
+
+BACKEND_GRAPHML    := $(BACKEND_DATA)/lausanne.graphml
+BACKEND_GEOJSON    := $(BACKEND_DATA)/lausanne.geojson
+FRONTEND_PMTILES   := $(FRONTEND_GEODATA)/lausanne_drive.pmtiles
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
 
 help:
-	@echo "Traffic Analysis Processing"
-	@echo "============================"
+	@echo "Traffic Analysis — data pipeline"
+	@echo "================================="
 	@echo ""
-	@echo "Available targets:"
-	@echo "  make elevation   - Download elevation raster data from swisstopo"
-	@echo "  make geojson     - Generate GeoJSON from GraphML files"
-	@echo "  make tiles       - Generate PMTiles from GraphML files"
-	@echo "  make install     - Copy generated files to frontend and backend"
-	@echo "  make all         - Generate tiles and install to frontend"
-	@echo "  make clean       - Remove generated PMTiles files"
-	@echo "  make help        - Show this help message"
+	@echo "Full pipeline (run once to bootstrap everything):"
+	@echo "  make all"
 	@echo ""
-	@echo "Requirements:"
-	@echo "  - tippecanoe (brew install tippecanoe)"
-	@echo "  - Python packages: osmnx, geopandas, shapely"
+	@echo "Individual steps:"
+	@echo "  make elevation   Download Swiss ALTI3D elevation rasters (optional)"
+	@echo "  make network     Download OSM graph + enrich with speeds & elevation"
+	@echo "  make geojson     Convert GraphML → GeoJSON  (backend edge geometry)"
+	@echo "  make tiles       Convert GraphML → PMTiles  (frontend vector tiles)"
+	@echo "  make copy        Copy outputs to backend/ and frontend/"
+	@echo ""
+	@echo "Utilities:"
+	@echo "  make clean       Remove generated GeoJSON and PMTiles"
+	@echo "  make clean-all   Also remove copies in backend/ and frontend/"
+	@echo "  make help        Show this message"
+	@echo ""
+	@echo "Requirements: uv  +  tippecanoe"
+	@echo "  macOS:  brew install tippecanoe"
+	@echo "  Linux:  https://github.com/felt/tippecanoe#installation"
 
-# Download elevation raster data
+# ---------------------------------------------------------------------------
+# Step 0 (optional) — Download Swiss ALTI3D elevation rasters
+# ---------------------------------------------------------------------------
+
 elevation:
-	@echo "Downloading Swiss elevation data (swissALTI3D)..."
+	@echo "Downloading Swiss ALTI3D elevation rasters..."
 	@mkdir -p $(ELEVATION_DIR)
 	uv run python download_elevation_data.py
-	@echo "✓ Elevation data downloaded to $(ELEVATION_DIR)"
+	@echo "✓ Elevation data saved to $(ELEVATION_DIR)/"
 
-# Generate GeoJSON from GraphML
+# ---------------------------------------------------------------------------
+# Step 1 — Download OSM graph and enrich (speeds, travel times, elevation)
+# ---------------------------------------------------------------------------
+#
+# Re-runs only when the output file is absent.  To force a fresh download,
+# delete $(DRIVE_GRAPHML) first: rm data/graph/lausanne_drive.graphml
+# ---------------------------------------------------------------------------
+
+network: $(DRIVE_GRAPHML)
+
+$(DRIVE_GRAPHML): lausanne_network.py
+	@echo "Building Lausanne road network..."
+	@mkdir -p $(GRAPH_DIR)
+	uv run python lausanne_network.py --output $(DRIVE_GRAPHML)
+	@echo "✓ Network saved to $(DRIVE_GRAPHML)"
+
+# ---------------------------------------------------------------------------
+# Step 2a — GraphML → GeoJSON  (backend edge geometry)
+# ---------------------------------------------------------------------------
+
 geojson: $(DRIVE_GEOJSON)
 
-$(DRIVE_GEOJSON): $(DRIVE_GRAPHML)
+$(DRIVE_GEOJSON): $(DRIVE_GRAPHML) generate_graph_tiles.py
 	@echo "Generating GeoJSON from $(DRIVE_GRAPHML)..."
-	@uv run python -c "from generate_graph_tiles import graphml_to_geojson; graphml_to_geojson('$(DRIVE_GRAPHML)', '$(DRIVE_GEOJSON)')"
-	@echo "✓ GeoJSON generated: $(DRIVE_GEOJSON)"
+	uv run python generate_graph_tiles.py $(DRIVE_GRAPHML) --geojson $(DRIVE_GEOJSON)
+	@echo "✓ GeoJSON saved to $(DRIVE_GEOJSON)"
 
-# Generate PMTiles from GraphML
+# ---------------------------------------------------------------------------
+# Step 2b — GraphML → PMTiles  (frontend vector tiles)
+# ---------------------------------------------------------------------------
+
 tiles: $(DRIVE_PMTILES)
 
 $(DRIVE_PMTILES): $(DRIVE_GRAPHML) generate_graph_tiles.py
 	@echo "Generating PMTiles from $(DRIVE_GRAPHML)..."
 	uv run python generate_graph_tiles.py $(DRIVE_GRAPHML) $(DRIVE_PMTILES)
-	@echo "✓ PMTiles generated: $(DRIVE_PMTILES)"
+	@echo "✓ PMTiles saved to $(DRIVE_PMTILES)"
 
-# Install files to frontend
-install: tiles geojson
-	@echo "Installing files to frontend and backend..."
-	@mkdir -p $(FRONTEND_GEODATA_DIR)
-	@mkdir -p $(BACKEND_DATA_DIR)
-	@if [ -f $(DRIVE_PMTILES) ]; then \
-		cp $(DRIVE_PMTILES) $(FRONTEND_PMTILES); \
-		echo "✓ Copied PMTiles: $(FRONTEND_PMTILES)"; \
-	fi
-	@if [ -f $(DRIVE_GEOJSON) ]; then \
-		cp $(DRIVE_GEOJSON) $(BACKEND_GEOJSON); \
-		echo "✓ Copied GeoJSON: $(BACKEND_GEOJSON)"; \
-	fi
-	@echo "✓ Installation complete!"
+# ---------------------------------------------------------------------------
+# Step 3 — Copy outputs to backend/ and frontend/
+# ---------------------------------------------------------------------------
 
-# Generate and install in one step
-all: tiles install
+copy: tiles geojson
+	@echo "Copying files to backend/ and frontend/..."
+	@mkdir -p $(FRONTEND_GEODATA) $(BACKEND_DATA)
+	@cp $(DRIVE_PMTILES)  $(FRONTEND_PMTILES)
+	@echo "  ✓ $(FRONTEND_PMTILES)"
+	@cp $(DRIVE_GEOJSON)  $(BACKEND_GEOJSON)
+	@echo "  ✓ $(BACKEND_GEOJSON)"
+	@cp $(DRIVE_GRAPHML)  $(BACKEND_GRAPHML)
+	@echo "  ✓ $(BACKEND_GRAPHML)"
+	@echo "✓ Copy complete"
 
-# Clean generated files
+# ---------------------------------------------------------------------------
+# Full pipeline
+# ---------------------------------------------------------------------------
+#
+# Elevation is intentionally not included here because it requires a large
+# download (~2 GB) that is optional.  Run 'make elevation' separately before
+# 'make all' if you want grade data in the graph.
+# ---------------------------------------------------------------------------
+
+all: network tiles copy
+
+# ---------------------------------------------------------------------------
+# Clean
+# ---------------------------------------------------------------------------
+
 clean:
-	@echo "Cleaning generated PMTiles and GeoJSON files..."
+	@echo "Removing generated files in $(GRAPH_DIR)/..."
 	@rm -f $(DRIVE_PMTILES) $(DRIVE_GEOJSON)
 	@echo "✓ Clean complete"
 
-# Clean backend files as well
 clean-all: clean
-	@echo "Cleaning frontend files..."
-	@rm -f $(FRONTEND_PMTILES)
-	@echo "✓ All files cleaned"
+	@echo "Removing copied files from backend/ and frontend/..."
+	@rm -f $(FRONTEND_PMTILES) $(BACKEND_GEOJSON) $(BACKEND_GRAPHML)
+	@echo "✓ All clean"

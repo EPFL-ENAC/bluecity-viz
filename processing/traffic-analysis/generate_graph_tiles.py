@@ -1,25 +1,37 @@
 #!/usr/bin/env python3
 """
-Generate PMTiles from GraphML file for traffic analysis visualization.
+Generate GeoJSON and/or PMTiles from a GraphML road network file.
 
-This script converts a GraphML road network file to PMTiles format for efficient
-web visualization. The PMTiles format allows for fast, viewport-based loading
-of large road networks.
+Converts an OSMnx GraphML file into formats used by the frontend and backend:
+  - GeoJSON  → backend/data/lausanne.geojson  (edge geometry for the API)
+  - PMTiles  → frontend/public/geodata/lausanne_drive.pmtiles  (vector tiles)
 
 Usage:
-    python generate_graph_tiles.py <input_graphml> <output_pmtiles>
+    # GraphML → PMTiles only (intermediate GeoJSON is temporary)
+    uv run python generate_graph_tiles.py <input.graphml> [output.pmtiles]
 
-Example:
-    python generate_graph_tiles.py data/graph/lausanne_drive.graphml data/graph/lausanne_drive.pmtiles
+    # GraphML → GeoJSON only
+    uv run python generate_graph_tiles.py <input.graphml> --geojson <output.geojson>
+
+    # GraphML → both GeoJSON and PMTiles
+    uv run python generate_graph_tiles.py <input.graphml> [output.pmtiles] \\
+        --geojson <output.geojson>
+
+Examples:
+    uv run python generate_graph_tiles.py data/graph/lausanne_drive.graphml
+    uv run python generate_graph_tiles.py data/graph/lausanne_drive.graphml \\
+        --geojson data/graph/lausanne_drive.geojson
 """
 
-import osmnx as ox
-import geopandas as gpd
-from shapely.geometry import LineString
+import argparse
 import subprocess
 import sys
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
+import geopandas as gpd
+import osmnx as ox
+from shapely.geometry import LineString
 
 
 def graphml_to_geojson(graphml_path: str, geojson_path: str) -> None:
@@ -99,7 +111,7 @@ def geojson_to_pmtiles(geojson_path: str, pmtiles_path: str) -> None:
     print(f"Converting to PMTiles using tippecanoe...")
     
     try:
-        result = subprocess.run(
+        subprocess.run(
             [
                 "tippecanoe",
                 "-o", pmtiles_path,
@@ -110,66 +122,89 @@ def geojson_to_pmtiles(geojson_path: str, pmtiles_path: str) -> None:
                 "--drop-densest-as-needed",
                 "--extend-zooms-if-still-dropping",
                 "--force",
-                geojson_path
+                geojson_path,
             ],
             check=True,
             capture_output=True,
-            text=True
+            text=True,
         )
         print(f"✓ PMTiles created: {pmtiles_path}")
-        print(f"  Tippecanoe output: {result.stderr}")
-        
+
     except subprocess.CalledProcessError as e:
-        print(f"✗ Error running tippecanoe: {e}")
-        print(f"  stdout: {e.stdout}")
-        print(f"  stderr: {e.stderr}")
+        print(f"✗ tippecanoe failed (exit {e.returncode})")
+        if e.stderr:
+            print(e.stderr.rstrip())
         sys.exit(1)
     except FileNotFoundError:
-        print("✗ Error: tippecanoe not found. Please install it:")
+        print("✗ tippecanoe not found. Install it first:")
         print("  macOS:  brew install tippecanoe")
-        print("  Linux:  See https://github.com/felt/tippecanoe#installation")
+        print("  Linux:  https://github.com/felt/tippecanoe#installation")
         sys.exit(1)
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python generate_graph_tiles.py <input_graphml> [output_pmtiles]")
-        print("\nExample:")
-        print("  python generate_graph_tiles.py data/graph/lausanne_drive.graphml")
-        sys.exit(1)
-    
-    graphml_path = sys.argv[1]
-    
-    # Determine output path
-    if len(sys.argv) >= 3:
-        pmtiles_path = sys.argv[2]
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Convert a GraphML road network to GeoJSON and/or PMTiles.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("input_graphml", help="Path to the input GraphML file")
+    parser.add_argument(
+        "output_pmtiles",
+        nargs="?",
+        help="Path for the output PMTiles file (default: same name as input with .pmtiles)",
+    )
+    parser.add_argument(
+        "--geojson",
+        metavar="PATH",
+        help="Also persist the intermediate GeoJSON to this path",
+    )
+    args = parser.parse_args()
+
+    graphml_path = args.input_graphml
+    want_tiles = args.output_pmtiles is not None
+    want_geojson = args.geojson is not None
+
+    # If neither flag is given, default to tiles (backward-compatible).
+    if not want_tiles and not want_geojson:
+        want_tiles = True
+
+    pmtiles_path = args.output_pmtiles or str(Path(graphml_path).with_suffix(".pmtiles"))
+
+    # Use a persistent GeoJSON path when requested; otherwise a temp file.
+    if want_geojson:
+        geojson_path = args.geojson
+        use_temp = False
     else:
-        # Default: replace .graphml with .pmtiles
-        pmtiles_path = str(Path(graphml_path).with_suffix(".pmtiles"))
-    
-    # Create temporary GeoJSON file
-    with tempfile.NamedTemporaryFile(suffix=".geojson", delete=False) as tmp:
-        geojson_path = tmp.name
-    
+        tmp_file = tempfile.NamedTemporaryFile(suffix=".geojson", delete=False)
+        geojson_path = tmp_file.name
+        tmp_file.close()
+        use_temp = True
+
     try:
-        # Step 1: GraphML -> GeoJSON
+        # Step 1: GraphML → GeoJSON
         graphml_to_geojson(graphml_path, geojson_path)
-        
-        # Step 2: GeoJSON -> PMTiles
-        geojson_to_pmtiles(geojson_path, pmtiles_path)
-        
-        print(f"\n✓ Success! PMTiles file created at: {pmtiles_path}")
-        
-        # Print file sizes
+
+        # Step 2: GeoJSON → PMTiles (skipped when only GeoJSON was requested)
+        if want_tiles:
+            geojson_to_pmtiles(geojson_path, pmtiles_path)
+
+        # Summary
         graphml_size = Path(graphml_path).stat().st_size / (1024 * 1024)
-        pmtiles_size = Path(pmtiles_path).stat().st_size / (1024 * 1024)
-        print(f"  GraphML size:  {graphml_size:.2f} MB")
-        print(f"  PMTiles size:  {pmtiles_size:.2f} MB")
-        print(f"  Compression:   {(1 - pmtiles_size/graphml_size) * 100:.1f}% reduction")
-        
+        print(f"\n  GraphML : {graphml_size:.1f} MB")
+        if want_geojson:
+            geojson_size = Path(geojson_path).stat().st_size / (1024 * 1024)
+            print(f"  GeoJSON : {geojson_size:.1f} MB  →  {geojson_path}")
+        if want_tiles:
+            pmtiles_size = Path(pmtiles_path).stat().st_size / (1024 * 1024)
+            print(
+                f"  PMTiles : {pmtiles_size:.1f} MB"
+                f"  ({(1 - pmtiles_size / graphml_size) * 100:.0f}% smaller than GraphML)"
+            )
+
     finally:
-        # Clean up temporary GeoJSON
-        Path(geojson_path).unlink(missing_ok=True)
+        if use_temp:
+            Path(geojson_path).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
