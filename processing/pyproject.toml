@@ -17,6 +17,7 @@ dependencies = [
     "pydeck>=0.9.1",
     "rasterio>=1.4.3",
     "rio-vrt>=0.3.1",
+    "tqdm>=4.67.3",
 ]
 
 [project.optional-dependencies]
