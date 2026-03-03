@@ -146,6 +146,10 @@ def create_point_geodataframe(df):
     # Create Point geometries from x, y coordinates
     geometry = [Point(xy) for xy in zip(df["x"], df["y"])]
     gdf = gpd.GeoDataFrame(df, geometry=geometry, crs="EPSG:4326")
+    gdf["t"] = pd.to_datetime(gdf["t"], unit="s")
+    gdf["hour"] = gdf["t"].dt.hour
+    gdf["month"] = gdf["t"].dt.month
+    gdf["year"] = gdf["t"].dt.year
 
     logging.info(f"Created GeoDataFrame with {len(gdf)} points")
     return gdf
@@ -164,14 +168,12 @@ def create_h3_bins(gdf, resolution=10):
     """
     logging.info(f"Creating H3 bins at resolution {resolution}...")
 
-    hex_bins = []
-    for idx, row in gdf.iterrows():
-        # Note: h3.latlng_to_cell expects (lat, lng), but geometry.x is lng,
-        # geometry.y is lat
-        h3_index = h3.latlng_to_cell(row.geometry.y, row.geometry.x, resolution)
-        hex_bins.append(h3_index)
+    lats = gdf.geometry.y.to_numpy()
+    lngs = gdf.geometry.x.to_numpy()
 
-    gdf["hex_bin"] = hex_bins
+    gdf["hex_bin"] = list(
+        map(lambda lat, lng: h3.latlng_to_cell(lat, lng, resolution), lats, lngs)
+    )
     unique_bins = gdf["hex_bin"].nunique()
     logging.info(f"Created {unique_bins} unique H3 bins")
 
