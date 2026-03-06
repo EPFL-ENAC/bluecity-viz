@@ -21,6 +21,18 @@ The algorithm uses a three-phase approach:
 - `final_waste_clusters.gpkg`: Output GeoPackage file containing clustered waste collection points
 - `.gitignore`: Git ignore configuration
 
+## Input Data
+The clustering algorithm requires the following input data files, which should be placed in the [data/](data/) directory:
+
+- `lausanne_districts.gpkg`: GeoPackage file containing polygon boundaries of Lausanne districts for spatial joins and neighborhood analysis
+- `DI_final_clustered_centroids.csv`: CSV file containing pre-computed centroids for household waste clusters (used for initialization)
+- `PC_final_clustered_centroids.csv`: CSV file containing pre-computed centroids for paper waste clusters (used for initialization)
+- `VE_final_clustered_centroids.csv`: CSV file containing pre-computed centroids for glass waste clusters (used for initialization)
+- `DV_final_clustered_centroids.csv`: CSV file containing pre-computed centroids for organic waste clusters (used for initialization)
+- `Waste generation per person in each neighborhood.xlsx`: Excel file containing waste generation data.
+
+All of those files are available in the shared OneDrive folder.
+
 ## Usage
 
 ### Using Make (recommended)
