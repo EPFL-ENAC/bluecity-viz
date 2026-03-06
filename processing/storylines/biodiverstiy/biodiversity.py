@@ -71,4 +71,4 @@ for road in roads_areas['road_id'].unique():
 # Save data
 
 roads_areas["road_geometry"] = roads_areas["road_geometry"].to_wkt()
-roads_areas.to_file(os.path.join(data_dir, 'roads_areas_clusters.gpkg'), layer='roads_areas_clusters', driver='GPKG')
+roads_areas.to_file('roads_areas_clusters.gpkg', layer='roads_areas_clusters', driver='GPKG')
