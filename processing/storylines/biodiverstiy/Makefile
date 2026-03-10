@@ -1,4 +1,4 @@
-.PHONY download-data generate-data clean
+.PHONY: download-data generate-data clean
 
 
 download-data:
@@ -8,7 +8,7 @@ download-data:
 
 generate-data:
 	@echo "Generating data"
-	python biodiversity.ipynb
+	python biodiversity.py
 	@echo "Data generated"
 
 clean:
