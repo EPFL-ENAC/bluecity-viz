@@ -12,7 +12,12 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000/data',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/data/, '')
-      }
+      },
+    '^/geodata.*': {  // ADD THIS
+      target: 'http://127.0.0.1:8000/data',
+      changeOrigin: true,
+      rewrite: (path) => path.replace(/^\/geodata/, '')
+    }
     }
   },
   plugins: [vue(), vuetify()],
