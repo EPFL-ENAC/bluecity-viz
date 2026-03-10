@@ -33,7 +33,7 @@ The clustering algorithm requires the following input data files, which should b
 - `lausanne_drive_edges.gpkg`: GeoPackage file containing the road network (LineStrings) for Lausanne
 - `Lausanne Districts.gpkg`: GeoPackage file containing polygon boundaries of Lausanne districts for spatial analysis
 
-All of these files are available in the shared OneDrive folder.
+All of the information about where to get this data is in the `DataAccess.ipynb` notebook and `DataAccess.py` script.
 
 ## Usage
 
