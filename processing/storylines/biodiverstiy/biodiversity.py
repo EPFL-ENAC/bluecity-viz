@@ -1,6 +1,9 @@
-import pandas as pd
-import geopandas as gpd
 from matplotlib import pyplot as plt
+import contextily as ctx
+import geopandas as gpd
+import geoviews as gv
+import hvplot.pandas
+import pandas as pd
 import fiona
 import os
 
@@ -14,7 +17,6 @@ areas = gpd.read_file(gdb_path, layer=layers[0], columns=['TypoCH_NUM', 'TypoCH'
 roads_path = os.path.join(data_dir, 'lausanne_drive_edges.gpkg')
 roads = gpd.read_file(roads_path, columns=['geometry'])
 
-
 buffer_distance = 10  # meters
 
 # select only biodiversity areas within Lausanne
@@ -27,9 +29,12 @@ areas_lausanne = areas.cx[xmin:xmax, ymin:ymax]
 areas_lausanne = areas_lausanne[~areas_lausanne["TypoCH"].str.startswith("9")] # Zones spéciales
 areas_lausanne = areas_lausanne[~areas_lausanne["TypoCH"].str.startswith("8")] # Zones de trasport
 areas_lausanne = areas_lausanne[~areas_lausanne["TypoCH"].str.startswith("5")] # Surfaces bâties
-areas_lausanne = areas_lausanne[~areas_lausanne["TypoCH"].str.startswith("4")] # Surfaces ouvertes
+areas_lausanne = areas_lausanne[areas_lausanne["TypoCH"] != "4"] # Surfaces ouvertes
 areas_lausanne = areas_lausanne[areas_lausanne["POLYID"] != 21691543] # Lac
+areas_lausanne = areas_lausanne[~areas_lausanne["TypoCH"].str.startswith("STR")] # STR
 
+# Ensure same CRS by reprojecting roads to match areas_lausanne
+roads = roads.to_crs(areas_lausanne.crs)
 
 # Create a buffered version of roads without modifying the original
 roads_buffered = roads.copy()
@@ -57,18 +62,59 @@ road_centroids_x = roads_areas['road_geometry'].centroid.x
 area_centroids_x = roads_areas['area_geometry'].centroid.x
 roads_areas["side"] = (road_centroids_x < area_centroids_x).map({True: 'left', False: 'right'})
 
-roads_areas["cluster"] = None
+#roads_areas["cluster_v1"] = pd.NA # Clusters based on the exact TypoCH code
+roads_areas["cluster_v2"] = pd.NA # Clusters based on the first 3 characters of the TypoCH code (more general)
 
-# Create the clusters
+#roads_areas["cluster_v1"] = roads_areas["cluster_v1"].astype("Int64")
+roads_areas["cluster_v2"] = roads_areas["cluster_v2"].astype("Int64")
+
+roads_areas["TypoCH_v2"] = roads_areas["TypoCH"].str[:3]
+
 cluster = 0
 
-for road in roads_areas['road_id'].unique():
-    for area_type in roads_areas['TypoCH'].unique():
-        mask = (roads_areas['road_id'] == road) & (roads_areas['TypoCH'] == area_type)
-        roads_areas.loc[mask, 'cluster'] = cluster
+for (road_id, typo_ch), group_df in roads_areas.groupby(['road_id', 'TypoCH_v2']):
+    if 'right' in group_df['side'].values and 'left' in group_df['side'].values:
+        roads_areas.loc[group_df.index, 'cluster_v2'] = cluster
         cluster += 1
 
-# Save data
+done = False
+
+while not done:
+
+    done = True
+    for polyid, group_df in roads_areas.groupby('POLYID'):
+        if group_df['cluster_v2'].nunique(dropna = True) > 1:
+
+            done = False
+
+            final_cluster = group_df['cluster_v2'].iloc[0]
+            
+            if pd.isna(final_cluster):
+                final_cluster = group_df['cluster_v2'].iloc[1]
+            
+            for cluster_id in group_df['cluster_v2'].unique():
+                if pd.isna(cluster_id):
+                    continue
+                roads_areas.loc[roads_areas['cluster_v2'] == cluster_id, 'cluster_v2'] = final_cluster
+            break
+
+# Drop duplicate rows
+roads_areas = roads_areas.drop_duplicates(subset=['road_id', 'POLYID'], keep='first')
+roads_areas = roads_areas.drop_duplicates(subset=['cluster_v2', 'POLYID'], keep='first')
+
+# Drop rows with NA in cluster_v2
+roads_areas = roads_areas[roads_areas["cluster_v2"].notna()]
+
+roads_areas['area'] = roads_areas.geometry.area
+
+roads_areas['total_area'] = roads_areas.groupby('cluster_v2')['area'].transform('sum')
+roads_areas['max_area'] = roads_areas.groupby('cluster_v2')['area'].transform('max')
+
+roads_areas['gain_marginal'] = roads_areas['total_area'] / roads_areas['max_area']
+
+roads_areas["road_amount"] = roads_areas.groupby('cluster_v2')["road_id"].transform('nunique')
+
+roads_areas["sous_types"] = roads_areas.groupby('cluster_v2')["TypoCH"].transform(lambda x: ', '.join(x.unique()))
 
 roads_areas["road_geometry"] = roads_areas["road_geometry"].to_wkt()
 roads_areas.to_file('roads_areas_clusters.gpkg', layer='roads_areas_clusters', driver='GPKG')
