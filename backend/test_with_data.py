@@ -1,7 +1,8 @@
 """Test with actual graph data."""
 
-import requests
 import json
+
+import requests
 
 BASE_URL = "http://localhost:8000"
 
@@ -114,20 +115,20 @@ def test_recalculate_routes():
         data = response.json()
         comparison = data["comparisons"][0]
 
-        print(f"\nOriginal route:")
+        print("\nOriginal route:")
         print(f"  Path length: {len(comparison['original_route']['path'])} nodes")
         print(
             f"  Travel time: {comparison['original_route'].get('travel_time', 'N/A')} seconds"
         )
 
-        print(f"\nNew route (with edge removed):")
+        print("\nNew route (with edge removed):")
         print(f"  Path length: {len(comparison['new_route']['path'])} nodes")
         print(
             f"  Travel time: {comparison['new_route'].get('travel_time', 'N/A')} seconds"
         )
 
         if comparison["removed_edge_on_path"]:
-            print(f"\n✓ Removed edge was on the original path")
+            print("\n✓ Removed edge was on the original path")
     else:
         print("Error:", response.json())
 

@@ -2,18 +2,19 @@
 
 from typing import List, Optional
 
-from app.models.route import (
-  GraphData,
-  NodePair,
-  RandomPairsRequest,
-  RecalculateRequest,
-  RecalculateResponse,
-  RouteRequest,
-  RouteResponse,
-)
-from app.services.graph_service import GraphService
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
+
+from app.models.route import (
+    GraphData,
+    NodePair,
+    RandomPairsRequest,
+    RecalculateRequest,
+    RecalculateResponse,
+    RouteRequest,
+    RouteResponse,
+)
+from app.services.graph_service import GraphService
 
 router = APIRouter(prefix="/routes", tags=["routes"])
 

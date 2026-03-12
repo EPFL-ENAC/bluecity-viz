@@ -3,12 +3,13 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from app.api.v1 import routes
-from app.config import settings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
+
+from app.api.v1 import routes
+from app.config import settings
 
 
 @asynccontextmanager

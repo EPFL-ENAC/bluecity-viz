@@ -17,10 +17,8 @@ dependencies = [
     "requests>=2.32.0",
     "pmtiles>=3.3.0",
     "shapely>=2.0.0",
-    "black>=24.0.0",
-    "flake8>=7.0.0",
-    "igraph>=0.11.0",
     "scipy>=1.11.0",
+    "igraph>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -36,5 +34,22 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
-[tool.black]
-target-version = ["py311"]
+[tool.ruff]
+line-length = 100
+indent-width = 4
+target-version = "py312"
+fix = true
+lint.select = ["E", "F", "I"] # errors, flake8, imports
+exclude = ["migrations"]
+ 
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.5",
+]
+

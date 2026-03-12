@@ -40,7 +40,9 @@ class EdgeModification(BaseModel):
 class PathGeometry(BaseModel):
     """Path geometry as list of coordinates."""
 
-    coordinates: List[List[float]] = Field(..., description="List of [lon, lat] coordinates")
+    coordinates: List[List[float]] = Field(
+        ..., description="List of [lon, lat] coordinates"
+    )
 
 
 class Route(BaseModel):
@@ -49,10 +51,16 @@ class Route(BaseModel):
     origin: int
     destination: int
     path: List[int] = Field(..., description="List of node IDs in the path")
-    travel_time: Optional[float] = Field(None, description="Total travel time in seconds")
+    travel_time: Optional[float] = Field(
+        None, description="Total travel time in seconds"
+    )
     distance: Optional[float] = Field(None, description="Total distance in meters")
-    elevation_gain: Optional[float] = Field(None, description="Total elevation gain in meters")
-    co2_emissions: Optional[float] = Field(None, description="Total CO2 emissions in grams")
+    elevation_gain: Optional[float] = Field(
+        None, description="Total elevation gain in meters"
+    )
+    co2_emissions: Optional[float] = Field(
+        None, description="Total CO2 emissions in grams"
+    )
 
 
 class RouteRequest(BaseModel):
@@ -73,7 +81,8 @@ class RecalculateRequest(BaseModel):
     """Request to recalculate routes with edge modifications."""
 
     pairs: Optional[List[NodePair]] = Field(
-        None, description="List of origin-destination pairs (uses default if not provided)"
+        None,
+        description="List of origin-destination pairs (uses default if not provided)",
     )
     edge_modifications: List[EdgeModification] = Field(
         default_factory=list, description="Edge modifications (remove or change speed)"
@@ -124,7 +133,9 @@ class EdgeUsageStats(BaseModel):
     v: int = Field(..., description="End node ID")
     count: int = Field(..., description="Number of times this edge was used")
     frequency: float = Field(..., description="Usage frequency (count / total_routes)")
-    delta_count: Optional[int] = Field(None, description="Change in usage count (new - original)")
+    delta_count: Optional[int] = Field(
+        None, description="Change in usage count (new - original)"
+    )
     delta_frequency: Optional[float] = Field(
         None, description="Change in frequency (new - original)"
     )
@@ -137,7 +148,9 @@ class ImpactStatistics(BaseModel):
     """Aggregate statistics about the impact of removed edges."""
 
     total_routes: int = Field(..., description="Total number of routes analyzed")
-    affected_routes: int = Field(..., description="Number of routes impacted by removed edges")
+    affected_routes: int = Field(
+        ..., description="Number of routes impacted by removed edges"
+    )
     failed_routes: int = Field(0, description="Number of routes that became impossible")
     total_distance_increase_km: float = Field(
         0.0, description="Total additional distance across all routes (km)"
@@ -161,7 +174,8 @@ class ImpactStatistics(BaseModel):
         0.0, description="Average percentage increase in distance for affected routes"
     )
     avg_time_increase_percent: float = Field(
-        0.0, description="Average percentage increase in travel time for affected routes"
+        0.0,
+        description="Average percentage increase in travel time for affected routes",
     )
     total_co2_increase_grams: float = Field(
         0.0, description="Total additional CO2 emissions across all routes (grams)"
@@ -173,7 +187,8 @@ class ImpactStatistics(BaseModel):
         0.0, description="Maximum additional CO2 emissions for a single route (grams)"
     )
     avg_co2_increase_percent: float = Field(
-        0.0, description="Average percentage increase in CO2 emissions for affected routes"
+        0.0,
+        description="Average percentage increase in CO2 emissions for affected routes",
     )
 
 
@@ -191,7 +206,8 @@ class RecalculateResponse(BaseModel):
         ..., description="Aggregate statistics about the impact of edge modifications"
     )
     routes: List[Route] = Field(
-        default_factory=list, description="Calculated routes with paths for visualization"
+        default_factory=list,
+        description="Calculated routes with paths for visualization",
     )
 
 
@@ -219,14 +235,20 @@ class GraphData(BaseModel):
 class RandomPairsRequest(BaseModel):
     """Request to generate random node pairs."""
 
-    count: int = Field(default=100, ge=1, le=10000, description="Number of pairs to generate")
+    count: int = Field(
+        default=100, ge=1, le=10000, description="Number of pairs to generate"
+    )
     seed: Optional[int] = Field(None, description="Random seed for reproducibility")
     radius_km: Optional[float] = Field(
-        default=2.0, ge=0.1, le=50.0, description="Radius in km from city center to sample nodes"
+        default=2.0,
+        ge=0.1,
+        le=50.0,
+        description="Radius in km from city center to sample nodes",
     )
     sampling_method: str = Field(
         default="research", description="Sampling method: 'simple' or 'research'"
     )
     sampling_config: Optional[SamplingConfig] = Field(
-        None, description="Configuration for research-based sampling (uses defaults if None)"
+        None,
+        description="Configuration for research-based sampling (uses defaults if None)",
     )

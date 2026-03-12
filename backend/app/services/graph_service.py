@@ -6,24 +6,25 @@ from pathlib import Path
 from typing import List, Optional
 
 import osmnx as ox
+
 from app.models.route import (
-  EdgeModification,
-  GraphData,
-  GraphEdge,
-  NodePair,
-  PathGeometry,
-  RecalculateResponse,
-  Route,
+    EdgeModification,
+    GraphData,
+    GraphEdge,
+    NodePair,
+    PathGeometry,
+    RecalculateResponse,
+    Route,
 )
 from app.services.co2_calculator import CO2Calculator
 from app.services.graph_helpers import (
-  build_edge_usage_stats,
-  calculate_route_metrics,
-  count_edge_usage,
+    build_edge_usage_stats,
+    calculate_route_metrics,
+    count_edge_usage,
 )
 from app.services.impact_calculator import (
-  compute_impact_statistics,
-  find_affected_routes,
+    compute_impact_statistics,
+    find_affected_routes,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -56,12 +57,20 @@ class GraphService:
 
         # Add speeds/travel times if mostly missing
         if (
-            sum(1 for _, _, d in self.graph.edges(data=True) if d.get("speed_kph", 0) > 0)
+            sum(
+                1
+                for _, _, d in self.graph.edges(data=True)
+                if d.get("speed_kph", 0) > 0
+            )
             < total * 0.9
         ):
             self.graph = ox.routing.add_edge_speeds(self.graph)
         if (
-            sum(1 for _, _, d in self.graph.edges(data=True) if d.get("travel_time", 0) > 0)
+            sum(
+                1
+                for _, _, d in self.graph.edges(data=True)
+                if d.get("travel_time", 0) > 0
+            )
             < total * 0.9
         ):
             self.graph = ox.routing.add_edge_travel_times(self.graph)
@@ -105,7 +114,9 @@ class GraphService:
                 count=count, seed=seed, radius_km=radius_km
             )
 
-        self.default_routes = await self.calculate_routes(self.default_pairs, weight="travel_time")
+        self.default_routes = await self.calculate_routes(
+            self.default_pairs, weight="travel_time"
+        )
 
         pairs_key = tuple((p.origin, p.destination) for p in self.default_pairs)
         self.pairs_cache = pairs_key
@@ -266,7 +277,9 @@ class GraphService:
                         continue
 
                     # Convert path from igraph indices to NetworkX node IDs
-                    path_nx = [idx_maps["node_ig_to_nx"][node_ig] for node_ig in path_ig]
+                    path_nx = [
+                        idx_maps["node_ig_to_nx"][node_ig] for node_ig in path_ig
+                    ]
 
                     # Calculate metrics using NetworkX graph (existing helper)
                     metrics = calculate_route_metrics(self.graph, path_nx)
@@ -280,7 +293,9 @@ class GraphService:
                             travel_time=metrics["travel_time"],
                             distance=metrics["distance"],
                             elevation_gain=metrics["elevation_gain"],
-                            co2_emissions=CO2Calculator.calculate_route_co2(metrics["edges_data"]),
+                            co2_emissions=CO2Calculator.calculate_route_co2(
+                                metrics["edges_data"]
+                            ),
                         )
                     )
 
@@ -304,7 +319,10 @@ class GraphService:
         return all_routes
 
     async def calculate_routes(
-        self, pairs: List[NodePair], weight: str = "travel_time", use_parallel: bool = None
+        self,
+        pairs: List[NodePair],
+        weight: str = "travel_time",
+        use_parallel: bool = None,
     ) -> List[Route]:
         """Calculate shortest paths for given node pairs using igraph one-to-many routing.
 
@@ -420,7 +438,9 @@ class GraphService:
 
             config = sampling_config or SamplingConfig()
 
-            print(f"[RESAMPLE] Generating new OD pairs using modified graph (n={len(pairs)})")
+            print(
+                f"[RESAMPLE] Generating new OD pairs using modified graph (n={len(pairs)})"
+            )
             # Generate new OD pairs using modified graph
             new_pairs = generate_research_based_pairs(
                 G_mod, n_pairs=len(pairs), config=config, seed=42
@@ -438,7 +458,9 @@ class GraphService:
 
         else:
             # Existing logic: find affected routes and reroute
-            affected_indices = find_affected_routes(original_routes, effective_modified_set)
+            affected_indices = find_affected_routes(
+                original_routes, effective_modified_set
+            )
 
             # Recalculate affected routes
             new_routes_by_index = {}
@@ -467,7 +489,9 @@ class GraphService:
         # Edge usage stats
         original_counts = count_edge_usage(original_routes)
         original_usage = build_edge_usage_stats(self.graph, original_routes, len(pairs))
-        new_usage = build_edge_usage_stats(self.graph, complete_routes, len(pairs), original_counts)
+        new_usage = build_edge_usage_stats(
+            self.graph, complete_routes, len(pairs), original_counts
+        )
 
         return RecalculateResponse(
             applied_modifications=applied,
@@ -507,7 +531,9 @@ class GraphService:
                     v=v,
                     geometry=PathGeometry(coordinates=coords),
                     name=name,
-                    highway=highway_raw[0] if isinstance(highway_raw, list) else highway_raw,
+                    highway=highway_raw[0]
+                    if isinstance(highway_raw, list)
+                    else highway_raw,
                     speed_kph=d.get("speed_kph"),
                     length=d.get("length"),
                     travel_time=d.get("travel_time"),
@@ -515,7 +541,9 @@ class GraphService:
             )
 
         return GraphData(
-            edges=edges, node_count=len(self.graph.nodes), edge_count=len(self.graph.edges)
+            edges=edges,
+            node_count=len(self.graph.nodes),
+            edge_count=len(self.graph.edges),
         )
 
     def clear_route_cache(self):
@@ -541,7 +569,9 @@ class GraphService:
             return (lat_km**2 + lon_km**2) ** 0.5
 
         nodes_in_radius = [
-            n for n in self.graph.nodes() if distance_km(self.graph.nodes[n]) <= radius_km
+            n
+            for n in self.graph.nodes()
+            if distance_km(self.graph.nodes[n]) <= radius_km
         ]
         if len(nodes_in_radius) < 2:
             nodes_in_radius = list(self.graph.nodes())

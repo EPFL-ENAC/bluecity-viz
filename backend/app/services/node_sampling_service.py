@@ -70,7 +70,9 @@ class SamplingConfig(BaseModel):
 def show_weight_info(lognorm_mu: float, lognorm_sigma: float):
     """Log information about time-based weights for node pair sampling."""
     max_time = np.exp(lognorm_mu - lognorm_sigma**2)
-    logger.info(f"Maximum weight assigned to nodes {max_time:.0f} s ({max_time/60:.1f} min) apart")
+    logger.info(
+        f"Maximum weight assigned to nodes {max_time:.0f} s ({max_time/60:.1f} min) apart"
+    )
     times = [1, 2, 5, 10, 30, 60]
     weights = lognorm.pdf(
         [max_time] + [t * 60 for t in times], s=lognorm_sigma, scale=np.exp(lognorm_mu)
@@ -94,7 +96,9 @@ def load_edge_attributes(g: nx.MultiDiGraph) -> pd.DataFrame:
 
     # Get number of lanes and ensure integer value
     lanes = nx.get_edge_attributes(g, "lanes")
-    lanes = pd.Series({idx: lanes.get(idx, 2) for idx in length.index}, name="lanes").fillna(2)
+    lanes = pd.Series(
+        {idx: lanes.get(idx, 2) for idx in length.index}, name="lanes"
+    ).fillna(2)
     lanes = lanes.apply(lambda v: v[0] if isinstance(v, list) else v).astype(int)
 
     speed_kph = pd.Series(nx.get_edge_attributes(g, "speed_kph"), name="speed_kph")
@@ -132,9 +136,13 @@ def assign_edge_weight(
         speed_kph_new = edge_attr["speed_kph"] / (
             1 + betweenness / edge_attr["lanes"] / betweenness_to_slowdown
         )
-        speed_reduction = (edge_attr["speed_kph"] - speed_kph_new) / edge_attr["speed_kph"] * 100
+        speed_reduction = (
+            (edge_attr["speed_kph"] - speed_kph_new) / edge_attr["speed_kph"] * 100
+        )
+        mean_reduction = speed_reduction.mean()
+        max_reduction = speed_reduction.max()
         logger.info(
-            f"Speed reduction - Avg: {speed_reduction.mean():.1f}% / Max: {speed_reduction.max():.1f}%"
+            f"Speed reduction - Avg: {mean_reduction:.1f}% / Max: {max_reduction:.1f}%"
         )
         weight = edge_attr["length"] / (speed_kph_new / 3.6)
     else:
@@ -238,7 +246,9 @@ def edge_betweenness_igraph(
     return bc_dict
 
 
-def travel_time_matrix_igraph(h: ig.Graph, nodes: List[int], weight_name: str) -> List[List[float]]:
+def travel_time_matrix_igraph(
+    h: ig.Graph, nodes: List[int], weight_name: str
+) -> List[List[float]]:
     """Compute all-pairs travel time matrix using igraph.
 
     Args:
@@ -267,7 +277,9 @@ def igraph_matrix_to_dict(
     """
     t_matrix_dict = {}
     for row_id, t_list in zip(nodes_ig, t_matrix):
-        d = {idx_maps["node_ig_to_nx"][col_id]: t for col_id, t in zip(nodes_ig, t_list)}
+        d = {
+            idx_maps["node_ig_to_nx"][col_id]: t for col_id, t in zip(nodes_ig, t_list)
+        }
         t_matrix_dict[idx_maps["node_ig_to_nx"][row_id]] = d
     return t_matrix_dict
 
@@ -291,10 +303,12 @@ def sample_od_pairs(
         t_matrix_dict: Travel time matrix as nested dict
 
     Returns:
-        Dict mapping origin to list of destinations (n_samples origins → n_samples destinations each)
+        Dict mapping origin to list of destinations
     """
     # Sample origins WITH replacement (nodes can be sampled multiple times)
-    origins = list(nodes.sample(n_samples, random_state=rng, replace=True, weights=nodes).index)
+    origins = list(
+        nodes.sample(n_samples, random_state=rng, replace=True, weights=nodes).index
+    )
 
     od_pairs = {}
     failed_origins = []
@@ -306,7 +320,9 @@ def sample_od_pairs(
 
         try:
             destinations = list(
-                nodes.sample(n_samples, random_state=rng, replace=True, weights=weights).index
+                nodes.sample(
+                    n_samples, random_state=rng, replace=True, weights=weights
+                ).index
             )
             od_pairs[origin] = destinations
         except ValueError:
@@ -368,7 +384,9 @@ def generate_research_based_pairs(
     g = assign_edge_weight(g, edge_weight_default, edge_attr, None, None)
 
     # Sample nodes for processing
-    nodes = get_considered_nodes(g, rng, config.n_nodes_preprocess, config.node_weight_col)
+    nodes = get_considered_nodes(
+        g, rng, config.n_nodes_preprocess, config.node_weight_col
+    )
 
     # Convert to igraph for performance
     h, idx_maps = networkx_to_igraph_with_indices(g)
@@ -377,10 +395,16 @@ def generate_research_based_pairs(
     # Step 2: Calculate betweenness centrality
     logger.info("Calculating betweenness centrality...")
     bc_dict = edge_betweenness_igraph(
-        h, config.daily_km_driven, weights=edge_weight_default, sources=nodes_ig, targets=nodes_ig
+        h,
+        config.daily_km_driven,
+        weights=edge_weight_default,
+        sources=nodes_ig,
+        targets=nodes_ig,
     )
     betweenness = {idx_maps["edge_ig_to_nx"][idx]: bc for idx, bc in bc_dict.items()}
-    betweenness = pd.Series({k: betweenness.get(k, 0) for k in edge_attr.index}, name="betweenness")
+    betweenness = pd.Series(
+        {k: betweenness.get(k, 0) for k in edge_attr.index}, name="betweenness"
+    )
 
     # Step 3: Re-calculate edge weights with congestion
     edge_weight_bc = "duration_bc"
@@ -390,7 +414,9 @@ def generate_research_based_pairs(
 
     # Update igraph weights
     duration = nx.get_edge_attributes(g, edge_weight_bc)
-    h.es[edge_weight_bc] = [duration[idx_maps["edge_ig_to_nx"][idx]] for idx in h.get_edgelist()]
+    h.es[edge_weight_bc] = [
+        duration[idx_maps["edge_ig_to_nx"][idx]] for idx in h.get_edgelist()
+    ]
 
     # Step 4: Calculate travel time matrix
     logger.info("Computing travel time matrix...")
@@ -398,8 +424,10 @@ def generate_research_based_pairs(
     t_matrix_dict = igraph_matrix_to_dict(t_matrix, nodes_ig, idx_maps)
 
     # Step 5: Sample OD pairs using configured origins and destinations
+    n_origins = config.n_origins
+    n_destinations = config.n_destinations_per_origin
     logger.info(
-        f"Sampling {config.n_origins} origins × {config.n_destinations_per_origin} destinations per origin..."
+        f"Sampling {n_origins} origins × {n_destinations} destinations per origin..."
     )
     od_pairs_dict = sample_od_pairs(
         nodes,

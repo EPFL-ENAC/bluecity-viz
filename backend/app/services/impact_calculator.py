@@ -130,8 +130,8 @@ def compute_impact_statistics(
                 route_failed=False,
             )
         )
-
-    avg = lambda lst: sum(lst) / len(lst) if lst else 0.0
+    def avg(lst): 
+        return sum(lst) / len(lst) if lst else 0.0
 
     stats = ImpactStatistics(
         total_routes=total,
