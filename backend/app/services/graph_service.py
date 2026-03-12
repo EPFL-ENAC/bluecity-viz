@@ -1,30 +1,30 @@
 """Graph service orchestrator for route calculations."""
 
 import logging
-import os
 import random
-import time
 from pathlib import Path
 from typing import List, Optional
 
 import osmnx as ox
 from app.models.route import (
-    EdgeModification,
-    GraphData,
-    GraphEdge,
-    NodePair,
-    PathGeometry,
-    RecalculateResponse,
-    Route,
+  EdgeModification,
+  GraphData,
+  GraphEdge,
+  NodePair,
+  PathGeometry,
+  RecalculateResponse,
+  Route,
 )
 from app.services.co2_calculator import CO2Calculator
 from app.services.graph_helpers import (
-    build_edge_usage_stats,
-    build_path_geometry,
-    calculate_route_metrics,
-    count_edge_usage,
+  build_edge_usage_stats,
+  calculate_route_metrics,
+  count_edge_usage,
 )
-from app.services.impact_calculator import compute_impact_statistics, find_affected_routes
+from app.services.impact_calculator import (
+  compute_impact_statistics,
+  find_affected_routes,
+)
 
 logging.basicConfig(level=logging.INFO)
 ox_logger = logging.getLogger("osmnx")
@@ -69,13 +69,42 @@ class GraphService:
         print(f"Loaded graph: {len(self.graph.nodes)} nodes, {total} edges")
 
     async def initialize_default_routes(
-        self, count: int = 500, radius_km: float = 2.0, seed: int = 42
+        self,
+        count: int = 500,
+        radius_km: float = 2.0,
+        seed: int = 42,
+        sampling_method: str = "research",
+        sampling_config=None,
     ):
-        """Generate default OD pairs and pre-calculate routes."""
+        """Generate default OD pairs and pre-calculate routes.
+
+        Args:
+            count: Number of OD pairs to generate
+            radius_km: Radius for simple sampling (ignored if method='research')
+            seed: Random seed for reproducibility
+            sampling_method: 'simple' or 'research' (default: 'research')
+            sampling_config: SamplingConfig for research-based sampling (uses defaults if None)
+        """
         if not self.graph:
             raise RuntimeError("Graph not loaded")
 
-        self.default_pairs = self.generate_random_pairs(count=count, seed=seed, radius_km=radius_km)
+        if sampling_method == "research":
+            from app.services.node_sampling_service import (
+              SamplingConfig,
+              generate_research_based_pairs,
+            )
+
+            config = sampling_config or SamplingConfig()
+            print(f"[STARTUP] Using research-based sampling with {count} OD pairs")
+            self.default_pairs = generate_research_based_pairs(
+                self.graph, n_pairs=count, config=config, seed=seed
+            )
+        else:
+            print(f"[STARTUP] Using simple random sampling with {count} OD pairs")
+            self.default_pairs = self.generate_random_pairs(
+                count=count, seed=seed, radius_km=radius_km
+            )
+
         self.default_routes = await self.calculate_routes(self.default_pairs, weight="travel_time")
 
         pairs_key = tuple((p.origin, p.destination) for p in self.default_pairs)
@@ -137,53 +166,180 @@ class GraphService:
 
         return edges
 
+    def _group_pairs_by_origin(self, pairs: List[NodePair]) -> dict:
+        """Group OD pairs by origin for one-to-many routing.
+
+        Args:
+            pairs: List of origin-destination pairs
+
+        Returns:
+            Dict mapping origin → list of (destination, pair_object) tuples
+        """
+        from collections import defaultdict
+
+        origin_groups = defaultdict(list)
+        for pair in pairs:
+            origin_groups[pair.origin].append((pair.destination, pair))
+
+        return origin_groups
+
+    async def _calculate_routes_igraph(
+        self, origin_groups: dict, weight: str = "travel_time"
+    ) -> List[Route]:
+        """Calculate routes using igraph one-to-many shortest paths.
+
+        Args:
+            origin_groups: Dict mapping origin → [(destination, pair_object), ...]
+            weight: Edge weight attribute
+
+        Returns:
+            List of Route objects (order not preserved)
+        """
+        import logging
+        import time
+
+        from app.services.node_sampling_service import (
+          networkx_to_igraph_with_indices,
+        )
+
+        logger = logging.getLogger(__name__)
+
+        # Convert NetworkX graph to igraph with index mappings
+        t0 = time.time()
+        h, idx_maps = networkx_to_igraph_with_indices(self.graph)
+        t1 = time.time()
+        logger.info(f"Graph conversion took {t1-t0:.2f}s")
+
+        # Copy weight attribute from NetworkX to igraph
+        if weight not in h.es.attributes():
+            logger.info(f"Copying weight attribute '{weight}' to igraph...")
+            edge_weights = []
+            for edge_ig_idx in h.get_edgelist():
+                edge_nx_idx = idx_maps["edge_ig_to_nx"][edge_ig_idx]
+                edge_data = self.graph.edges[edge_nx_idx]
+                edge_weights.append(edge_data.get(weight, edge_data.get("length", 1)))
+            h.es[weight] = edge_weights
+
+        all_routes = []
+        failed_origins = 0
+
+        t2 = time.time()
+        logger.info(f"Calculating routes for {len(origin_groups)} origins...")
+        t2_routing = 0
+
+        for origin_nx, dest_pairs in origin_groups.items():
+            # Convert origin from NetworkX ID to igraph index
+            if origin_nx not in idx_maps["node_nx_to_ig"]:
+                logger.warning(f"Origin {origin_nx} not found in igraph")
+                failed_origins += 1
+                continue
+
+            origin_ig = idx_maps["node_nx_to_ig"][origin_nx]
+
+            # Convert destinations from NetworkX IDs to igraph indices
+            destinations_ig = []
+            dest_pair_mapping = []  # Track which pair corresponds to which destination
+
+            for dest_nx, pair_obj in dest_pairs:
+                if dest_nx in idx_maps["node_nx_to_ig"]:
+                    destinations_ig.append(idx_maps["node_nx_to_ig"][dest_nx])
+                    dest_pair_mapping.append((dest_nx, pair_obj))
+
+            if not destinations_ig:
+                logger.warning(f"No valid destinations for origin {origin_nx}")
+                failed_origins += 1
+                continue
+
+            try:
+                # ONE DIJKSTRA CALL FOR ALL DESTINATIONS FROM THIS ORIGIN
+                t2a = time.time()
+                paths_ig = h.get_shortest_paths(
+                    v=origin_ig, to=destinations_ig, weights=weight, output="vpath"
+                )
+                t2b = time.time()
+                t2_routing += t2b - t2a
+
+                # Process each path
+                for path_ig, (dest_nx, pair_obj) in zip(paths_ig, dest_pair_mapping):
+                    if not path_ig or len(path_ig) < 2:
+                        # No path found (disconnected)
+                        continue
+
+                    # Convert path from igraph indices to NetworkX node IDs
+                    path_nx = [idx_maps["node_ig_to_nx"][node_ig] for node_ig in path_ig]
+
+                    # Calculate metrics using NetworkX graph (existing helper)
+                    metrics = calculate_route_metrics(self.graph, path_nx)
+
+                    # Build Route object
+                    all_routes.append(
+                        Route(
+                            origin=pair_obj.origin,
+                            destination=pair_obj.destination,
+                            path=path_nx,
+                            travel_time=metrics["travel_time"],
+                            distance=metrics["distance"],
+                            elevation_gain=metrics["elevation_gain"],
+                            co2_emissions=CO2Calculator.calculate_route_co2(metrics["edges_data"]),
+                        )
+                    )
+
+            except Exception as e:
+                logger.warning(f"Failed to route from origin {origin_nx}: {e}")
+                failed_origins += 1
+                continue
+
+        t3 = time.time()
+        routing_time = t3 - t2
+        logger.info(f"Total routing time: {routing_time:.2f}s")
+        logger.info(f"Total routing time (igraph): {t2_routing:.2f}s")
+
+        if failed_origins > 0:
+            logger.warning(f"Failed to route from {failed_origins} origins")
+
+        logger.info(
+            f"Successfully calculated {len(all_routes)} routes in {routing_time:.2f}s "
+            f"({len(all_routes)/routing_time:.0f} routes/sec)"
+        )
+        return all_routes
+
     async def calculate_routes(
         self, pairs: List[NodePair], weight: str = "travel_time", use_parallel: bool = None
     ) -> List[Route]:
-        """Calculate shortest paths for given node pairs."""
+        """Calculate shortest paths for given node pairs using igraph one-to-many routing.
+
+        Args:
+            pairs: List of origin-destination node pairs
+            weight: Edge weight attribute to minimize
+            use_parallel: Deprecated, kept for API compatibility (ignored)
+
+        Returns:
+            List of Route objects with paths and metrics
+
+        Note:
+            Uses igraph one-to-many shortest paths for efficiency.
+            Result order may differ from input pair order.
+        """
         if not self.graph or not pairs:
             return []
 
-        use_parallel = use_parallel if use_parallel is not None else len(pairs) > 100
-        origins = [p.origin for p in pairs]
-        destinations = [p.destination for p in pairs]
+        import logging
 
-        if use_parallel:
-            cpus = min(4, os.cpu_count() or 1)
-            try:
-                paths = ox.routing.shortest_path(
-                    self.graph, origins, destinations, weight=weight, cpus=cpus
-                )
-            except Exception:
-                use_parallel = False
+        logger = logging.getLogger(__name__)
 
-        if not use_parallel:
-            paths = []
-            for p in pairs:
-                try:
-                    paths.append(
-                        ox.routing.shortest_path(self.graph, p.origin, p.destination, weight=weight)
-                    )
-                except Exception:
-                    paths.append(None)
+        # Group pairs by origin for one-to-many optimization
+        origin_groups = self._group_pairs_by_origin(pairs)
 
-        routes = []
-        for pair, path in zip(pairs, paths):
-            if path is None:
-                continue
-            metrics = calculate_route_metrics(self.graph, path)
-            routes.append(
-                Route(
-                    origin=pair.origin,
-                    destination=pair.destination,
-                    path=path,
-                    travel_time=metrics["travel_time"],
-                    distance=metrics["distance"],
-                    elevation_gain=metrics["elevation_gain"],
-                    co2_emissions=CO2Calculator.calculate_route_co2(metrics["edges_data"]),
-                )
-            )
+        avg_dests_per_origin = len(pairs) / len(origin_groups)
+        logger.info(
+            f"[ROUTING] {len(pairs)} OD pairs grouped into {len(origin_groups)} origins "
+            f"(avg {avg_dests_per_origin:.1f} destinations/origin)"
+        )
 
+        # Use igraph one-to-many routing
+        routes = await self._calculate_routes_igraph(origin_groups, weight)
+
+        logger.info(f"[ROUTING] Calculated {len(routes)} routes successfully")
         return routes
 
     async def recalculate_with_modifications(
@@ -191,8 +347,18 @@ class GraphService:
         pairs: Optional[List[NodePair]] = None,
         edge_modifications: List[EdgeModification] = None,
         weight: str = "travel_time",
+        resample_od_pairs: bool = False,
+        sampling_config=None,
     ) -> RecalculateResponse:
-        """Recalculate routes after applying edge modifications (remove or change speed)."""
+        """Recalculate routes after applying edge modifications (remove or change speed).
+
+        Args:
+            pairs: OD pairs to use (uses default if None)
+            edge_modifications: List of edge modifications
+            weight: Edge weight attribute to use
+            resample_od_pairs: If True, resample OD pairs after mods instead of rerouting
+            sampling_config: SamplingConfig for OD resampling (uses defaults if None)
+        """
         if not self.graph:
             raise RuntimeError("Graph not loaded")
 
@@ -245,20 +411,48 @@ class GraphService:
                 applied.append(mod)
                 effective_modified_set.add((mod.u, mod.v))
 
-        # Recalculate affected indices based on actually modified edges
-        affected_indices = find_affected_routes(original_routes, effective_modified_set)
+        # NEW: Resample OD pairs if requested
+        if resample_od_pairs:
+            from app.services.node_sampling_service import (
+              SamplingConfig,
+              generate_research_based_pairs,
+            )
 
-        # Recalculate affected routes
-        new_routes_by_index = {}
-        if affected_indices:
+            config = sampling_config or SamplingConfig()
+
+            print(f"[RESAMPLE] Generating new OD pairs using modified graph (n={len(pairs)})")
+            # Generate new OD pairs using modified graph
+            new_pairs = generate_research_based_pairs(
+                G_mod, n_pairs=len(pairs), config=config, seed=42
+            )
+
+            # Recalculate ALL routes with new OD pairs
             orig_graph = self.graph
             self.graph = G_mod
-            new_routes = await self.calculate_routes([pairs[i] for i in affected_indices], weight)
+            new_routes = await self.calculate_routes(new_pairs, weight)
             self.graph = orig_graph
 
-            for i, idx in enumerate(affected_indices):
-                if i < len(new_routes):
-                    new_routes_by_index[idx] = new_routes[i]
+            # All routes are "affected" since we resampled
+            affected_indices = list(range(len(new_routes)))
+            new_routes_by_index = {i: route for i, route in enumerate(new_routes)}
+
+        else:
+            # Existing logic: find affected routes and reroute
+            affected_indices = find_affected_routes(original_routes, effective_modified_set)
+
+            # Recalculate affected routes
+            new_routes_by_index = {}
+            if affected_indices:
+                orig_graph = self.graph
+                self.graph = G_mod
+                new_routes = await self.calculate_routes(
+                    [pairs[i] for i in affected_indices], weight
+                )
+                self.graph = orig_graph
+
+                for i, idx in enumerate(affected_indices):
+                    if i < len(new_routes):
+                        new_routes_by_index[idx] = new_routes[i]
 
         # Compute impact stats
         impact_stats, _ = compute_impact_statistics(

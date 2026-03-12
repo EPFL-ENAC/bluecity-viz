@@ -28,9 +28,14 @@ async def lifespan(app: FastAPI):
         routes.graph_service.load_graph(str(full_path))
         print("Graph loaded successfully")
 
-        # Generate default OD pairs and pre-calculate routes
-        print("Initializing default routes...")
-        await routes.graph_service.initialize_default_routes(count=1000, radius_km=4.0, seed=42)
+        # Generate default OD pairs using research-based sampling
+        print("Initializing default routes with research-based sampling...")
+        await routes.graph_service.initialize_default_routes(
+            count=500,  # 500 OD pairs (research-based sampling is more intensive)
+            seed=42,
+            sampling_method="research",  # Use research-based method by default
+            sampling_config=None,  # Use default configuration
+        )
         print("Default routes initialized")
     else:
         print(f"Warning: Graph file not found at {full_path}")

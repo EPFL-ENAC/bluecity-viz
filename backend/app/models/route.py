@@ -4,6 +4,13 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+# Re-export SamplingConfig from node_sampling_service for API use
+try:
+    from app.services.node_sampling_service import SamplingConfig
+except ImportError:
+    # Fallback if service not available
+    SamplingConfig = None
+
 
 class NodePair(BaseModel):
     """Origin-destination node pair."""
@@ -25,7 +32,9 @@ class EdgeModification(BaseModel):
     u: int = Field(..., description="Start node ID")
     v: int = Field(..., description="End node ID")
     action: str = Field(default="remove", description="Action: 'remove' or 'modify'")
-    speed_kph: Optional[float] = Field(None, description="New speed in km/h (for 'modify' action)")
+    speed_kph: Optional[float] = Field(
+        None, description="New speed in km/h (for 'modify' action)"
+    )
 
 
 class PathGeometry(BaseModel):
@@ -71,6 +80,13 @@ class RecalculateRequest(BaseModel):
     )
     weight: str = Field(default="travel_time", description="Edge weight attribute")
     include_geometry: bool = Field(default=False, description="Include path geometry")
+    resample_od_pairs: bool = Field(
+        default=False,
+        description="Resample OD pairs after modifications (vs. reroute existing pairs)",
+    )
+    sampling_config: Optional[SamplingConfig] = Field(
+        None, description="Configuration for OD resampling (if resample_od_pairs=True)"
+    )
 
 
 class RouteComparison(BaseModel):
@@ -207,4 +223,10 @@ class RandomPairsRequest(BaseModel):
     seed: Optional[int] = Field(None, description="Random seed for reproducibility")
     radius_km: Optional[float] = Field(
         default=2.0, ge=0.1, le=50.0, description="Radius in km from city center to sample nodes"
+    )
+    sampling_method: str = Field(
+        default="research", description="Sampling method: 'simple' or 'research'"
+    )
+    sampling_config: Optional[SamplingConfig] = Field(
+        None, description="Configuration for research-based sampling (uses defaults if None)"
     )

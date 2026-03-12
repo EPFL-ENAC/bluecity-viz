@@ -19,6 +19,8 @@ dependencies = [
     "shapely>=2.0.0",
     "black>=24.0.0",
     "flake8>=7.0.0",
+    "igraph>=0.11.0",
+    "scipy>=1.11.0",
 ]
 
 [project.optional-dependencies]
@@ -35,5 +37,4 @@ build-backend = "hatchling.build"
 packages = ["app"]
 
 [tool.black]
-line-length = 100
 target-version = ["py311"]

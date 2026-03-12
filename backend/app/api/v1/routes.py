@@ -3,13 +3,13 @@
 from typing import List, Optional
 
 from app.models.route import (
-    GraphData,
-    NodePair,
-    RandomPairsRequest,
-    RecalculateRequest,
-    RecalculateResponse,
-    RouteRequest,
-    RouteResponse,
+  GraphData,
+  NodePair,
+  RandomPairsRequest,
+  RecalculateRequest,
+  RecalculateResponse,
+  RouteRequest,
+  RouteResponse,
 )
 from app.services.graph_service import GraphService
 from fastapi import APIRouter, HTTPException, Response
@@ -83,6 +83,8 @@ async def recalculate_routes(request: RecalculateRequest):
             pairs=request.pairs,
             edge_modifications=request.edge_modifications,
             weight=request.weight,
+            resample_od_pairs=request.resample_od_pairs,
+            sampling_config=request.sampling_config,
         )
         return result
     except Exception as e:
@@ -107,23 +109,42 @@ async def get_graph():
 @router.post("/random-pairs", response_model=List[NodePair])
 async def generate_random_pairs(request: RandomPairsRequest):
     """
-    Generate random origin-destination node pairs within specified radius.
+    Generate random origin-destination node pairs.
+
+    Supports two sampling methods:
+    - 'simple': Random uniform sampling within radius (fast)
+    - 'research': Research-based sampling with betweenness centrality and
+                  lognormal trip distribution (realistic, slower)
 
     Args:
-        request: Request with count, optional seed, and radius from city center
+        request: Request with count, optional seed, and sampling method/config
 
     Returns:
-        List of random node pairs within the specified radius
+        List of node pairs
     """
     try:
         # Clear route cache when generating new pairs
         graph_service.clear_route_cache()
 
-        pairs = graph_service.generate_random_pairs(
-            count=request.count,
-            seed=request.seed,
-            radius_km=request.radius_km,
-        )
+        if request.sampling_method == "research":
+            from app.services.node_sampling_service import (
+              SamplingConfig,
+              generate_research_based_pairs,
+            )
+
+            config = request.sampling_config or SamplingConfig()
+            pairs = generate_research_based_pairs(
+                graph_service.graph,
+                n_pairs=request.count,
+                config=config,
+                seed=request.seed or 42,
+            )
+        else:
+            pairs = graph_service.generate_random_pairs(
+                count=request.count,
+                seed=request.seed,
+                radius_km=request.radius_km,
+            )
         return pairs
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
