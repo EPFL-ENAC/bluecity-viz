@@ -19,6 +19,7 @@ dependencies = [
     "shapely>=2.0.0",
     "scipy>=1.11.0",
     "igraph>=1.0.0",
+    "pyvrp>=0.13.3",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +42,7 @@ target-version = "py312"
 fix = true
 lint.select = ["E", "F", "I"] # errors, flake8, imports
 exclude = ["migrations"]
- 
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
@@ -52,4 +53,3 @@ docstring-code-format = true
 dev = [
     "ruff>=0.15.5",
 ]
-
