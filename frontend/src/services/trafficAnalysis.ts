@@ -95,19 +95,6 @@ export interface ImpactStatistics {
   avg_time_increase_percent: number
 }
 
-export interface Route {
-  origin: number
-  destination: number
-  path: number[]
-  geometry?: {
-    coordinates: [number, number][]
-  }
-  travel_time?: number
-  distance?: number
-  elevation_gain?: number
-  co2_emissions?: number
-}
-
 export interface EdgeModification {
   u: number
   v: number
@@ -120,7 +107,6 @@ export async function recalculateRoutes(edgeModifications: EdgeModification[]): 
   original_edge_usage: EdgeUsageStats[]
   new_edge_usage: EdgeUsageStats[]
   impact_statistics: ImpactStatistics
-  routes: Route[]
 }> {
   const response = await fetch(`${API_BASE_URL}/recalculate`, {
     method: 'POST',

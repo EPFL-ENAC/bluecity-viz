@@ -6,24 +6,25 @@ from pathlib import Path
 from typing import List, Optional
 
 import osmnx as ox
+
 from app.models.route import (
-  EdgeModification,
-  GraphData,
-  GraphEdge,
-  NodePair,
-  PathGeometry,
-  RecalculateResponse,
-  Route,
+    EdgeModification,
+    GraphData,
+    GraphEdge,
+    NodePair,
+    PathGeometry,
+    RecalculateResponse,
+    Route,
 )
 from app.services.co2_calculator import CO2Calculator
 from app.services.graph_helpers import (
-  build_edge_usage_stats,
-  calculate_route_metrics,
-  count_edge_usage,
+    build_edge_usage_stats,
+    calculate_route_metrics,
+    count_edge_usage,
 )
 from app.services.impact_calculator import (
-  compute_impact_statistics,
-  find_affected_routes,
+    compute_impact_statistics,
+    find_affected_routes,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -135,8 +136,8 @@ class GraphService:
 
         if sampling_method == "research":
             from app.services.node_sampling_service import (
-              SamplingConfig,
-              generate_research_based_pairs,
+                SamplingConfig,
+                generate_research_based_pairs,
             )
 
             config = sampling_config or SamplingConfig()
@@ -245,9 +246,7 @@ class GraphService:
         import logging
         import time
 
-        from app.services.node_sampling_service import (
-          networkx_to_igraph_with_indices,
-        )
+        from app.services.node_sampling_service import networkx_to_igraph_with_indices
 
         logger = logging.getLogger(__name__)
 
@@ -480,8 +479,8 @@ class GraphService:
         # NEW: Resample OD pairs if requested
         if resample_od_pairs:
             from app.services.node_sampling_service import (
-              SamplingConfig,
-              generate_research_based_pairs,
+                SamplingConfig,
+                generate_research_based_pairs,
             )
 
             config = sampling_config or SamplingConfig()
@@ -546,7 +545,6 @@ class GraphService:
             original_edge_usage=original_usage,
             new_edge_usage=new_usage,
             impact_statistics=impact_stats,
-            routes=complete_routes,
         )
 
     def get_graph_data(self) -> GraphData:
@@ -579,9 +577,9 @@ class GraphService:
                     v=v,
                     geometry=PathGeometry(coordinates=coords),
                     name=name,
-                    highway=highway_raw[0]
-                    if isinstance(highway_raw, list)
-                    else highway_raw,
+                    highway=(
+                        highway_raw[0] if isinstance(highway_raw, list) else highway_raw
+                    ),
                     speed_kph=d.get("speed_kph"),
                     length=d.get("length"),
                     travel_time=d.get("travel_time"),

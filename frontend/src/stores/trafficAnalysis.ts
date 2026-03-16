@@ -40,15 +40,6 @@ export interface EdgeUsageStats {
   co2_per_use?: number
 }
 
-export interface Route {
-  origin: number
-  destination: number
-  path: number[]
-  travel_time?: number
-  distance?: number
-  elevation_gain?: number
-  co2_emissions?: number
-}
 
 export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // State
@@ -64,8 +55,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const originalEdgeUsage = shallowRef<EdgeUsageStats[]>([])
   const newEdgeUsage = shallowRef<EdgeUsageStats[]>([])
   const impactStatistics = ref<ImpactStatistics | null>(null)
-  const routes = shallowRef<Route[]>([]) // Store calculated routes for trips visualization
-
   // Visualization state
   const legendMode = ref<LegendMode>('none')
   const colorScale = ref<ColorScale>(null)
@@ -83,7 +72,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const co2MaxValue = ref<number>(0)
   const co2DeltaMinValue = ref<number>(0)
   const co2DeltaMaxValue = ref<number>(0)
-  const activeVisualization = ref<'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'routes'>(
+  const activeVisualization = ref<'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta'>(
     'none'
   ) // User-selected visualization
 
@@ -152,14 +141,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // Available visualization modes based on calculated data
   const availableVisualizations = computed(() => {
     const modes: Array<{
-      value: 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'routes'
+      value: 'frequency' | 'delta' | 'co2' | 'co2_delta'
       label: string
     }> = []
     if (hasCalculatedRoutes.value) {
       modes.push({ value: 'frequency', label: 'Edge Usage Frequency' })
-    }
-    if (routes.value.length > 0) {
-      modes.push({ value: 'routes', label: 'Animated Routes' })
     }
     const hasCO2 = newEdgeUsage.value.some(
       (stat) => stat.co2_per_use !== undefined && stat.co2_per_use > 0
@@ -226,13 +212,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   function setEdgeUsage(
     original: EdgeUsageStats[],
     newUsage: EdgeUsageStats[],
-    impact?: ImpactStatistics,
-    calculatedRoutes?: Route[]
+    impact?: ImpactStatistics
   ) {
     originalEdgeUsage.value = original
     newEdgeUsage.value = newUsage
     impactStatistics.value = impact || null
-    routes.value = calculatedRoutes || []
 
     // Calculate color scale based on usage data
     if (newUsage.length === 0) {
@@ -364,7 +348,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   }
 
   function setActiveVisualization(
-    mode: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'routes'
+    mode: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta'
   ) {
     activeVisualization.value = mode
     updateActiveColorScale()
@@ -378,7 +362,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     originalEdgeUsage: EdgeUsageStats[]
     newEdgeUsage: EdgeUsageStats[]
     impactStatistics: any | null
-    activeVisualization: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'routes'
+    activeVisualization: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta'
   }) {
     isRestoring.value = true
     isOpen.value = state.isOpen
@@ -423,7 +407,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     originalEdgeUsage,
     newEdgeUsage,
     impactStatistics,
-    routes,
 
     // Visualization state
     legendMode,

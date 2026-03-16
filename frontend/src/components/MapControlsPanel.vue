@@ -103,11 +103,10 @@ async function calculateRoutes() {
     trafficStore.setEdgeUsage(
       result.original_edge_usage,
       result.new_edge_usage,
-      result.impact_statistics,
-      result.routes
+      result.impact_statistics
     )
     console.log(
-      `Original: ${result.original_edge_usage.length} edges, New: ${result.new_edge_usage.length} edges, Routes: ${result.routes.length}`
+      `Original: ${result.original_edge_usage.length} edges, New: ${result.new_edge_usage.length} edges`
     )
   } catch (error) {
     console.error('Failed to calculate routes:', error)
