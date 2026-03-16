@@ -182,14 +182,14 @@ const trafficLegend = computed(() => {
       showZero: true
     }
   } else if (mode === 'co2') {
-    // CO2 mode: show CO2 per km per use
+    // CO2 mode: fixed scale [CO2_KM_MIN, CO2_KM_MAX]
     for (let i = 0; i < steps; i++) {
       const t = i / (steps - 1)
-      const value = max * (1 - t)
+      const value = max - t * (max - min)
       const [r, g, b] = trafficStore.getColor(value)
       colors.push({
         color: `rgb(${r}, ${g}, ${b})`,
-        label: `${value.toFixed(1)} g/km`
+        label: `${Math.round(value)} g/km`
       })
     }
 

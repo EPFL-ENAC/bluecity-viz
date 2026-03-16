@@ -81,13 +81,11 @@ def calculate_route_metrics(graph, path: List[int]) -> dict:
         speed_kph = edge_data.get("speed_kph")
 
         if c is None:
-            if speed_kph is None and t > 0:
-                speed_kph = (d / 1000) / (t / 3600)
-
             c = CO2Calculator.calculate_edge_co2(
-                travel_time=t,
+                length=d,
                 speed_kph=speed_kph,
                 elevation_gain=e_gain,
+                travel_time=t,
             )
 
         co2_emissions += c
@@ -133,7 +131,7 @@ def calculate_edge_co2(graph, u: int, v: int) -> Optional[float]:
                 edge_elev = elev_diff
 
     return CO2Calculator.calculate_edge_co2(
-        travel_time=edge_time, speed_kph=speed_kph, elevation_gain=edge_elev
+        length=edge_len, speed_kph=speed_kph, elevation_gain=edge_elev, travel_time=edge_time
     )
 
 

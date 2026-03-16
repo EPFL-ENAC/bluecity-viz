@@ -114,7 +114,7 @@ class GraphService:
                 s = (l / 1000) / (t / 3600)
 
             data["co2_g"] = CO2Calculator.calculate_edge_co2(
-                travel_time=t, speed_kph=s, elevation_gain=elevation_gain
+                length=l, speed_kph=s, elevation_gain=elevation_gain
             )
 
         # Build flat caches for O(1) lookup (avoids NetworkX graph access per edge)
@@ -172,6 +172,47 @@ class GraphService:
                 result[(u, v)] = bc
         return result
 
+    def _update_co2_with_congestion(self, sampling_config=None) -> None:
+        """Recompute _edge_co2_cache using BC-derived congested speeds.
+
+        For each edge, the free-flow speed is slowed down by its betweenness
+        centrality using the same BPR-like formula used in congestion routing:
+            speed_cong = speed_free / (1 + bc / (lanes × betweenness_to_slowdown))
+
+        The congested speed is then fed into CO2Calculator so high-traffic
+        edges correctly show elevated emissions per km.
+        """
+        from app.services.node_sampling_service import SamplingConfig
+
+        config = sampling_config or SamplingConfig()
+
+        for u, v, data in self.graph.edges(data=True):
+            bc = self._edge_bc_cache.get((u, v), 0.0)
+            speed_free = data.get("speed_kph") or 30.0
+            length = data.get("length") or 1.0
+            elevation_gain = data.get("elevation_gain") or 0.0
+
+            lanes = data.get("lanes", 2)
+            if isinstance(lanes, list):
+                lanes = int(lanes[0])
+            try:
+                lanes = int(lanes)
+            except (ValueError, TypeError):
+                lanes = 2
+
+            if bc > 0:
+                speed_cong = speed_free / (1 + bc / (lanes * config.betweenness_to_slowdown))
+            else:
+                speed_cong = speed_free
+
+            co2_g = CO2Calculator.calculate_edge_co2(
+                length=length,
+                speed_kph=speed_cong,
+                elevation_gain=elevation_gain,
+            )
+            length_km = length / 1000.0
+            self._edge_co2_cache[(u, v)] = co2_g / length_km if length_km > 0 else 0.0
+
     async def initialize_default_routes(
         self,
         count: int = 500,
@@ -224,6 +265,10 @@ class GraphService:
         logging.info("[STARTUP] Computing betweenness centrality...")
         self._edge_bc_cache = self._compute_betweenness(sampling_config)
         logging.info(f"[STARTUP] BC computed for {len(self._edge_bc_cache)} edges")
+
+        logging.info("[STARTUP] Updating CO2/km with BC-derived congested speeds...")
+        self._update_co2_with_congestion(sampling_config)
+        logging.info("[STARTUP] CO2/km congestion update complete")
 
     def _build_route_edge_index(self, routes: List[Route]) -> dict:
         """Build inverted index: edge -> list of route indices that use it."""
@@ -668,7 +713,7 @@ class GraphService:
                 )
                 elev_gain = edge_data.get("elevation_gain", 0)
                 edge_data["co2_g"] = CO2Calculator.calculate_edge_co2(
-                    travel_time=edge_data["travel_time"],
+                    length=length,
                     speed_kph=mod.speed_kph,
                     elevation_gain=elev_gain,
                 )

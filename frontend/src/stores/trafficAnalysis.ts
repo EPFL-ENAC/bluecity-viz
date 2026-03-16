@@ -44,6 +44,10 @@ export interface EdgeUsageStats {
 }
 
 
+// Fixed CO₂/km scale — matches the grade-relative model range (g CO₂/km).
+// Fallback upper bound used only when all CO2 values are zero.
+const CO2_KM_MAX = 350
+
 /** 98th-percentile max — prevents a few outlier edges (zero-length stubs, roundabout loops)
  *  with astronomical CO2/km from blowing up the color scale. */
 function robustMax(values: number[], percentile = 0.98, fallback = 1): number {
@@ -272,10 +276,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     const hasCO2 = newUsage.some((stat) => stat.co2_per_km !== undefined && stat.co2_per_km > 0)
 
     if (hasCO2) {
-      const maxCO2 = robustMax(newUsage.map((d) => d.co2_per_km ?? 0))
-      co2MinValue.value = 0
-      co2MaxValue.value = maxCO2
-      co2ColorScale.value = scaleSequential(interpolateViridis).domain([0, maxCO2])
+      const co2Values = newUsage.map((d) => d.co2_per_km ?? 0)
+      const co2Min = Math.min(...co2Values.filter((v) => v > 0))
+      const co2Max = robustMax(co2Values, 0.98, CO2_KM_MAX)
+      co2MinValue.value = co2Min
+      co2MaxValue.value = co2Max
+      co2ColorScale.value = scaleSequential(interpolateViridis).domain([co2Min, co2Max])
     }
 
     // Check if we have delta values (recalculated routes)
