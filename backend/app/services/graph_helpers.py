@@ -1,5 +1,7 @@
 """Graph helper functions for geometry, metrics and edge statistics."""
 
+import logging
+import time
 from typing import List, Optional
 
 from app.models.route import EdgeUsageStats, PathGeometry, Route
@@ -146,15 +148,20 @@ def count_edge_usage(routes: List[Route]) -> dict:
 
 
 def build_edge_usage_stats(
-    graph,
-    routes: List[Route],
+    edge_co2_cache: dict,
+    counts: dict,
     total_routes: int,
     original_counts: Optional[dict] = None,
 ) -> List[EdgeUsageStats]:
-    """Build edge usage statistics from routes."""
-    counts = count_edge_usage(routes)
-    stats = []
+    """Build edge usage statistics from a pre-computed edge count dict."""
+    logger = logging.getLogger(__name__)
+    label = "new" if original_counts is not None else "original"
+    t0 = time.perf_counter()
 
+    t_count_ms = 0.0  # counting is now done externally
+
+    t1 = time.perf_counter()
+    stats = []
     for (u, v), count in counts.items():
         freq = count / total_routes if total_routes > 0 else 0
         delta_count = delta_freq = None
@@ -178,9 +185,22 @@ def build_edge_usage_stats(
                 frequency=freq,
                 delta_count=delta_count,
                 delta_frequency=delta_freq,
-                co2_per_use=calculate_edge_co2(graph, u, v),
+                co2_per_use=edge_co2_cache.get((u, v)),
             )
         )
+    t_build_ms = (time.perf_counter() - t1) * 1000
 
+    t2 = time.perf_counter()
     stats.sort(key=lambda x: x.frequency, reverse=True)
+    t_sort_ms = (time.perf_counter() - t2) * 1000
+
+    t_total_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        f"[TIMING] build_edge_usage_stats ({label}) | "
+        f"unique_edges={len(counts)} | "
+        f"build_objects={t_build_ms:.1f}ms | "
+        f"sort={t_sort_ms:.1f}ms | "
+        f"TOTAL={t_total_ms:.1f}ms"
+    )
+
     return stats
