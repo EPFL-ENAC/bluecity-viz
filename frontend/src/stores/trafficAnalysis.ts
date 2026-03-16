@@ -449,7 +449,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
     // Restore edge modifications
     const modMap = new Map<string, { action: ModificationAction; name: string }>()
-    state.edgeModifications.forEach(
+    ;(state.edgeModifications ?? []).forEach(
       (edge: { u: number; v: number; action: string; name?: string }) => {
         const key = `${edge.u}-${edge.v}`
         modMap.set(key, {
