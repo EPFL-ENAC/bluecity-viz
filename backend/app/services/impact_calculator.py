@@ -66,6 +66,7 @@ def compute_impact_statistics(
     new_routes_by_index: dict,
     affected_indices: List[int],
     modifications: List[EdgeModification],
+    compute_comparisons: bool = True,
 ) -> Tuple[ImpactStatistics, List[RouteComparison]]:
     """Compute impact statistics and route comparisons."""
     total = len(original_routes)
@@ -81,16 +82,17 @@ def compute_impact_statistics(
 
         if not new or not new.path:
             failed += 1
-            comparisons.append(
-                RouteComparison(
-                    origin=orig.origin,
-                    destination=orig.destination,
-                    original_route=orig,
-                    new_route=new or orig,
-                    is_affected=True,
-                    route_failed=True,
+            if compute_comparisons:
+                comparisons.append(
+                    RouteComparison(
+                        origin=orig.origin,
+                        destination=orig.destination,
+                        original_route=orig,
+                        new_route=new or orig,
+                        is_affected=True,
+                        route_failed=True,
+                    )
                 )
-            )
             continue
 
         deltas = calculate_route_deltas(orig, new)
@@ -115,21 +117,22 @@ def compute_impact_statistics(
                 if deltas["co2_delta_percent"]:
                     co2_pcts.append(deltas["co2_delta_percent"])
 
-        comparisons.append(
-            RouteComparison(
-                origin=orig.origin,
-                destination=orig.destination,
-                original_route=orig,
-                new_route=new,
-                modified_edge_on_path=find_modified_edge_on_path(orig, modifications),
-                distance_delta=deltas["distance_delta"],
-                distance_delta_percent=deltas["distance_delta_percent"],
-                time_delta=deltas["time_delta"],
-                time_delta_percent=deltas["time_delta_percent"],
-                is_affected=deltas["is_affected"],
-                route_failed=False,
+        if compute_comparisons:
+            comparisons.append(
+                RouteComparison(
+                    origin=orig.origin,
+                    destination=orig.destination,
+                    original_route=orig,
+                    new_route=new,
+                    modified_edge_on_path=find_modified_edge_on_path(orig, modifications),
+                    distance_delta=deltas["distance_delta"],
+                    distance_delta_percent=deltas["distance_delta_percent"],
+                    time_delta=deltas["time_delta"],
+                    time_delta_percent=deltas["time_delta_percent"],
+                    is_affected=deltas["is_affected"],
+                    route_failed=False,
+                )
             )
-        )
     def avg(lst): 
         return sum(lst) / len(lst) if lst else 0.0
 

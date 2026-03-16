@@ -21,7 +21,6 @@ from app.models.route import (
 from app.services.co2_calculator import CO2Calculator
 from app.services.graph_helpers import (
     build_edge_usage_stats,
-    calculate_route_metrics,
     count_edge_usage,
 )
 from app.services.impact_calculator import compute_impact_statistics
@@ -42,6 +41,7 @@ class GraphService:
         self.default_pairs = None
         self.default_routes = None
         self._edge_co2_cache: dict = {}
+        self._edge_metrics_cache: dict = {}  # (u,v) -> (travel_time, distance, elevation_gain, co2_g)
         self._route_edge_index: dict = {}
 
         if graph_path:
@@ -115,10 +115,18 @@ class GraphService:
                 travel_time=t, speed_kph=s, elevation_gain=elevation_gain
             )
 
-        # Build CO2 cache for O(1) lookup in build_edge_usage_stats
-        self._edge_co2_cache = {
-            (u, v): data.get("co2_g") for u, v, data in self.graph.edges(data=True)
-        }
+        # Build flat caches for O(1) lookup (avoids NetworkX graph access per edge)
+        self._edge_co2_cache = {}
+        self._edge_metrics_cache = {}
+        for u, v, data in self.graph.edges(data=True):
+            co2 = data.get("co2_g")
+            self._edge_co2_cache[(u, v)] = co2
+            self._edge_metrics_cache[(u, v)] = (
+                data.get("travel_time", 0.0),
+                data.get("length", 0.0),
+                data.get("elevation_gain", 0.0),
+                co2 or 0.0,
+            )
 
     async def initialize_default_routes(
         self,
@@ -300,6 +308,7 @@ class GraphService:
 
         all_routes = []
         failed_origins = 0
+        _metrics_cache = self._edge_metrics_cache  # local ref avoids repeated attr lookup
 
         t2 = time.time()
         logger.info(f"Calculating routes for {len(origin_groups)} origins...")
@@ -349,21 +358,24 @@ class GraphService:
                     ]
 
                     if compute_metrics:
-                        metrics = calculate_route_metrics(self.graph, path_nx)
+                        travel_time = distance = elevation_gain = co2 = 0.0
+                        for u, v in zip(path_nx[:-1], path_nx[1:]):
+                            tt, dist, elev, co2_g = _metrics_cache.get(
+                                (u, v), (0.0, 0.0, 0.0, 0.0)
+                            )
+                            travel_time += tt
+                            distance += dist
+                            elevation_gain += elev
+                            co2 += co2_g
                         all_routes.append(
                             Route(
                                 origin=pair_obj.origin,
                                 destination=pair_obj.destination,
                                 path=path_nx,
-                                travel_time=metrics["travel_time"],
-                                distance=metrics["distance"],
-                                elevation_gain=metrics["elevation_gain"],
-                                co2_emissions=metrics.get(
-                                    "co2_emissions",
-                                    CO2Calculator.calculate_route_co2(
-                                        metrics["edges_data"]
-                                    ),
-                                ),
+                                travel_time=travel_time,
+                                distance=distance,
+                                elevation_gain=elevation_gain if elevation_gain > 0 else None,
+                                co2_emissions=co2,
                             )
                         )
                     else:
@@ -613,6 +625,14 @@ class GraphService:
                     elevation_gain=elev_gain,
                 )
 
+                # Keep metrics cache in sync with the modified edge
+                self._edge_metrics_cache[(mod.u, mod.v)] = (
+                    edge_data["travel_time"],
+                    length,
+                    elev_gain,
+                    edge_data["co2_g"],
+                )
+
                 applied.append(mod)
                 effective_modified_set.add((mod.u, mod.v))
 
@@ -686,6 +706,13 @@ class GraphService:
                 ed["speed_kph"] = orig_speed
                 ed["travel_time"] = orig_tt
                 ed["co2_g"] = orig_co2
+                # Restore metrics cache to original values
+                self._edge_metrics_cache[(u, v)] = (
+                    orig_tt or 0.0,
+                    ed.get("length", 0.0),
+                    ed.get("elevation_gain", 0.0),
+                    orig_co2 or 0.0,
+                )
             # Remove congestion weights written during iterative routing
             if use_congestion:
                 for u, v, k, data in self.graph.edges(keys=True, data=True):
@@ -694,7 +721,8 @@ class GraphService:
         # --- Phase: impact statistics ---
         t0 = time.perf_counter()
         impact_stats, _ = compute_impact_statistics(
-            original_routes, new_routes_by_index, affected_indices, applied
+            original_routes, new_routes_by_index, affected_indices, applied,
+            compute_comparisons=False,
         )
         t_impact_stats_ms = (time.perf_counter() - t0) * 1000
 
@@ -705,20 +733,24 @@ class GraphService:
         original_counts = {edge: len(indices) for edge, indices in edge_index.items()}
         t_count_original_ms = (time.perf_counter() - t0) * 1000
 
-        # complete_counts: delta from original_counts — only touch affected routes
+        # complete_counts: recount from scratch when most routes changed (congestion/resample),
+        # otherwise apply a delta to avoid scanning all routes
         t0 = time.perf_counter()
-        complete_counts = dict(original_counts)
-        for idx, new_route in new_routes_by_index.items():
-            old_route = original_routes[idx]
-            for j in range(len(old_route.path) - 1):
-                edge = (old_route.path[j], old_route.path[j + 1])
-                if edge in complete_counts:
-                    complete_counts[edge] -= 1
-                    if complete_counts[edge] == 0:
-                        del complete_counts[edge]
-            for j in range(len(new_route.path) - 1):
-                edge = (new_route.path[j], new_route.path[j + 1])
-                complete_counts[edge] = complete_counts.get(edge, 0) + 1
+        if len(new_routes_by_index) >= len(original_routes) * 0.9:
+            complete_counts = count_edge_usage(list(new_routes_by_index.values()))
+        else:
+            complete_counts = dict(original_counts)
+            for idx, new_route in new_routes_by_index.items():
+                old_route = original_routes[idx]
+                for j in range(len(old_route.path) - 1):
+                    edge = (old_route.path[j], old_route.path[j + 1])
+                    if edge in complete_counts:
+                        complete_counts[edge] -= 1
+                        if complete_counts[edge] == 0:
+                            del complete_counts[edge]
+                for j in range(len(new_route.path) - 1):
+                    edge = (new_route.path[j], new_route.path[j + 1])
+                    complete_counts[edge] = complete_counts.get(edge, 0) + 1
         t_count_complete_ms = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
