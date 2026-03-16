@@ -6,25 +6,24 @@ from pathlib import Path
 from typing import List, Optional
 
 import osmnx as ox
-
 from app.models.route import (
-    EdgeModification,
-    GraphData,
-    GraphEdge,
-    NodePair,
-    PathGeometry,
-    RecalculateResponse,
-    Route,
+  EdgeModification,
+  GraphData,
+  GraphEdge,
+  NodePair,
+  PathGeometry,
+  RecalculateResponse,
+  Route,
 )
 from app.services.co2_calculator import CO2Calculator
 from app.services.graph_helpers import (
-    build_edge_usage_stats,
-    calculate_route_metrics,
-    count_edge_usage,
+  build_edge_usage_stats,
+  calculate_route_metrics,
+  count_edge_usage,
 )
 from app.services.impact_calculator import (
-    compute_impact_statistics,
-    find_affected_routes,
+  compute_impact_statistics,
+  find_affected_routes,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -76,6 +75,43 @@ class GraphService:
             self.graph = ox.routing.add_edge_travel_times(self.graph)
 
         print(f"Loaded graph: {len(self.graph.nodes)} nodes, {total} edges")
+
+        self._precompute_graph_metrics()
+
+    def _precompute_graph_metrics(self):
+        """Pre-compute CO2 and elevation gain for all edges."""
+        if not self.graph:
+            return
+
+        logging.info("Pre-computing graph metrics (CO2, elevation)...")
+        for u, v, k, data in self.graph.edges(keys=True, data=True):
+            # 1. Elevation
+            elevation_gain = data.get("elevation_gain")
+            if elevation_gain is None:
+                elevation_gain = 0.0
+                if (
+                    "elevation" in self.graph.nodes[u]
+                    and "elevation" in self.graph.nodes[v]
+                ):
+                    diff = (
+                        self.graph.nodes[v]["elevation"]
+                        - self.graph.nodes[u]["elevation"]
+                    )
+                    if diff > 0:
+                        elevation_gain = diff
+                data["elevation_gain"] = elevation_gain
+
+            # 2. CO2
+            t = data.get("travel_time", 0)
+            l = data.get("length", 0)
+            s = data.get("speed_kph")
+
+            if not s and t > 0:
+                s = (l / 1000) / (t / 3600)
+
+            data["co2_g"] = CO2Calculator.calculate_edge_co2(
+                travel_time=t, speed_kph=s, elevation_gain=elevation_gain
+            )
 
     async def initialize_default_routes(
         self,
@@ -293,8 +329,11 @@ class GraphService:
                             travel_time=metrics["travel_time"],
                             distance=metrics["distance"],
                             elevation_gain=metrics["elevation_gain"],
-                            co2_emissions=CO2Calculator.calculate_route_co2(
-                                metrics["edges_data"]
+                            co2_emissions=metrics.get(
+                                "co2_emissions",
+                                CO2Calculator.calculate_route_co2(
+                                    metrics["edges_data"]
+                                ),
                             ),
                         )
                     )
@@ -365,7 +404,7 @@ class GraphService:
         pairs: Optional[List[NodePair]] = None,
         edge_modifications: List[EdgeModification] = None,
         weight: str = "travel_time",
-        resample_od_pairs: bool = False,
+        resample_od_pairs: bool = True,
         sampling_config=None,
     ) -> RecalculateResponse:
         """Recalculate routes after applying edge modifications (remove or change speed).
@@ -426,6 +465,15 @@ class GraphService:
                 edge_data["travel_time"] = (
                     (length / 1000) / (mod.speed_kph / 3600) if mod.speed_kph > 0 else 0
                 )
+
+                # Update CO2 for modified edge
+                elev_gain = edge_data.get("elevation_gain", 0)
+                edge_data["co2_g"] = CO2Calculator.calculate_edge_co2(
+                    travel_time=edge_data["travel_time"],
+                    speed_kph=mod.speed_kph,
+                    elevation_gain=elev_gain,
+                )
+
                 applied.append(mod)
                 effective_modified_set.add((mod.u, mod.v))
 

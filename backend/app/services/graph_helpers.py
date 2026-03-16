@@ -38,42 +38,73 @@ def build_path_geometry(graph, path: List[int]) -> PathGeometry:
 
 
 def calculate_route_metrics(graph, path: List[int]) -> dict:
-    """Calculate travel time, distance, elevation gain for a path."""
+    """Calculate travel time, distance, elevation gain, and CO2."""
     if not graph or not path or len(path) < 2:
-        return {"travel_time": None, "distance": None, "elevation_gain": None, "edges_data": []}
+        return {
+            "travel_time": None,
+            "distance": None,
+            "elevation_gain": None,
+            "co2_emissions": None,
+            "edges_data": [],
+        }
 
-    travel_time = distance = elevation_gain = 0.0
+    travel_time = distance = elevation_gain = co2_emissions = 0.0
     edges_data = []
 
-    for i in range(len(path) - 1):
-        u, v = path[i], path[i + 1]
+    for u, v in zip(path[:-1], path[1:]):
         edge_data = get_edge_data(graph, u, v)
         if not edge_data:
             continue
 
-        edge_time = edge_data.get("travel_time", 0)
-        edge_len = edge_data.get("length", 0)
-        travel_time += edge_time
-        distance += edge_len
+        # Basic metrics
+        t = edge_data.get("travel_time", 0)
+        d = edge_data.get("length", 0)
+        travel_time += t
+        distance += d
 
-        edge_elev = 0.0
-        if "elevation" in graph.nodes[u] and "elevation" in graph.nodes[v]:
-            elev_diff = graph.nodes[v]["elevation"] - graph.nodes[u]["elevation"]
-            if elev_diff > 0:
-                elevation_gain += elev_diff
-                edge_elev = elev_diff
+        # Elevation (use pre-computed if available)
+        e_gain = edge_data.get("elevation_gain")
+        if e_gain is None:
+            e_gain = 0.0
+            if "elevation" in graph.nodes[u] and "elevation" in graph.nodes[v]:
+                diff = graph.nodes[v]["elevation"] - graph.nodes[u]["elevation"]
+                if diff > 0:
+                    e_gain = diff
 
-        speed_kph = (
-            (edge_len / 1000) / (edge_time / 3600) if edge_time > 0 and edge_len > 0 else None
-        )
+        if e_gain > 0:
+            elevation_gain += e_gain
+
+        # CO2 (use pre-computed if available)
+        c = edge_data.get("co2_g")
+        speed_kph = edge_data.get("speed_kph")
+
+        if c is None:
+            if speed_kph is None and t > 0:
+                speed_kph = (d / 1000) / (t / 3600)
+
+            c = CO2Calculator.calculate_edge_co2(
+                travel_time=t,
+                speed_kph=speed_kph,
+                elevation_gain=e_gain,
+            )
+
+        co2_emissions += c
+
+        # Maintain edges_data structure but add CO2
         edges_data.append(
-            {"travel_time": edge_time, "speed_kph": speed_kph, "elevation_gain": edge_elev}
+            {
+                "travel_time": t,
+                "speed_kph": speed_kph,
+                "elevation_gain": e_gain,
+                "co2_g": c,
+            }
         )
 
     return {
         "travel_time": travel_time,
         "distance": distance,
-        "elevation_gain": elevation_gain if elevation_gain > 0 else None,
+        "elevation_gain": (elevation_gain if elevation_gain > 0 else None),
+        "co2_emissions": co2_emissions,
         "edges_data": edges_data,
     }
 
@@ -86,7 +117,11 @@ def calculate_edge_co2(graph, u: int, v: int) -> Optional[float]:
 
     edge_time = edge_data.get("travel_time", 0)
     edge_len = edge_data.get("length", 0)
-    speed_kph = (edge_len / 1000) / (edge_time / 3600) if edge_time > 0 and edge_len > 0 else None
+    speed_kph = (
+        (edge_len / 1000) / (edge_time / 3600)
+        if edge_time > 0 and edge_len > 0
+        else None
+    )
 
     edge_elev = 0.0
     if u in graph.nodes and v in graph.nodes:
@@ -111,7 +146,10 @@ def count_edge_usage(routes: List[Route]) -> dict:
 
 
 def build_edge_usage_stats(
-    graph, routes: List[Route], total_routes: int, original_counts: Optional[dict] = None
+    graph,
+    routes: List[Route],
+    total_routes: int,
+    original_counts: Optional[dict] = None,
 ) -> List[EdgeUsageStats]:
     """Build edge usage statistics from routes."""
     counts = count_edge_usage(routes)
@@ -124,7 +162,9 @@ def build_edge_usage_stats(
         if original_counts is not None:
             if (u, v) in original_counts:
                 delta_count = count - original_counts[(u, v)]
-                orig_freq = original_counts[(u, v)] / total_routes if total_routes > 0 else 0
+                orig_freq = (
+                    original_counts[(u, v)] / total_routes if total_routes > 0 else 0
+                )
                 delta_freq = freq - orig_freq
             else:
                 delta_count = count
