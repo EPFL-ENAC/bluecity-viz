@@ -102,11 +102,24 @@ export interface EdgeModification {
   speed_kph?: number
 }
 
+export interface TimingStats {
+  cache_lookup_ms: number
+  graph_copy_ms: number
+  apply_modifications_ms: number
+  od_resampling_ms?: number
+  affected_routes_ms?: number
+  route_calculation_ms: number
+  impact_stats_ms: number
+  edge_usage_stats_ms: number
+  total_ms: number
+}
+
 export async function recalculateRoutes(edgeModifications: EdgeModification[]): Promise<{
   applied_modifications: EdgeModification[]
   original_edge_usage: EdgeUsageStats[]
   new_edge_usage: EdgeUsageStats[]
   impact_statistics: ImpactStatistics
+  timing: TimingStats
 }> {
   const response = await fetch(`${API_BASE_URL}/recalculate`, {
     method: 'POST',

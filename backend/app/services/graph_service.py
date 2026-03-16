@@ -2,6 +2,7 @@
 
 import logging
 import random
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -15,6 +16,7 @@ from app.models.route import (
     PathGeometry,
     RecalculateResponse,
     Route,
+    TimingStats,
 )
 from app.services.co2_calculator import CO2Calculator
 from app.services.graph_helpers import (
@@ -418,6 +420,9 @@ class GraphService:
         if not self.graph:
             raise RuntimeError("Graph not loaded")
 
+        t_total_start = time.perf_counter()
+        logger = logging.getLogger(__name__)
+
         pairs = pairs or self.default_pairs
         if pairs is None:
             raise RuntimeError("No pairs available")
@@ -425,16 +430,23 @@ class GraphService:
 
         pairs_key = tuple((p.origin, p.destination) for p in pairs)
 
-        # Get or calculate original routes
+        # --- Phase: cache lookup / original route computation ---
+        t0 = time.perf_counter()
         if self.pairs_cache != pairs_key or pairs_key not in self.route_cache:
             original_routes = await self.calculate_routes(pairs, weight)
             self.pairs_cache = pairs_key
             self.route_cache[pairs_key] = original_routes
         else:
             original_routes = self.route_cache[pairs_key]
+        t_cache_ms = (time.perf_counter() - t0) * 1000
 
-        # Create modified graph and apply only effective modifications
+        # --- Phase: graph copy ---
+        t0 = time.perf_counter()
         G_mod = self.graph.copy()
+        t_graph_copy_ms = (time.perf_counter() - t0) * 1000
+
+        # --- Phase: apply modifications ---
+        t0 = time.perf_counter()
         applied = []
         effective_modified_set = set()  # Only edges that actually change
 
@@ -476,7 +488,12 @@ class GraphService:
                 applied.append(mod)
                 effective_modified_set.add((mod.u, mod.v))
 
-        # NEW: Resample OD pairs if requested
+        t_apply_mods_ms = (time.perf_counter() - t0) * 1000
+
+        # --- Phase: OD resampling OR affected-route detection + rerouting ---
+        t_od_resampling_ms = None
+        t_affected_routes_ms = None
+
         if resample_od_pairs:
             from app.services.node_sampling_service import (
                 SamplingConfig,
@@ -485,31 +502,30 @@ class GraphService:
 
             config = sampling_config or SamplingConfig()
 
-            print(
-                f"[RESAMPLE] Generating new OD pairs using modified graph (n={len(pairs)})"
-            )
-            # Generate new OD pairs using modified graph
+            t0 = time.perf_counter()
             new_pairs = generate_research_based_pairs(
                 G_mod, n_pairs=len(pairs), config=config, seed=42
             )
+            t_od_resampling_ms = (time.perf_counter() - t0) * 1000
 
-            # Recalculate ALL routes with new OD pairs
+            t0 = time.perf_counter()
             orig_graph = self.graph
             self.graph = G_mod
             new_routes = await self.calculate_routes(new_pairs, weight)
             self.graph = orig_graph
+            t_route_calc_ms = (time.perf_counter() - t0) * 1000
 
-            # All routes are "affected" since we resampled
             affected_indices = list(range(len(new_routes)))
             new_routes_by_index = {i: route for i, route in enumerate(new_routes)}
 
         else:
-            # Existing logic: find affected routes and reroute
+            t0 = time.perf_counter()
             affected_indices = find_affected_routes(
                 original_routes, effective_modified_set
             )
+            t_affected_routes_ms = (time.perf_counter() - t0) * 1000
 
-            # Recalculate affected routes
+            t0 = time.perf_counter()
             new_routes_by_index = {}
             if affected_indices:
                 orig_graph = self.graph
@@ -522,22 +538,51 @@ class GraphService:
                 for i, idx in enumerate(affected_indices):
                     if i < len(new_routes):
                         new_routes_by_index[idx] = new_routes[i]
+            t_route_calc_ms = (time.perf_counter() - t0) * 1000
 
-        # Compute impact stats
+        # --- Phase: impact statistics ---
+        t0 = time.perf_counter()
         impact_stats, _ = compute_impact_statistics(
             original_routes, new_routes_by_index, affected_indices, applied
         )
+        t_impact_stats_ms = (time.perf_counter() - t0) * 1000
 
-        # Build complete routes list
+        # --- Phase: edge usage stats ---
+        t0 = time.perf_counter()
         complete_routes = list(original_routes)
         for idx, route in new_routes_by_index.items():
             complete_routes[idx] = route
-
-        # Edge usage stats
         original_counts = count_edge_usage(original_routes)
         original_usage = build_edge_usage_stats(self.graph, original_routes, len(pairs))
         new_usage = build_edge_usage_stats(
             self.graph, complete_routes, len(pairs), original_counts
+        )
+        t_edge_usage_ms = (time.perf_counter() - t0) * 1000
+
+        t_total_ms = (time.perf_counter() - t_total_start) * 1000
+
+        timing = TimingStats(
+            cache_lookup_ms=round(t_cache_ms, 1),
+            graph_copy_ms=round(t_graph_copy_ms, 1),
+            apply_modifications_ms=round(t_apply_mods_ms, 1),
+            od_resampling_ms=round(t_od_resampling_ms, 1) if t_od_resampling_ms is not None else None,
+            affected_routes_ms=round(t_affected_routes_ms, 1) if t_affected_routes_ms is not None else None,
+            route_calculation_ms=round(t_route_calc_ms, 1),
+            impact_stats_ms=round(t_impact_stats_ms, 1),
+            edge_usage_stats_ms=round(t_edge_usage_ms, 1),
+            total_ms=round(t_total_ms, 1),
+        )
+
+        logger.info(
+            "[TIMING] recalculate | "
+            f"cache={timing.cache_lookup_ms}ms | "
+            f"graph_copy={timing.graph_copy_ms}ms | "
+            f"apply_mods={timing.apply_modifications_ms}ms | "
+            + (f"od_resample={timing.od_resampling_ms}ms | " if timing.od_resampling_ms is not None else f"affected_routes={timing.affected_routes_ms}ms | ")
+            + f"route_calc={timing.route_calculation_ms}ms | "
+            f"impact_stats={timing.impact_stats_ms}ms | "
+            f"edge_usage={timing.edge_usage_stats_ms}ms | "
+            f"TOTAL={timing.total_ms}ms"
         )
 
         return RecalculateResponse(
@@ -545,6 +590,7 @@ class GraphService:
             original_edge_usage=original_usage,
             new_edge_usage=new_usage,
             impact_statistics=impact_stats,
+            timing=timing,
         )
 
     def get_graph_data(self) -> GraphData:

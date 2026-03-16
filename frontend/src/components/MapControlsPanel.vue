@@ -108,6 +108,18 @@ async function calculateRoutes() {
     console.log(
       `Original: ${result.original_edge_usage.length} edges, New: ${result.new_edge_usage.length} edges`
     )
+    console.group(`[recalculate] total ${result.timing.total_ms} ms`)
+    console.table({
+      'cache lookup':       { ms: result.timing.cache_lookup_ms },
+      'graph copy':         { ms: result.timing.graph_copy_ms },
+      'apply mods':         { ms: result.timing.apply_modifications_ms },
+      ...(result.timing.od_resampling_ms   != null && { 'OD resampling':     { ms: result.timing.od_resampling_ms } }),
+      ...(result.timing.affected_routes_ms != null && { 'affected routes':   { ms: result.timing.affected_routes_ms } }),
+      'route calculation':  { ms: result.timing.route_calculation_ms },
+      'impact stats':       { ms: result.timing.impact_stats_ms },
+      'edge usage stats':   { ms: result.timing.edge_usage_stats_ms },
+    })
+    console.groupEnd()
   } catch (error) {
     console.error('Failed to calculate routes:', error)
   } finally {

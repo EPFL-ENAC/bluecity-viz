@@ -192,6 +192,20 @@ class ImpactStatistics(BaseModel):
     )
 
 
+class TimingStats(BaseModel):
+    """Per-phase timing breakdown for a recalculate request (all values in ms)."""
+
+    cache_lookup_ms: float = Field(..., description="Original route lookup or computation")
+    graph_copy_ms: float = Field(..., description="Graph deep-copy")
+    apply_modifications_ms: float = Field(..., description="Applying edge modifications")
+    od_resampling_ms: Optional[float] = Field(None, description="OD pair resampling (if used)")
+    affected_routes_ms: Optional[float] = Field(None, description="Affected-route detection (if used)")
+    route_calculation_ms: float = Field(..., description="New route computation on modified graph")
+    impact_stats_ms: float = Field(..., description="Impact statistics computation")
+    edge_usage_stats_ms: float = Field(..., description="Edge usage stats build")
+    total_ms: float = Field(..., description="End-to-end wall time")
+
+
 class RecalculateResponse(BaseModel):
     """Response with edge usage statistics."""
 
@@ -205,6 +219,7 @@ class RecalculateResponse(BaseModel):
     impact_statistics: ImpactStatistics = Field(
         ..., description="Aggregate statistics about the impact of edge modifications"
     )
+    timing: TimingStats = Field(..., description="Per-phase timing breakdown")
 
 
 class GraphEdge(BaseModel):
