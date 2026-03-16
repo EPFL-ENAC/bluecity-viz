@@ -161,45 +161,85 @@ const trafficLegend = computed(() => {
       showZero: true
     }
   } else if (mode === 'co2_delta') {
-    // CO2 Delta mode: show CO2 emission changes
+    // CO2 Delta mode: co2_per_km × delta_frequency → g/km
     for (let i = 0; i < steps; i++) {
       const t = i / (steps - 1)
       const value = max - t * (max - min)
       const [r, g, b] = trafficStore.getColor(value)
-      const grams = Math.round(value)
+      const sign = value >= 0 ? '+' : ''
       colors.push({
         color: `rgb(${r}, ${g}, ${b})`,
-        label: value >= 0 ? `+${grams}g` : `${grams}g`
+        label: `${sign}${value.toFixed(2)} g/km`
       })
     }
 
     return {
       label: 'CO₂ Emissions Change',
-      unit: 'CO₂ Difference (grams)',
+      unit: 'Δ g CO₂/km (freq-weighted)',
       colors,
       gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false,
       showZero: true
     }
   } else if (mode === 'co2') {
-    // CO2 mode: show total CO2 emissions per edge
+    // CO2 mode: show CO2 per km per use
     for (let i = 0; i < steps; i++) {
       const t = i / (steps - 1)
       const value = max * (1 - t)
       const [r, g, b] = trafficStore.getColor(value)
-      const grams = Math.round(value)
       colors.push({
         color: `rgb(${r}, ${g}, ${b})`,
-        label: grams >= 1000 ? `${(grams / 1000).toFixed(1)}kg` : `${grams}g`
+        label: `${value.toFixed(1)} g/km`
       })
     }
 
     return {
       label: 'CO₂ Emissions',
-      unit: 'Total CO₂ per Edge',
+      unit: 'g CO₂/km per use',
       colors,
       gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false
+    }
+  } else if (mode === 'betweenness') {
+    // Betweenness centrality mode
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1)
+      const value = max * (1 - t)
+      const [r, g, b] = trafficStore.getColor(value)
+      colors.push({
+        color: `rgb(${r}, ${g}, ${b})`,
+        label: value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0)
+      })
+    }
+
+    return {
+      label: 'Betweenness Centrality',
+      unit: 'Norm. edge flow (veh/day)',
+      colors,
+      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      isCategorical: false
+    }
+  } else if (mode === 'betweenness_delta') {
+    // Betweenness delta mode
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1)
+      const value = max - t * (max - min)
+      const [r, g, b] = trafficStore.getColor(value)
+      const sign = value >= 0 ? '+' : ''
+      const abs = Math.abs(value)
+      colors.push({
+        color: `rgb(${r}, ${g}, ${b})`,
+        label: `${sign}${abs >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0)}`
+      })
+    }
+
+    return {
+      label: 'Betweenness Change',
+      unit: 'Δ norm. edge flow (veh/day)',
+      colors,
+      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      isCategorical: false,
+      showZero: true
     }
   } else {
     // Frequency mode: show actual max frequency from store
@@ -209,7 +249,7 @@ const trafficLegend = computed(() => {
       const [r, g, b] = trafficStore.getColor(value)
       colors.push({
         color: `rgb(${r}, ${g}, ${b})`,
-        label: (value * 100).toFixed(0) + '%'
+        label: (value * 100).toFixed(1) + '%'
       })
     }
 

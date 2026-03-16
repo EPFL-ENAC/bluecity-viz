@@ -52,6 +52,21 @@ function formatCO2Delta(grams?: number): string {
   if (Math.abs(grams) < 1000) return `${sign}${grams.toFixed(1)} g`
   return `${sign}${(grams / 1000).toFixed(2)} kg`
 }
+
+// Format betweenness centrality value
+function formatBC(bc?: number): string {
+  if (bc === undefined || bc === 0) return '-'
+  if (bc >= 1000) return `${(bc / 1000).toFixed(1)}k`
+  return bc.toFixed(1)
+}
+
+// Format BC delta with sign
+function formatBCDelta(bc?: number): string {
+  if (bc === undefined || bc === 0) return '-'
+  const sign = bc > 0 ? '+' : ''
+  if (Math.abs(bc) >= 1000) return `${sign}${(bc / 1000).toFixed(1)}k`
+  return `${sign}${bc.toFixed(1)}`
+}
 </script>
 
 <template>
@@ -115,13 +130,13 @@ function formatCO2Delta(grams?: number): string {
 
     <!-- CO2 Stats (if available) -->
     <div
-      v-if="data.co2_per_use || data.co2_total || data.co2_delta"
+      v-if="data.co2_per_km || data.co2_total || data.co2_delta"
       class="tooltip-section co2-stats"
     >
       <div class="section-title">CO₂ Emissions</div>
-      <div v-if="data.co2_per_use" class="tooltip-row">
-        <span class="label">Per use:</span>
-        <span class="value">{{ formatCO2(data.co2_per_use) }}</span>
+      <div v-if="data.co2_per_km" class="tooltip-row">
+        <span class="label">Per km:</span>
+        <span class="value">{{ formatCO2(data.co2_per_km) }}</span>
       </div>
       <div v-if="data.co2_total" class="tooltip-row">
         <span class="label">Total:</span>
@@ -131,6 +146,27 @@ function formatCO2Delta(grams?: number): string {
         <span class="label">Change:</span>
         <span class="value" :class="{ positive: data.co2_delta > 0, negative: data.co2_delta < 0 }">
           {{ formatCO2Delta(data.co2_delta) }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Betweenness Centrality (if available) -->
+    <div v-if="data.betweenness_centrality" class="tooltip-section bc-stats">
+      <div class="section-title">Betweenness Centrality</div>
+      <div class="tooltip-row">
+        <span class="label">BC:</span>
+        <span class="value">{{ formatBC(data.betweenness_centrality) }}</span>
+      </div>
+      <div
+        v-if="data.delta_betweenness && data.delta_betweenness !== 0"
+        class="tooltip-row"
+      >
+        <span class="label">Change:</span>
+        <span
+          class="value"
+          :class="{ positive: data.delta_betweenness > 0, negative: data.delta_betweenness < 0 }"
+        >
+          {{ formatBCDelta(data.delta_betweenness) }}
         </span>
       </div>
     </div>
@@ -214,6 +250,12 @@ function formatCO2Delta(grams?: number): string {
 
 .co2-stats {
   background: #fef3c7;
+  margin: 8px -12px;
+  padding: 8px 12px;
+}
+
+.bc-stats {
+  background: #ede9fe;
   margin: 8px -12px -12px -12px;
   padding: 8px 12px;
   border-radius: 0 0 7px 7px;

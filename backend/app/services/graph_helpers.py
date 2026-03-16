@@ -152,6 +152,8 @@ def build_edge_usage_stats(
     counts: dict,
     total_routes: int,
     original_counts: Optional[dict] = None,
+    edge_bc_cache: Optional[dict] = None,
+    delta_bc: Optional[dict] = None,
 ) -> List[EdgeUsageStats]:
     """Build edge usage statistics from a pre-computed edge count dict."""
     logger = logging.getLogger(__name__)
@@ -185,7 +187,9 @@ def build_edge_usage_stats(
                 frequency=freq,
                 delta_count=delta_count,
                 delta_frequency=delta_freq,
-                co2_per_use=edge_co2_cache.get((u, v)),
+                co2_per_km=edge_co2_cache.get((u, v)),
+                betweenness_centrality=edge_bc_cache.get((u, v)) if edge_bc_cache else None,
+                delta_betweenness=delta_bc.get((u, v)) if delta_bc else None,
             )
         )
     t_build_ms = (time.perf_counter() - t1) * 1000

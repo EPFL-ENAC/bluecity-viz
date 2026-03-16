@@ -141,7 +141,10 @@ interface EdgeUsageStats {
   count: number
   frequency: number
   delta_count?: number
-  co2_per_use?: number
+  delta_frequency?: number
+  co2_per_km?: number
+  betweenness_centrality?: number
+  delta_betweenness?: number
 }
 
 // Tooltip data structure
@@ -157,9 +160,11 @@ export interface EdgeTooltipData {
   frequency?: number
   count?: number
   delta_count?: number
-  co2_per_use?: number
+  co2_per_km?: number
   co2_total?: number
   co2_delta?: number
+  betweenness_centrality?: number
+  delta_betweenness?: number
 }
 
 interface DeckGLTrafficAnalysisReturn {
@@ -436,7 +441,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     })
     edgeStatsMap.value = statsMap
 
-    // Use new usage stats (which include delta_count and co2_per_use)
+    // Use new usage stats (which include delta_count, co2_per_km, and betweenness)
     const edgesWithStats = newUsage
       .map((stat) => {
         const edge = edgeMap.value.get(`${stat.u}-${stat.v}`)
@@ -445,20 +450,26 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
               ...edge,
               frequency: stat.frequency,
               delta_count: stat.delta_count ?? 0,
-              co2_per_use: stat.co2_per_use ?? 0,
+              delta_frequency: stat.delta_frequency ?? 0,
+              co2_per_km: stat.co2_per_km ?? 0,
               count: stat.count,
-              co2_total: (stat.co2_per_use ?? 0) * stat.count,
-              co2_delta: (stat.co2_per_use ?? 0) * (stat.delta_count ?? 0)
+              co2_total: (stat.co2_per_km ?? 0) * stat.count,
+              co2_delta: (stat.co2_per_km ?? 0) * (stat.delta_frequency ?? 0),
+              betweenness_centrality: stat.betweenness_centrality ?? 0,
+              delta_betweenness: stat.delta_betweenness ?? 0
             }
           : null
       })
       .filter(Boolean) as (EdgeGeometry & {
       frequency: number
       delta_count: number
-      co2_per_use: number
+      delta_frequency: number
+      co2_per_km: number
       count: number
       co2_total: number
       co2_delta: number
+      betweenness_centrality: number
+      delta_betweenness: number
     })[]
 
     // Sort edges by frequency (ascending) so larger edges are drawn last
@@ -505,9 +516,13 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
         } else if (activeMode === 'delta') {
           value = d.delta_count
         } else if (activeMode === 'co2') {
-          value = d.co2_total
+          value = d.co2_per_km
         } else if (activeMode === 'co2_delta') {
           value = d.co2_delta
+        } else if (activeMode === 'betweenness') {
+          value = d.betweenness_centrality
+        } else if (activeMode === 'betweenness_delta') {
+          value = d.delta_betweenness
         } else {
           value = d.frequency
         }
@@ -606,9 +621,11 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       frequency: edgeStats?.frequency ?? hoveredEdge.frequency,
       count: edgeStats?.count ?? hoveredEdge.count,
       delta_count: edgeStats?.delta_count ?? hoveredEdge.delta_count,
-      co2_per_use: edgeStats?.co2_per_use ?? hoveredEdge.co2_per_use,
+      co2_per_km: edgeStats?.co2_per_km ?? hoveredEdge.co2_per_km,
       co2_total: hoveredEdge.co2_total,
-      co2_delta: hoveredEdge.co2_delta
+      co2_delta: hoveredEdge.co2_delta,
+      betweenness_centrality: edgeStats?.betweenness_centrality ?? hoveredEdge.betweenness_centrality,
+      delta_betweenness: edgeStats?.delta_betweenness ?? hoveredEdge.delta_betweenness
     }
   }
 

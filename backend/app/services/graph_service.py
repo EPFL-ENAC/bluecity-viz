@@ -40,9 +40,11 @@ class GraphService:
         self.pairs_cache = None
         self.default_pairs = None
         self.default_routes = None
-        self._edge_co2_cache: dict = {}
+        self._edge_co2_cache: dict = {}  # (u,v) -> co2_per_km
         self._edge_metrics_cache: dict = {}  # (u,v) -> (travel_time, distance, elevation_gain, co2_g)
         self._route_edge_index: dict = {}
+        self._edge_bc_cache: dict = {}  # (u,v) -> normalised BC float
+        self._bc_sample_nodes: list = []  # NetworkX node IDs used for BC sampling
 
         if graph_path:
             self.load_graph(graph_path)
@@ -119,14 +121,56 @@ class GraphService:
         self._edge_co2_cache = {}
         self._edge_metrics_cache = {}
         for u, v, data in self.graph.edges(data=True):
-            co2 = data.get("co2_g")
-            self._edge_co2_cache[(u, v)] = co2
+            co2_g = data.get("co2_g") or 0.0
+            length = data.get("length", 1) or 1
+            length_km = length / 1000
+            co2_per_km = co2_g / length_km if length_km > 0 else 0.0
+            self._edge_co2_cache[(u, v)] = co2_per_km
             self._edge_metrics_cache[(u, v)] = (
                 data.get("travel_time", 0.0),
-                data.get("length", 0.0),
+                length,
                 data.get("elevation_gain", 0.0),
-                co2 or 0.0,
+                co2_g,
             )
+
+    def _compute_betweenness(self, sampling_config=None) -> dict:
+        """Compute sampled edge betweenness centrality. Returns {(u, v): bc}."""
+        from app.services.node_sampling_service import (
+            SamplingConfig,
+            edge_betweenness_igraph,
+            networkx_to_igraph_with_indices,
+        )
+
+        config = sampling_config or SamplingConfig()
+        h, idx_maps = networkx_to_igraph_with_indices(self.graph)
+
+        all_nx = list(self.graph.nodes())
+        if self._bc_sample_nodes:
+            nodes_nx = self._bc_sample_nodes
+        else:
+            n = min(config.n_nodes_preprocess, len(all_nx))
+            nodes_nx = random.sample(all_nx, n)
+            self._bc_sample_nodes = nodes_nx
+
+        nodes_ig = [
+            idx_maps["node_nx_to_ig"][n]
+            for n in nodes_nx
+            if n in idx_maps["node_nx_to_ig"]
+        ]
+        bc_dict = edge_betweenness_igraph(
+            h,
+            config.daily_km_driven,
+            weights="travel_time",
+            sources=nodes_ig,
+            targets=nodes_ig,
+        )
+        result = {}
+        for edge_ig_key, bc in bc_dict.items():
+            nx_key = idx_maps["edge_ig_to_nx"].get(edge_ig_key)
+            if nx_key is not None:
+                u, v, _ = nx_key
+                result[(u, v)] = bc
+        return result
 
     async def initialize_default_routes(
         self,
@@ -176,6 +220,10 @@ class GraphService:
             self.default_routes
         )
         print(f"[STARTUP] Pre-calculated {len(self.default_routes)} routes")
+
+        logging.info("[STARTUP] Computing betweenness centrality...")
+        self._edge_bc_cache = self._compute_betweenness(sampling_config)
+        logging.info(f"[STARTUP] BC computed for {len(self._edge_bc_cache)} edges")
 
     def _build_route_edge_index(self, routes: List[Route]) -> dict:
         """Build inverted index: edge -> list of route indices that use it."""
@@ -632,6 +680,11 @@ class GraphService:
                     elev_gain,
                     edge_data["co2_g"],
                 )
+                # Keep CO2/km cache in sync
+                length_km = length / 1000
+                self._edge_co2_cache[(mod.u, mod.v)] = (
+                    edge_data["co2_g"] / length_km if length_km > 0 else 0.0
+                )
 
                 applied.append(mod)
                 effective_modified_set.add((mod.u, mod.v))
@@ -642,6 +695,7 @@ class GraphService:
         t_od_resampling_ms = None
         t_affected_routes_ms = None
         t_route_calc_ms = 0.0
+        delta_bc: Optional[dict] = None
 
         try:
             if use_congestion:
@@ -686,6 +740,14 @@ class GraphService:
                 affected_indices = sorted(affected_set)
                 t_affected_routes_ms = (time.perf_counter() - t0) * 1000
 
+                # Compute delta betweenness on the modified graph
+                if self._edge_bc_cache and effective_modified_set:
+                    new_bc = self._compute_betweenness()
+                    delta_bc = {
+                        (u, v): new_bc.get((u, v), 0.0) - self._edge_bc_cache.get((u, v), 0.0)
+                        for (u, v) in set(new_bc) | set(self._edge_bc_cache)
+                    }
+
                 t0 = time.perf_counter()
                 new_routes_by_index = {}
                 if affected_indices:
@@ -706,12 +768,18 @@ class GraphService:
                 ed["speed_kph"] = orig_speed
                 ed["travel_time"] = orig_tt
                 ed["co2_g"] = orig_co2
+                length = ed.get("length", 0.0)
                 # Restore metrics cache to original values
                 self._edge_metrics_cache[(u, v)] = (
                     orig_tt or 0.0,
-                    ed.get("length", 0.0),
+                    length,
                     ed.get("elevation_gain", 0.0),
                     orig_co2 or 0.0,
+                )
+                # Restore CO2/km cache
+                length_km = length / 1000
+                self._edge_co2_cache[(u, v)] = (
+                    (orig_co2 / length_km) if orig_co2 and length_km > 0 else 0.0
                 )
             # Remove congestion weights written during iterative routing
             if use_congestion:
@@ -755,10 +823,13 @@ class GraphService:
 
         t0 = time.perf_counter()
         original_usage = build_edge_usage_stats(
-            self._edge_co2_cache, original_counts, len(original_routes)
+            self._edge_co2_cache, original_counts, len(original_routes),
+            edge_bc_cache=self._edge_bc_cache or None,
         )
         new_usage = build_edge_usage_stats(
-            self._edge_co2_cache, complete_counts, len(original_routes), original_counts
+            self._edge_co2_cache, complete_counts, len(original_routes), original_counts,
+            edge_bc_cache=self._edge_bc_cache or None,
+            delta_bc=delta_bc,
         )
         t_build_stats_ms = (time.perf_counter() - t0) * 1000
 

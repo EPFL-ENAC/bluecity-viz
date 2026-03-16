@@ -9,7 +9,10 @@ export interface TrafficAnalysisState {
     count: number
     frequency: number
     delta_count?: number
-    co2_per_use?: number
+    delta_frequency?: number
+    co2_per_km?: number
+    betweenness_centrality?: number
+    delta_betweenness?: number
   }>
   newEdgeUsage: Array<{
     u: number
@@ -17,10 +20,13 @@ export interface TrafficAnalysisState {
     count: number
     frequency: number
     delta_count?: number
-    co2_per_use?: number
+    delta_frequency?: number
+    co2_per_km?: number
+    betweenness_centrality?: number
+    delta_betweenness?: number
   }>
   impactStatistics: any | null
-  activeVisualization: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta'
+  activeVisualization: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
 }
 
 // Investigation interface
