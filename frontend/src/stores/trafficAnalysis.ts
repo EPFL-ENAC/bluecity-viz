@@ -55,6 +55,8 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const originalEdgeUsage = shallowRef<EdgeUsageStats[]>([])
   const newEdgeUsage = shallowRef<EdgeUsageStats[]>([])
   const impactStatistics = ref<ImpactStatistics | null>(null)
+  const useCongestionModel = ref<boolean>(false)
+  const congestionIterations = ref<number>(1)
   // Visualization state
   const legendMode = ref<LegendMode>('none')
   const colorScale = ref<ColorScale>(null)
@@ -407,6 +409,8 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     originalEdgeUsage,
     newEdgeUsage,
     impactStatistics,
+    useCongestionModel,
+    congestionIterations,
 
     // Visualization state
     legendMode,

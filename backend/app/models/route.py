@@ -96,6 +96,10 @@ class RecalculateRequest(BaseModel):
     sampling_config: Optional[SamplingConfig] = Field(
         None, description="Configuration for OD resampling (if resample_od_pairs=True)"
     )
+    use_congestion: bool = Field(default=False,
+        description="Use iterative congestion-aware routing on modified graph")
+    congestion_iterations: int = Field(default=1, ge=1, le=5,
+        description="Number of volume→speed→reroute iterations (ignored if use_congestion=False)")
 
 
 class RouteComparison(BaseModel):

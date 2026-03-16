@@ -86,6 +86,8 @@ async def recalculate_routes(request: RecalculateRequest):
             weight=request.weight,
             resample_od_pairs=request.resample_od_pairs,
             sampling_config=request.sampling_config,
+            use_congestion=request.use_congestion,
+            congestion_iterations=request.congestion_iterations,
         )
         return result
     except Exception as e:

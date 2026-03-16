@@ -249,14 +249,30 @@ class GraphService:
 
         return origin_groups
 
+    def _copy_weight_to_igraph(self, h, idx_maps: dict, weight: str):
+        """Copy a weight attribute from self.graph edges into igraph edge sequence."""
+        edge_weights = []
+        for edge_ig_idx in h.get_edgelist():
+            edge_nx_idx = idx_maps["edge_ig_to_nx"][edge_ig_idx]
+            edge_data = self.graph.edges[edge_nx_idx]
+            edge_weights.append(edge_data.get(weight, edge_data.get("length", 1)))
+        h.es[weight] = edge_weights
+
     async def _calculate_routes_igraph(
-        self, origin_groups: dict, weight: str = "travel_time"
+        self,
+        origin_groups: dict,
+        weight: str = "travel_time",
+        compute_metrics: bool = True,
+        prebuilt_igraph: Optional[tuple] = None,
     ) -> List[Route]:
         """Calculate routes using igraph one-to-many shortest paths.
 
         Args:
             origin_groups: Dict mapping origin → [(destination, pair_object), ...]
             weight: Edge weight attribute
+            compute_metrics: If False, skip metric calculation (path only)
+            prebuilt_igraph: Optional (h, idx_maps) tuple; if provided, skips graph
+                conversion and weight copy (caller is responsible for both).
 
         Returns:
             List of Route objects (order not preserved)
@@ -268,21 +284,19 @@ class GraphService:
 
         logger = logging.getLogger(__name__)
 
-        # Convert NetworkX graph to igraph with index mappings
-        t0 = time.time()
-        h, idx_maps = networkx_to_igraph_with_indices(self.graph)
-        t1 = time.time()
-        logger.info(f"Graph conversion took {t1-t0:.2f}s")
+        if prebuilt_igraph is not None:
+            h, idx_maps = prebuilt_igraph
+        else:
+            # Convert NetworkX graph to igraph with index mappings
+            t0 = time.time()
+            h, idx_maps = networkx_to_igraph_with_indices(self.graph)
+            t1 = time.time()
+            logger.info(f"Graph conversion took {t1-t0:.2f}s")
 
-        # Copy weight attribute from NetworkX to igraph
-        if weight not in h.es.attributes():
-            logger.info(f"Copying weight attribute '{weight}' to igraph...")
-            edge_weights = []
-            for edge_ig_idx in h.get_edgelist():
-                edge_nx_idx = idx_maps["edge_ig_to_nx"][edge_ig_idx]
-                edge_data = self.graph.edges[edge_nx_idx]
-                edge_weights.append(edge_data.get(weight, edge_data.get("length", 1)))
-            h.es[weight] = edge_weights
+            # Copy weight attribute from NetworkX to igraph
+            if weight not in h.es.attributes():
+                logger.info(f"Copying weight attribute '{weight}' to igraph...")
+                self._copy_weight_to_igraph(h, idx_maps, weight)
 
         all_routes = []
         failed_origins = 0
@@ -334,26 +348,32 @@ class GraphService:
                         idx_maps["node_ig_to_nx"][node_ig] for node_ig in path_ig
                     ]
 
-                    # Calculate metrics using NetworkX graph (existing helper)
-                    metrics = calculate_route_metrics(self.graph, path_nx)
-
-                    # Build Route object
-                    all_routes.append(
-                        Route(
-                            origin=pair_obj.origin,
-                            destination=pair_obj.destination,
-                            path=path_nx,
-                            travel_time=metrics["travel_time"],
-                            distance=metrics["distance"],
-                            elevation_gain=metrics["elevation_gain"],
-                            co2_emissions=metrics.get(
-                                "co2_emissions",
-                                CO2Calculator.calculate_route_co2(
-                                    metrics["edges_data"]
+                    if compute_metrics:
+                        metrics = calculate_route_metrics(self.graph, path_nx)
+                        all_routes.append(
+                            Route(
+                                origin=pair_obj.origin,
+                                destination=pair_obj.destination,
+                                path=path_nx,
+                                travel_time=metrics["travel_time"],
+                                distance=metrics["distance"],
+                                elevation_gain=metrics["elevation_gain"],
+                                co2_emissions=metrics.get(
+                                    "co2_emissions",
+                                    CO2Calculator.calculate_route_co2(
+                                        metrics["edges_data"]
+                                    ),
                                 ),
-                            ),
+                            )
                         )
-                    )
+                    else:
+                        all_routes.append(
+                            Route(
+                                origin=pair_obj.origin,
+                                destination=pair_obj.destination,
+                                path=path_nx,
+                            )
+                        )
 
             except Exception as e:
                 logger.warning(f"Failed to route from origin {origin_nx}: {e}")
@@ -416,6 +436,77 @@ class GraphService:
         logger.info(f"[ROUTING] Calculated {len(routes)} routes successfully")
         return routes
 
+    def _apply_congestion_weights(self, routes, sampling_config=None):
+        """Apply congestion-based weights to graph edges based on route usage volumes.
+
+        Normalises route edge counts to betweenness-equivalent vehicle flow, then
+        applies the same speed-reduction formula as node_sampling_service to write
+        'duration_bc' on every edge in self.graph.
+        """
+        from app.services.graph_helpers import count_edge_usage
+        from app.services.node_sampling_service import SamplingConfig as SC
+
+        config = sampling_config or SC()
+        counts = count_edge_usage(routes)
+
+        # Total simulated vehicle-meters
+        total_veh_m = sum(
+            count * self.graph[u][v][0].get("length", 0)
+            for (u, v), count in counts.items()
+            if self.graph.has_edge(u, v)
+        )
+        factor = (config.daily_km_driven * 1000 / total_veh_m) if total_veh_m > 0 else 1.0
+
+        for u, v, k, data in self.graph.edges(keys=True, data=True):
+            count = counts.get((u, v), 0)
+            volume = count * factor
+            lanes = data.get("lanes", 2)
+            if isinstance(lanes, list):
+                lanes = int(lanes[0])
+            try:
+                lanes = int(lanes)
+            except (ValueError, TypeError):
+                lanes = 2
+            speed_free = data.get("speed_kph", 30)
+            speed_cong = speed_free / (1 + volume / (lanes * config.betweenness_to_slowdown))
+            length = data.get("length", 0)
+            data["duration_bc"] = (
+                (length / 1000) / (speed_cong / 3600) if speed_cong > 0 else data.get("travel_time", 0)
+            )
+
+    async def _run_congestion_routing(self, pairs, n_iterations, sampling_config=None):
+        """Route pairs iteratively, updating congestion weights between each pass.
+
+        Iteration 0 uses free-flow travel_time; subsequent iterations use duration_bc.
+        Returns routes from the final iteration.
+
+        Optimisations:
+        - igraph is built once; weights are updated in-place between iterations.
+        - Metrics (travel_time, distance, CO2…) are only computed on the final routing call.
+        """
+        from app.services.node_sampling_service import networkx_to_igraph_with_indices
+
+        # Build igraph once — structure does not change between iterations
+        h, idx_maps = networkx_to_igraph_with_indices(self.graph)
+        prebuilt = (h, idx_maps)
+        origin_groups = self._group_pairs_by_origin(pairs)
+
+        # Iteration 0: free-flow routing, no metrics needed (path only)
+        self._copy_weight_to_igraph(h, idx_maps, "travel_time")
+        routes = await self._calculate_routes_igraph(
+            origin_groups, "travel_time", compute_metrics=False, prebuilt_igraph=prebuilt
+        )
+
+        for i in range(n_iterations):
+            self._apply_congestion_weights(routes, sampling_config)
+            self._copy_weight_to_igraph(h, idx_maps, "duration_bc")
+            is_final = i == n_iterations - 1
+            routes = await self._calculate_routes_igraph(
+                origin_groups, "duration_bc", compute_metrics=is_final, prebuilt_igraph=prebuilt
+            )
+
+        return routes
+
     async def recalculate_with_modifications(
         self,
         pairs: Optional[List[NodePair]] = None,
@@ -423,6 +514,8 @@ class GraphService:
         weight: str = "travel_time",
         resample_od_pairs: bool = True,
         sampling_config=None,
+        use_congestion: bool = False,
+        congestion_iterations: int = 1,
     ) -> RecalculateResponse:
         """Recalculate routes after applying edge modifications (remove or change speed).
 
@@ -531,7 +624,18 @@ class GraphService:
         t_route_calc_ms = 0.0
 
         try:
-            if resample_od_pairs:
+            if use_congestion:
+                # Congestion-aware: route ALL pairs through the modified graph iteratively
+                t0 = time.perf_counter()
+                new_routes = await self._run_congestion_routing(
+                    pairs, congestion_iterations, sampling_config
+                )
+                t_route_calc_ms = (time.perf_counter() - t0) * 1000
+
+                affected_indices = list(range(len(original_routes)))
+                new_routes_by_index = {i: route for i, route in enumerate(new_routes)}
+
+            elif resample_od_pairs:
                 from app.services.node_sampling_service import (
                     SamplingConfig,
                     generate_research_based_pairs,
@@ -582,6 +686,10 @@ class GraphService:
                 ed["speed_kph"] = orig_speed
                 ed["travel_time"] = orig_tt
                 ed["co2_g"] = orig_co2
+            # Remove congestion weights written during iterative routing
+            if use_congestion:
+                for u, v, k, data in self.graph.edges(keys=True, data=True):
+                    data.pop("duration_bc", None)
 
         # --- Phase: impact statistics ---
         t0 = time.perf_counter()

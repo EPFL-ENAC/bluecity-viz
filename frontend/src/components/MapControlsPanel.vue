@@ -97,9 +97,14 @@ function handleLayerSelection(layerId: string, checked: boolean) {
 // Traffic analysis logic
 async function calculateRoutes() {
   trafficStore.isCalculating = true
-  loadingMessage.value = 'Calculating routes...'
+  loadingMessage.value = trafficStore.useCongestionModel
+    ? `Congestion routing (${trafficStore.congestionIterations} iteration${trafficStore.congestionIterations > 1 ? 's' : ''})…`
+    : 'Calculating routes…'
   try {
-    const result = await recalculateRoutes(trafficStore.edgeModificationsArray)
+    const result = await recalculateRoutes(trafficStore.edgeModificationsArray, {
+      useCongestionModel: trafficStore.useCongestionModel,
+      congestionIterations: trafficStore.congestionIterations,
+    })
     trafficStore.setEdgeUsage(
       result.original_edge_usage,
       result.new_edge_usage,
@@ -292,6 +297,30 @@ watch(
                   Click on edges to modify them (cycles: remove → 10 → 30 → 50 km/h)
                 </div>
               </v-card>
+            </v-expand-transition>
+          </div>
+
+          <!-- Congestion model options -->
+          <div class="mt-2">
+            <v-checkbox
+              v-model="trafficStore.useCongestionModel"
+              label="Congestion model"
+              color="primary"
+              hide-details
+              density="compact"
+            />
+            <v-expand-transition>
+              <div v-if="trafficStore.useCongestionModel" class="pl-4 mt-1">
+                <div class="text-caption text-medium-emphasis mb-1">
+                  Iterations ({{ trafficStore.congestionIterations }}) — ~{{ trafficStore.congestionIterations * 10 }}s
+                </div>
+                <v-slider
+                  v-model="trafficStore.congestionIterations"
+                  :min="1" :max="5" :step="1"
+                  hide-details density="compact"
+                  color="primary" thumb-label
+                />
+              </div>
             </v-expand-transition>
           </div>
 
