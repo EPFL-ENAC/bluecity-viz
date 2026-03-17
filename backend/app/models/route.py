@@ -233,6 +233,8 @@ class GraphEdge(BaseModel):
     speed_kph: Optional[float] = Field(None, description="Speed limit in km/h")
     length: Optional[float] = Field(None, description="Length in meters")
     travel_time: Optional[float] = Field(None, description="Travel time in seconds")
+    bus_route_count: int = Field(0, description="Number of bus lines using this edge")
+    bus_route_refs: str = Field("", description="Comma-separated bus route references")
 
 
 class GraphData(BaseModel):
