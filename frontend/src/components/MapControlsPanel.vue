@@ -12,7 +12,8 @@ import {
   mdiCalculator,
   mdiDelete,
   mdiClose,
-  mdiCancel
+  mdiCancel,
+  mdiInformation
 } from '@mdi/js'
 
 // Stores
@@ -300,15 +301,41 @@ watch(
             </v-expand-transition>
           </div>
 
-          <!-- Congestion model options -->
+          <!-- Volume model options -->
           <div class="mt-2">
             <v-checkbox
               v-model="trafficStore.useCongestionModel"
-              label="Congestion model"
               color="primary"
               hide-details
               density="compact"
-            />
+            >
+              <template #label>
+                <span>Volume model</span>
+                <v-tooltip location="right" max-width="320">
+                  <template #activator="{ props }">
+                    <v-icon v-bind="props" :icon="mdiInformation" size="small" class="ml-1 text-medium-emphasis" />
+                  </template>
+                  <div>
+                    <div class="font-weight-bold mb-1">Volume model vs. default</div>
+                    <div class="mb-2">
+                      The <strong>default</strong> model uses theoretical betweenness centrality (BC)
+                      computed on the modified graph to derive congested travel times
+                      (<em>duration_bc</em>), then routes with those weights.
+                      Roads that structurally attract more flow appear slower, discouraging
+                      over-assignment without any iteration.
+                    </div>
+                    <div>
+                      The <strong>volume model</strong> counts actual simulated route volumes,
+                      normalises them to daily vehicle-km, and feeds that load into the same
+                      BPR speed-reduction formula. Routes are then re-run with the updated
+                      weights, repeating for the chosen number of iterations — converging
+                      toward a <em>Wardrop user equilibrium</em> where no driver can
+                      reduce their travel time by switching routes.
+                    </div>
+                  </div>
+                </v-tooltip>
+              </template>
+            </v-checkbox>
             <v-expand-transition>
               <div v-if="trafficStore.useCongestionModel" class="pl-4 mt-1">
                 <div class="text-caption text-medium-emphasis mb-1">
