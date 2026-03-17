@@ -1,7 +1,7 @@
 [project]
 name = "traffic-analysis"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     # Graph download and analysis
     "osmnx>=2.0.0",
@@ -17,6 +17,8 @@ dependencies = [
     "numpy>=1.26.0",
     # HTTP downloads (elevation data)
     "requests>=2.31.0",
+    # Transit data extraction from OSM PBF
+    "extractosm @ git+https://github.com/EPFL-ENAC/extractosm.git",
     # Interactive exploration (notebooks only)
     "matplotlib>=3.8.0",
     "folium>=0.15.0",
