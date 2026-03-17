@@ -136,23 +136,15 @@ except Exception as e:
 # Test 5: Check model integration
 print("\n[TEST 5] Testing model integration...")
 try:
-    from app.models.route import RandomPairsRequest, RecalculateRequest
+    from app.models.route import RandomPairsRequest
     from app.models.route import SamplingConfig as ModelSamplingConfig
 
-    # Test RandomPairsRequest with research method
     req = RandomPairsRequest(
         count=10,
         sampling_method="research",
         sampling_config=ModelSamplingConfig(n_nodes_preprocess=100),
     )
     print(f"✓ RandomPairsRequest created: method={req.sampling_method}")
-
-    # Test RecalculateRequest with resampling
-    req2 = RecalculateRequest(
-        resample_od_pairs=True,
-        sampling_config=ModelSamplingConfig(n_nodes_preprocess=100),
-    )
-    print(f"✓ RecalculateRequest created: resample={req2.resample_od_pairs}")
 
 except Exception as e:
     print(f"✗ Failed: {e}")

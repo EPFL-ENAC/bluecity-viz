@@ -89,13 +89,6 @@ class RecalculateRequest(BaseModel):
     )
     weight: str = Field(default="travel_time", description="Edge weight attribute")
     include_geometry: bool = Field(default=False, description="Include path geometry")
-    resample_od_pairs: bool = Field(
-        default=False,
-        description="Resample OD pairs after modifications (vs. reroute existing pairs)",
-    )
-    sampling_config: Optional[SamplingConfig] = Field(
-        None, description="Configuration for OD resampling (if resample_od_pairs=True)"
-    )
     use_congestion: bool = Field(default=False,
         description="Use iterative congestion-aware routing on modified graph")
     congestion_iterations: int = Field(default=1, ge=1, le=5,
@@ -206,8 +199,7 @@ class TimingStats(BaseModel):
     cache_lookup_ms: float = Field(..., description="Original route lookup or computation")
     graph_copy_ms: float = Field(..., description="Graph deep-copy")
     apply_modifications_ms: float = Field(..., description="Applying edge modifications")
-    od_resampling_ms: Optional[float] = Field(None, description="OD pair resampling (if used)")
-    affected_routes_ms: Optional[float] = Field(None, description="Affected-route detection (if used)")
+    affected_routes_ms: Optional[float] = Field(None, description="Affected-route detection (targeted BC mode only)")
     route_calculation_ms: float = Field(..., description="New route computation on modified graph")
     impact_stats_ms: float = Field(..., description="Impact statistics computation")
     edge_usage_stats_ms: float = Field(..., description="Edge usage stats build")

@@ -1,34 +1,57 @@
-"""Graph service orchestrator for route calculations."""
+"""Graph service — thin orchestrator for routing and edge modification analysis.
+
+Delegates to specialised modules:
+  routing_engine  — igraph one-to-many Dijkstra routing
+  bpr             — BPR congestion model and betweenness centrality
+  graph_helpers   — edge stats, modification helpers, graph serialization
+  sampling/       — research-based OD pair generation
+"""
 
 import logging
-import random
 import time
 from pathlib import Path
 from typing import List, Optional
+import random
 
 import osmnx as ox
 
 from app.models.route import (
     EdgeModification,
-    GraphData,
-    GraphEdge,
     NodePair,
-    PathGeometry,
     RecalculateResponse,
     Route,
     TimingStats,
 )
+from app.services import bpr, routing_engine
 from app.services.co2_calculator import CO2Calculator
-from app.services.graph_helpers import build_edge_usage_stats, count_edge_usage
+from app.services.graph_helpers import (
+    apply_edge_modifications,
+    build_edge_usage_stats,
+    count_edge_usage,
+    get_edge_geometries,
+    get_graph_data,
+    restore_edge_modifications,
+)
 from app.services.impact_calculator import compute_impact_statistics
+from app.services.utils.timing import timed
 
+logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 ox_logger = logging.getLogger("osmnx")
 ox_logger.setLevel(logging.INFO)
 
 
 class GraphService:
-    """Service for managing graph and calculating routes."""
+    """Service for managing the road network graph and calculating routes.
+
+    State caches (all keyed by (u, v) edge tuples):
+        _edge_co2_cache     — CO2 in g/km (updated with BC-congested speeds at startup)
+        _edge_metrics_cache — (travel_time, distance, elevation_gain, co2_g)
+        _edge_bc_cache      — normalised betweenness centrality in veh/day
+        _route_edge_index   — inverted index: pairs_key → {edge: [route_indices]}
+    """
+
+    # ── Graph Loading & Initialisation ────────────────────────────────────────
 
     def __init__(self, graph_path: Optional[str] = None):
         self.graph = None
@@ -37,19 +60,17 @@ class GraphService:
         self.pairs_cache = None
         self.default_pairs = None
         self.default_routes = None
-        self._edge_co2_cache: dict = {}  # (u,v) -> co2_per_km
-        self._edge_metrics_cache: dict = (
-            {}
-        )  # (u,v) -> (travel_time, distance, elevation_gain, co2_g)
+        self._edge_co2_cache: dict = {}
+        self._edge_metrics_cache: dict = {}
         self._route_edge_index: dict = {}
-        self._edge_bc_cache: dict = {}  # (u,v) -> normalised BC float
-        self._bc_sample_nodes: list = []  # NetworkX node IDs used for BC sampling
+        self._edge_bc_cache: dict = {}
+        self._bc_sample_nodes: list = []
 
         if graph_path:
             self.load_graph(graph_path)
 
     def load_graph(self, graph_path: str):
-        """Load graph from file and ensure required attributes."""
+        """Load graph from GraphML and ensure speed/travel_time attributes are present."""
         path = Path(graph_path)
         if not path.exists():
             raise FileNotFoundError(f"Graph file not found: {graph_path}")
@@ -57,74 +78,47 @@ class GraphService:
         self.graph = ox.load_graphml(graph_path)
         total = len(self.graph.edges)
 
-        # Add speeds/travel times if mostly missing
-        if (
-            sum(
-                1
-                for _, _, d in self.graph.edges(data=True)
-                if d.get("speed_kph", 0) > 0
-            )
-            < total * 0.9
-        ):
+        if sum(1 for _, _, d in self.graph.edges(data=True) if d.get("speed_kph", 0) > 0) < total * 0.9:
             self.graph = ox.routing.add_edge_speeds(self.graph)
-        if (
-            sum(
-                1
-                for _, _, d in self.graph.edges(data=True)
-                if d.get("travel_time", 0) > 0
-            )
-            < total * 0.9
-        ):
+        if sum(1 for _, _, d in self.graph.edges(data=True) if d.get("travel_time", 0) > 0) < total * 0.9:
             self.graph = ox.routing.add_edge_travel_times(self.graph)
 
         print(f"Loaded graph: {len(self.graph.nodes)} nodes, {total} edges")
-
         self._precompute_graph_metrics()
 
     def _precompute_graph_metrics(self):
-        """Pre-compute CO2 and elevation gain for all edges."""
+        """Pre-compute CO2 and elevation for all edges; build flat lookup caches.
+
+        Flat caches avoid repeated NetworkX attribute lookups in the hot routing path.
+        """
         if not self.graph:
             return
 
         logging.info("Pre-computing graph metrics (CO2, elevation)...")
         for u, v, k, data in self.graph.edges(keys=True, data=True):
-            # 1. Elevation
             elevation_gain = data.get("elevation_gain")
             if elevation_gain is None:
                 elevation_gain = 0.0
-                if (
-                    "elevation" in self.graph.nodes[u]
-                    and "elevation" in self.graph.nodes[v]
-                ):
-                    diff = (
-                        self.graph.nodes[v]["elevation"]
-                        - self.graph.nodes[u]["elevation"]
-                    )
+                if "elevation" in self.graph.nodes[u] and "elevation" in self.graph.nodes[v]:
+                    diff = self.graph.nodes[v]["elevation"] - self.graph.nodes[u]["elevation"]
                     if diff > 0:
                         elevation_gain = diff
                 data["elevation_gain"] = elevation_gain
 
-            # 2. CO2
             t = data.get("travel_time", 0)
             l = data.get("length", 0)
-            s = data.get("speed_kph")
-
-            if not s and t > 0:
-                s = (l / 1000) / (t / 3600)
-
+            s = data.get("speed_kph") or ((l / 1000) / (t / 3600) if t > 0 else None)
             data["co2_g"] = CO2Calculator.calculate_edge_co2(
                 length=l, speed_kph=s, elevation_gain=elevation_gain
             )
 
-        # Build flat caches for O(1) lookup (avoids NetworkX graph access per edge)
         self._edge_co2_cache = {}
         self._edge_metrics_cache = {}
         for u, v, data in self.graph.edges(data=True):
             co2_g = data.get("co2_g") or 0.0
             length = data.get("length", 1) or 1
             length_km = length / 1000
-            co2_per_km = co2_g / length_km if length_km > 0 else 0.0
-            self._edge_co2_cache[(u, v)] = co2_per_km
+            self._edge_co2_cache[(u, v)] = co2_g / length_km if length_km > 0 else 0.0
             self._edge_metrics_cache[(u, v)] = (
                 data.get("travel_time", 0.0),
                 length,
@@ -132,129 +126,7 @@ class GraphService:
                 co2_g,
             )
 
-    def _compute_betweenness(self, sampling_config=None, label: str = "BC") -> dict:
-        """Compute sampled edge betweenness centrality. Returns {(u, v): bc}."""
-        from app.services.node_sampling_service import (
-            SamplingConfig,
-            edge_betweenness_igraph,
-            networkx_to_igraph_with_indices,
-        )
-
-        config = sampling_config or SamplingConfig()
-
-        t0 = time.perf_counter()
-        h, idx_maps = networkx_to_igraph_with_indices(self.graph)
-        t_convert = (time.perf_counter() - t0) * 1000
-
-        all_nx = list(self.graph.nodes())
-        if self._bc_sample_nodes:
-            nodes_nx = self._bc_sample_nodes
-            reused = True
-        else:
-            n = min(config.n_nodes_preprocess, len(all_nx))
-            nodes_nx = random.sample(all_nx, n)
-            self._bc_sample_nodes = nodes_nx
-            reused = False
-
-        nodes_ig = [
-            idx_maps["node_nx_to_ig"][n]
-            for n in nodes_nx
-            if n in idx_maps["node_nx_to_ig"]
-        ]
-
-        t0 = time.perf_counter()
-        bc_dict = edge_betweenness_igraph(
-            h,
-            config.daily_km_driven,
-            weights="travel_time",
-            sources=nodes_ig,
-            targets=nodes_ig,
-        )
-        t_bc = (time.perf_counter() - t0) * 1000
-
-        result = {}
-        for edge_ig_key, bc in bc_dict.items():
-            nx_key = idx_maps["edge_ig_to_nx"].get(edge_ig_key)
-            if nx_key is not None:
-                u, v, _ = nx_key
-                result[(u, v)] = bc
-
-        logging.info(
-            f"[TIMING] {label} | nodes={len(nodes_ig)} (reused={reused}) | "
-            f"graph_convert={t_convert:.0f}ms | bc_compute={t_bc:.0f}ms | "
-            f"edges_with_bc={len(result)}"
-        )
-        return result
-
-    def _update_co2_with_congestion(self, sampling_config=None) -> None:
-        """Recompute _edge_co2_cache using BC-derived congested speeds.
-
-        For each edge, the free-flow speed is slowed down by its betweenness
-        centrality using the same BPR-like formula used in congestion routing:
-            speed_cong = speed_free / (1 + bc / (lanes × betweenness_to_slowdown))
-
-        The congested speed is then fed into CO2Calculator so high-traffic
-        edges correctly show elevated emissions per km.
-        """
-        from app.services.node_sampling_service import SamplingConfig
-
-        config = sampling_config or SamplingConfig()
-
-        for u, v, data in self.graph.edges(data=True):
-            bc = self._edge_bc_cache.get((u, v), 0.0)
-            speed_free = data.get("speed_kph") or 30.0
-            length = data.get("length") or 1.0
-            elevation_gain = data.get("elevation_gain") or 0.0
-
-            lanes = data.get("lanes", 2)
-            if isinstance(lanes, list):
-                lanes = int(lanes[0])
-            try:
-                lanes = int(lanes)
-            except (ValueError, TypeError):
-                lanes = 2
-
-            if bc > 0:
-                speed_cong = speed_free / (
-                    1 + bc / (lanes * config.betweenness_to_slowdown)
-                )
-            else:
-                speed_cong = speed_free
-
-            co2_g = CO2Calculator.calculate_edge_co2(
-                length=length,
-                speed_kph=speed_cong,
-                elevation_gain=elevation_gain,
-            )
-            length_km = length / 1000.0
-            self._edge_co2_cache[(u, v)] = co2_g / length_km if length_km > 0 else 0.0
-
-    def _write_bc_duration(self, bc_dict: dict, sampling_config=None) -> None:
-        """Write duration_bc to every graph edge using BC-derived congested speeds.
-
-        Same BPR formula as _apply_congestion_weights but uses theoretical BC
-        (from _compute_betweenness) instead of measured route volumes.
-        """
-        from app.services.node_sampling_service import SamplingConfig
-
-        config = sampling_config or SamplingConfig()
-        for u, v, k, data in self.graph.edges(keys=True, data=True):
-            bc = bc_dict.get((u, v), 0.0)
-            speed_free = data.get("speed_kph") or 30.0
-            length = data.get("length") or 1.0
-            lanes = data.get("lanes", 2)
-            if isinstance(lanes, list):
-                lanes = int(lanes[0])
-            try:
-                lanes = int(lanes)
-            except (ValueError, TypeError):
-                lanes = 2
-            speed_cong = speed_free / (1 + bc / (lanes * config.betweenness_to_slowdown))
-            data["duration_bc"] = (
-                (length / 1000) / (speed_cong / 3.6)
-                if speed_cong > 0
-                else data.get("travel_time", 0)
-            )
+    # ── OD Pair Generation ────────────────────────────────────────────────────
 
     async def initialize_default_routes(
         self,
@@ -264,24 +136,17 @@ class GraphService:
         sampling_method: str = "research",
         sampling_config=None,
     ):
-        """Generate default OD pairs and pre-calculate routes.
+        """Generate default OD pairs and pre-calculate baseline routes.
 
-        Args:
-            count: Number of OD pairs to generate
-            radius_km: Radius for simple sampling (ignored if method='research')
-            seed: Random seed for reproducibility
-            sampling_method: 'simple' or 'research' (default: 'research')
-            sampling_config: SamplingConfig for research-based sampling (uses defaults if None)
+        Research-based sampling uses betweenness centrality and lognormal
+        travel-time weighting to produce realistic trip distributions.
+        After routing, computes baseline BC and updates CO2/km with congested speeds.
         """
         if not self.graph:
             raise RuntimeError("Graph not loaded")
 
         if sampling_method == "research":
-            from app.services.node_sampling_service import (
-                SamplingConfig,
-                generate_research_based_pairs,
-            )
-
+            from app.services.node_sampling_service import SamplingConfig, generate_research_based_pairs
             config = sampling_config or SamplingConfig()
             print(f"[STARTUP] Using research-based sampling with {count} OD pairs")
             self.default_pairs = generate_research_based_pairs(
@@ -289,790 +154,32 @@ class GraphService:
             )
         else:
             print(f"[STARTUP] Using simple random sampling with {count} OD pairs")
-            self.default_pairs = self.generate_random_pairs(
-                count=count, seed=seed, radius_km=radius_km
-            )
+            self.default_pairs = self.generate_random_pairs(count=count, seed=seed, radius_km=radius_km)
 
-        self.default_routes = await self.calculate_routes(
-            self.default_pairs, weight="travel_time"
-        )
+        self.default_routes = await self.calculate_routes(self.default_pairs, weight="travel_time")
 
         pairs_key = tuple((p.origin, p.destination) for p in self.default_pairs)
         self.pairs_cache = pairs_key
         self.route_cache[pairs_key] = self.default_routes
-        self._route_edge_index[pairs_key] = self._build_route_edge_index(
-            self.default_routes
-        )
+        self._route_edge_index[pairs_key] = routing_engine.build_route_edge_index(self.default_routes)
         print(f"[STARTUP] Pre-calculated {len(self.default_routes)} routes")
 
         logging.info("[STARTUP] Computing betweenness centrality...")
-        self._edge_bc_cache = self._compute_betweenness(sampling_config)
+        self._edge_bc_cache, self._bc_sample_nodes = bpr.compute_betweenness(
+            self.graph, self._bc_sample_nodes, sampling_config
+        )
         logging.info(f"[STARTUP] BC computed for {len(self._edge_bc_cache)} edges")
 
         logging.info("[STARTUP] Updating CO2/km with BC-derived congested speeds...")
-        self._update_co2_with_congestion(sampling_config)
+        bpr.update_co2_with_congestion(
+            self.graph, self._edge_bc_cache, self._edge_co2_cache, sampling_config
+        )
         logging.info("[STARTUP] CO2/km congestion update complete")
-
-    def _build_route_edge_index(self, routes: List[Route]) -> dict:
-        """Build inverted index: edge -> list of route indices that use it."""
-        edge_index: dict = {}
-        for i, route in enumerate(routes):
-            for j in range(len(route.path) - 1):
-                key = (route.path[j], route.path[j + 1])
-                edge_index.setdefault(key, []).append(i)
-        return edge_index
-
-    def get_graph_info(self) -> dict:
-        """Get basic graph information."""
-        if not self.graph:
-            raise RuntimeError("Graph not loaded")
-        return {
-            "node_count": len(self.graph.nodes),
-            "edge_count": len(self.graph.edges),
-            "sample_nodes": list(self.graph.nodes())[:20],
-        }
-
-    def get_edge_geometries(self, limit: Optional[int] = None) -> List[dict]:
-        """Get edge geometries for visualization."""
-        if not self.graph:
-            raise RuntimeError("Graph not loaded")
-
-        edges = []
-        for i, (u, v, data) in enumerate(self.graph.edges(data=True)):
-            if limit and i >= limit:
-                break
-
-            coords = (
-                [[lon, lat] for lon, lat in data["geometry"].coords]
-                if "geometry" in data
-                else [
-                    [self.graph.nodes[u]["x"], self.graph.nodes[u]["y"]],
-                    [self.graph.nodes[v]["x"], self.graph.nodes[v]["y"]],
-                ]
-            )
-
-            name_raw = data.get("name")
-            name = (
-                (name_raw[0] if name_raw else None)
-                if isinstance(name_raw, list)
-                else (str(name_raw) if name_raw else None)
-            )
-
-            highway_raw = data.get("highway", "Unknown")
-            highway = highway_raw[0] if isinstance(highway_raw, list) else highway_raw
-
-            edges.append(
-                {
-                    "u": int(u),
-                    "v": int(v),
-                    "coordinates": coords,
-                    "travel_time": data.get("travel_time"),
-                    "length": data.get("length"),
-                    "speed_kph": data.get("speed_kph"),
-                    "name": name,
-                    "highway": highway,
-                }
-            )
-
-        return edges
-
-    def _group_pairs_by_origin(self, pairs: List[NodePair]) -> dict:
-        """Group OD pairs by origin for one-to-many routing.
-
-        Args:
-            pairs: List of origin-destination pairs
-
-        Returns:
-            Dict mapping origin → list of (destination, pair_object) tuples
-        """
-        from collections import defaultdict
-
-        origin_groups = defaultdict(list)
-        for pair in pairs:
-            origin_groups[pair.origin].append((pair.destination, pair))
-
-        return origin_groups
-
-    def _copy_weight_to_igraph(self, h, idx_maps: dict, weight: str):
-        """Copy a weight attribute from self.graph edges into igraph edge sequence."""
-        edge_weights = []
-        for edge_ig_idx in h.get_edgelist():
-            edge_nx_idx = idx_maps["edge_ig_to_nx"][edge_ig_idx]
-            edge_data = self.graph.edges[edge_nx_idx]
-            edge_weights.append(edge_data.get(weight, edge_data.get("length", 1)))
-        h.es[weight] = edge_weights
-
-    async def _calculate_routes_igraph(
-        self,
-        origin_groups: dict,
-        weight: str = "travel_time",
-        compute_metrics: bool = True,
-        prebuilt_igraph: Optional[tuple] = None,
-    ) -> List[Route]:
-        """Calculate routes using igraph one-to-many shortest paths.
-
-        Args:
-            origin_groups: Dict mapping origin → [(destination, pair_object), ...]
-            weight: Edge weight attribute
-            compute_metrics: If False, skip metric calculation (path only)
-            prebuilt_igraph: Optional (h, idx_maps) tuple; if provided, skips graph
-                conversion and weight copy (caller is responsible for both).
-
-        Returns:
-            List of Route objects (order not preserved)
-        """
-        import logging
-        import time
-
-        from app.services.node_sampling_service import networkx_to_igraph_with_indices
-
-        logger = logging.getLogger(__name__)
-
-        if prebuilt_igraph is not None:
-            h, idx_maps = prebuilt_igraph
-        else:
-            # Convert NetworkX graph to igraph with index mappings
-            t0 = time.time()
-            h, idx_maps = networkx_to_igraph_with_indices(self.graph)
-            t1 = time.time()
-            logger.info(f"Graph conversion took {t1-t0:.2f}s")
-
-            # Copy weight attribute from NetworkX to igraph
-            if weight not in h.es.attributes():
-                logger.info(f"Copying weight attribute '{weight}' to igraph...")
-                self._copy_weight_to_igraph(h, idx_maps, weight)
-
-        all_routes = []
-        failed_origins = 0
-        _metrics_cache = (
-            self._edge_metrics_cache
-        )  # local ref avoids repeated attr lookup
-
-        t2 = time.time()
-        logger.info(f"Calculating routes for {len(origin_groups)} origins...")
-        t2_routing = 0
-
-        for origin_nx, dest_pairs in origin_groups.items():
-            # Convert origin from NetworkX ID to igraph index
-            if origin_nx not in idx_maps["node_nx_to_ig"]:
-                logger.warning(f"Origin {origin_nx} not found in igraph")
-                failed_origins += 1
-                continue
-
-            origin_ig = idx_maps["node_nx_to_ig"][origin_nx]
-
-            # Convert destinations from NetworkX IDs to igraph indices
-            destinations_ig = []
-            dest_pair_mapping = []  # Track which pair corresponds to which destination
-
-            for dest_nx, pair_obj in dest_pairs:
-                if dest_nx in idx_maps["node_nx_to_ig"]:
-                    destinations_ig.append(idx_maps["node_nx_to_ig"][dest_nx])
-                    dest_pair_mapping.append((dest_nx, pair_obj))
-
-            if not destinations_ig:
-                logger.warning(f"No valid destinations for origin {origin_nx}")
-                failed_origins += 1
-                continue
-
-            try:
-                # ONE DIJKSTRA CALL FOR ALL DESTINATIONS FROM THIS ORIGIN
-                t2a = time.time()
-                paths_ig = h.get_shortest_paths(
-                    v=origin_ig, to=destinations_ig, weights=weight, output="vpath"
-                )
-                t2b = time.time()
-                t2_routing += t2b - t2a
-
-                # Process each path
-                for path_ig, (dest_nx, pair_obj) in zip(paths_ig, dest_pair_mapping):
-                    if not path_ig or len(path_ig) < 2:
-                        # No path found (disconnected)
-                        continue
-
-                    # Convert path from igraph indices to NetworkX node IDs
-                    path_nx = [
-                        idx_maps["node_ig_to_nx"][node_ig] for node_ig in path_ig
-                    ]
-
-                    if compute_metrics:
-                        travel_time = distance = elevation_gain = co2 = 0.0
-                        for u, v in zip(path_nx[:-1], path_nx[1:]):
-                            tt, dist, elev, co2_g = _metrics_cache.get(
-                                (u, v), (0.0, 0.0, 0.0, 0.0)
-                            )
-                            travel_time += tt
-                            distance += dist
-                            elevation_gain += elev
-                            co2 += co2_g
-                        all_routes.append(
-                            Route(
-                                origin=pair_obj.origin,
-                                destination=pair_obj.destination,
-                                path=path_nx,
-                                travel_time=travel_time,
-                                distance=distance,
-                                elevation_gain=(
-                                    elevation_gain if elevation_gain > 0 else None
-                                ),
-                                co2_emissions=co2,
-                            )
-                        )
-                    else:
-                        all_routes.append(
-                            Route(
-                                origin=pair_obj.origin,
-                                destination=pair_obj.destination,
-                                path=path_nx,
-                            )
-                        )
-
-            except Exception as e:
-                logger.warning(f"Failed to route from origin {origin_nx}: {e}")
-                failed_origins += 1
-                continue
-
-        t3 = time.time()
-        routing_time = t3 - t2
-        logger.info(f"Total routing time: {routing_time:.2f}s")
-        logger.info(f"Total routing time (igraph): {t2_routing:.2f}s")
-
-        if failed_origins > 0:
-            logger.warning(f"Failed to route from {failed_origins} origins")
-
-        logger.info(
-            f"Successfully calculated {len(all_routes)} routes in {routing_time:.2f}s "
-            f"({len(all_routes)/routing_time:.0f} routes/sec)"
-        )
-        return all_routes
-
-    async def calculate_routes(
-        self,
-        pairs: List[NodePair],
-        weight: str = "travel_time",
-        use_parallel: bool = None,
-    ) -> List[Route]:
-        """Calculate shortest paths for given node pairs using igraph one-to-many routing.
-
-        Args:
-            pairs: List of origin-destination node pairs
-            weight: Edge weight attribute to minimize
-            use_parallel: Deprecated, kept for API compatibility (ignored)
-
-        Returns:
-            List of Route objects with paths and metrics
-
-        Note:
-            Uses igraph one-to-many shortest paths for efficiency.
-            Result order may differ from input pair order.
-        """
-        if not self.graph or not pairs:
-            return []
-
-        import logging
-
-        logger = logging.getLogger(__name__)
-
-        # Group pairs by origin for one-to-many optimization
-        origin_groups = self._group_pairs_by_origin(pairs)
-
-        avg_dests_per_origin = len(pairs) / len(origin_groups)
-        logger.info(
-            f"[ROUTING] {len(pairs)} OD pairs grouped into {len(origin_groups)} origins "
-            f"(avg {avg_dests_per_origin:.1f} destinations/origin)"
-        )
-
-        # Use igraph one-to-many routing
-        routes = await self._calculate_routes_igraph(origin_groups, weight)
-
-        logger.info(f"[ROUTING] Calculated {len(routes)} routes successfully")
-        return routes
-
-    def _apply_congestion_weights(self, routes, sampling_config=None):
-        """Apply congestion-based weights to graph edges based on route usage volumes.
-
-        Normalises route edge counts to betweenness-equivalent vehicle flow, then
-        applies the same speed-reduction formula as node_sampling_service to write
-        'duration_bc' on every edge in self.graph.
-        """
-        from app.services.graph_helpers import count_edge_usage
-        from app.services.node_sampling_service import SamplingConfig as SC
-
-        config = sampling_config or SC()
-        counts = count_edge_usage(routes)
-
-        # Total simulated vehicle-meters
-        total_veh_m = sum(
-            count * self.graph[u][v][0].get("length", 0)
-            for (u, v), count in counts.items()
-            if self.graph.has_edge(u, v)
-        )
-        factor = (
-            (config.daily_km_driven * 1000 / total_veh_m) if total_veh_m > 0 else 1.0
-        )
-
-        for u, v, k, data in self.graph.edges(keys=True, data=True):
-            count = counts.get((u, v), 0)
-            volume = count * factor
-            lanes = data.get("lanes", 2)
-            if isinstance(lanes, list):
-                lanes = int(lanes[0])
-            try:
-                lanes = int(lanes)
-            except (ValueError, TypeError):
-                lanes = 2
-            speed_free = data.get("speed_kph", 30)
-            speed_cong = speed_free / (
-                1 + volume / (lanes * config.betweenness_to_slowdown)
-            )
-            length = data.get("length", 0)
-            data["duration_bc"] = (
-                (length / 1000) / (speed_cong / 3600)
-                if speed_cong > 0
-                else data.get("travel_time", 0)
-            )
-
-    async def _run_congestion_routing(self, pairs, n_iterations, sampling_config=None):
-        """Route pairs iteratively, updating congestion weights between each pass.
-
-        Iteration 0 uses free-flow travel_time; subsequent iterations use duration_bc.
-        Returns routes from the final iteration.
-
-        Optimisations:
-        - igraph is built once; weights are updated in-place between iterations.
-        - Metrics (travel_time, distance, CO2…) are only computed on the final routing call.
-        """
-        from app.services.node_sampling_service import networkx_to_igraph_with_indices
-
-        # Build igraph once — structure does not change between iterations
-        h, idx_maps = networkx_to_igraph_with_indices(self.graph)
-        prebuilt = (h, idx_maps)
-        origin_groups = self._group_pairs_by_origin(pairs)
-
-        # Iteration 0: free-flow routing, no metrics needed (path only)
-        self._copy_weight_to_igraph(h, idx_maps, "travel_time")
-        routes = await self._calculate_routes_igraph(
-            origin_groups,
-            "travel_time",
-            compute_metrics=False,
-            prebuilt_igraph=prebuilt,
-        )
-
-        for i in range(n_iterations):
-            self._apply_congestion_weights(routes, sampling_config)
-            self._copy_weight_to_igraph(h, idx_maps, "duration_bc")
-            is_final = i == n_iterations - 1
-            routes = await self._calculate_routes_igraph(
-                origin_groups,
-                "duration_bc",
-                compute_metrics=is_final,
-                prebuilt_igraph=prebuilt,
-            )
-
-        return routes
-
-    async def recalculate_with_modifications(
-        self,
-        pairs: Optional[List[NodePair]] = None,
-        edge_modifications: List[EdgeModification] = None,
-        weight: str = "travel_time",
-        resample_od_pairs: bool = True,
-        sampling_config=None,
-        use_congestion: bool = False,
-        congestion_iterations: int = 1,
-    ) -> RecalculateResponse:
-        """Recalculate routes after applying edge modifications (remove or change speed).
-
-        Args:
-            pairs: OD pairs to use (uses default if None)
-            edge_modifications: List of edge modifications
-            weight: Edge weight attribute to use
-            resample_od_pairs: If True, resample OD pairs after mods instead of rerouting
-            sampling_config: SamplingConfig for OD resampling (uses defaults if None)
-        """
-        if not self.graph:
-            raise RuntimeError("Graph not loaded")
-
-        t_total_start = time.perf_counter()
-        logger = logging.getLogger(__name__)
-
-        pairs = pairs or self.default_pairs
-        if pairs is None:
-            raise RuntimeError("No pairs available")
-        edge_modifications = edge_modifications or []
-
-        pairs_key = tuple((p.origin, p.destination) for p in pairs)
-
-        # --- Phase: cache lookup / original route computation ---
-        t0 = time.perf_counter()
-        if self.pairs_cache != pairs_key or pairs_key not in self.route_cache:
-            original_routes = await self.calculate_routes(pairs, weight)
-            self.pairs_cache = pairs_key
-            self.route_cache[pairs_key] = original_routes
-            self._route_edge_index[pairs_key] = self._build_route_edge_index(
-                original_routes
-            )
-        else:
-            original_routes = self.route_cache[pairs_key]
-        t_cache_ms = (time.perf_counter() - t0) * 1000
-
-        # graph_copy phase eliminated (in-place modification + rollback)
-        t_graph_copy_ms = 0.0
-
-        # --- Phase: apply modifications in-place (with rollback data) ---
-        t0 = time.perf_counter()
-        applied = []
-        effective_modified_set = set()
-        removed_edges = []  # (u, v, key, data_dict) for rollback
-        modified_edges = []  # (u, v, key, orig_speed, orig_tt, orig_co2) for rollback
-
-        for mod in edge_modifications:
-            if not self.graph.has_edge(mod.u, mod.v):
-                continue
-
-            if mod.action == "remove":
-                keys = list(self.graph[mod.u][mod.v].keys())
-                for key in keys:
-                    data = dict(self.graph[mod.u][mod.v][key])
-                    removed_edges.append((mod.u, mod.v, key, data))
-                for key in keys:
-                    self.graph.remove_edge(mod.u, mod.v, key=key)
-                applied.append(mod)
-                effective_modified_set.add((mod.u, mod.v))
-
-            elif mod.action == "modify" and mod.speed_kph is not None:
-                edge_data_full = self.graph.get_edge_data(mod.u, mod.v)
-                if isinstance(edge_data_full, dict) and 0 in edge_data_full:
-                    key = 0
-                    edge_data = edge_data_full[key]
-                else:
-                    key = 0
-                    edge_data = edge_data_full
-
-                current_speed = edge_data.get("speed_kph", 0)
-                if abs(current_speed - mod.speed_kph) < 0.1:
-                    continue
-
-                # Save originals for rollback
-                modified_edges.append(
-                    (
-                        mod.u,
-                        mod.v,
-                        key,
-                        edge_data.get("speed_kph"),
-                        edge_data.get("travel_time"),
-                        edge_data.get("co2_g"),
-                    )
-                )
-
-                length = edge_data.get("length", 0)
-                edge_data["speed_kph"] = mod.speed_kph
-                edge_data["travel_time"] = (
-                    (length / 1000) / (mod.speed_kph / 3600) if mod.speed_kph > 0 else 0
-                )
-                elev_gain = edge_data.get("elevation_gain", 0)
-                edge_data["co2_g"] = CO2Calculator.calculate_edge_co2(
-                    length=length,
-                    speed_kph=mod.speed_kph,
-                    elevation_gain=elev_gain,
-                )
-
-                # Keep metrics cache in sync with the modified edge
-                self._edge_metrics_cache[(mod.u, mod.v)] = (
-                    edge_data["travel_time"],
-                    length,
-                    elev_gain,
-                    edge_data["co2_g"],
-                )
-                # Keep CO2/km cache in sync
-                length_km = length / 1000
-                self._edge_co2_cache[(mod.u, mod.v)] = (
-                    edge_data["co2_g"] / length_km if length_km > 0 else 0.0
-                )
-
-                applied.append(mod)
-                effective_modified_set.add((mod.u, mod.v))
-
-        t_apply_mods_ms = (time.perf_counter() - t0) * 1000
-
-        # --- Phase: OD resampling OR affected-route detection + rerouting ---
-        t_od_resampling_ms = None
-        t_affected_routes_ms = None
-        t_delta_bc_ms = 0.0
-        t_route_calc_ms = 0.0
-        delta_bc: Optional[dict] = None
-        wrote_duration_bc = False
-
-        try:
-            if use_congestion:
-                # Compute delta betweenness on the modified graph
-                t0 = time.perf_counter()
-                if self._edge_bc_cache and effective_modified_set:
-                    new_bc = self._compute_betweenness(label="delta-BC")
-                    delta_bc = {
-                        (u, v): new_bc.get((u, v), 0.0)
-                        - self._edge_bc_cache.get((u, v), 0.0)
-                        for (u, v) in set(new_bc) | set(self._edge_bc_cache)
-                    }
-                t_delta_bc_ms = (time.perf_counter() - t0) * 1000
-
-                # Volume model: route ALL pairs through the modified graph iteratively
-                t0 = time.perf_counter()
-                new_routes = await self._run_congestion_routing(
-                    pairs, congestion_iterations, sampling_config
-                )
-                t_route_calc_ms = (time.perf_counter() - t0) * 1000
-
-                affected_indices = list(range(len(original_routes)))
-                new_routes_by_index = {i: route for i, route in enumerate(new_routes)}
-
-            elif resample_od_pairs:
-                from app.services.node_sampling_service import (
-                    SamplingConfig,
-                    generate_research_based_pairs,
-                )
-
-                config = sampling_config or SamplingConfig()
-
-                t0 = time.perf_counter()
-                new_pairs = generate_research_based_pairs(
-                    self.graph, n_pairs=len(pairs), config=config, seed=42
-                )
-                t_od_resampling_ms = (time.perf_counter() - t0) * 1000
-
-                t0 = time.perf_counter()
-                new_routes = await self.calculate_routes(new_pairs, weight)
-                t_route_calc_ms = (time.perf_counter() - t0) * 1000
-
-                affected_indices = list(range(len(new_routes)))
-                new_routes_by_index = {i: route for i, route in enumerate(new_routes)}
-
-            else:
-                # Opt 3: use inverted edge index instead of scanning all routes
-                t0 = time.perf_counter()
-                edge_index = self._route_edge_index.get(pairs_key, {})
-                affected_set: set = set()
-                for edge in effective_modified_set:
-                    affected_set.update(edge_index.get(edge, []))
-                affected_indices = sorted(affected_set)
-                t_affected_routes_ms = (time.perf_counter() - t0) * 1000
-
-                # Compute delta betweenness on the modified graph
-                t0 = time.perf_counter()
-                if self._edge_bc_cache and effective_modified_set:
-                    new_bc = self._compute_betweenness(label="delta-BC")
-                    delta_bc = {
-                        (u, v): new_bc.get((u, v), 0.0)
-                        - self._edge_bc_cache.get((u, v), 0.0)
-                        for (u, v) in set(new_bc) | set(self._edge_bc_cache)
-                    }
-                    # Write BC-derived congested travel times and route with them (Marco's model)
-                    self._write_bc_duration(new_bc, sampling_config)
-                    wrote_duration_bc = True
-                t_delta_bc_ms = (time.perf_counter() - t0) * 1000
-
-                t0 = time.perf_counter()
-                new_routes_by_index = {}
-                if affected_indices:
-                    new_routes = await self.calculate_routes(
-                        [pairs[i] for i in affected_indices], "duration_bc"
-                    )
-                    for i, idx in enumerate(affected_indices):
-                        if i < len(new_routes):
-                            new_routes_by_index[idx] = new_routes[i]
-                t_route_calc_ms = (time.perf_counter() - t0) * 1000
-
-        finally:
-            # Restore graph to original state
-            for u, v, key, data in removed_edges:
-                self.graph.add_edge(u, v, key=key, **data)
-            for u, v, key, orig_speed, orig_tt, orig_co2 in modified_edges:
-                ed = self.graph[u][v][key]
-                ed["speed_kph"] = orig_speed
-                ed["travel_time"] = orig_tt
-                ed["co2_g"] = orig_co2
-                length = ed.get("length", 0.0)
-                # Restore metrics cache to original values
-                self._edge_metrics_cache[(u, v)] = (
-                    orig_tt or 0.0,
-                    length,
-                    ed.get("elevation_gain", 0.0),
-                    orig_co2 or 0.0,
-                )
-                # Restore CO2/km cache
-                length_km = length / 1000
-                self._edge_co2_cache[(u, v)] = (
-                    (orig_co2 / length_km) if orig_co2 and length_km > 0 else 0.0
-                )
-            # Remove congestion weights written during iterative routing or BC-based routing
-            if use_congestion or wrote_duration_bc:
-                for u, v, k, data in self.graph.edges(keys=True, data=True):
-                    data.pop("duration_bc", None)
-
-        # --- Phase: impact statistics ---
-        t0 = time.perf_counter()
-        impact_stats, _ = compute_impact_statistics(
-            original_routes,
-            new_routes_by_index,
-            affected_indices,
-            applied,
-            compute_comparisons=False,
-        )
-        t_impact_stats_ms = (time.perf_counter() - t0) * 1000
-
-        # --- Phase: edge usage stats ---
-        # original_counts: derived from the pre-built edge index — O(unique_edges), no route scan
-        t0 = time.perf_counter()
-        edge_index = self._route_edge_index.get(pairs_key, {})
-        original_counts = {edge: len(indices) for edge, indices in edge_index.items()}
-        t_count_original_ms = (time.perf_counter() - t0) * 1000
-
-        # complete_counts: recount from scratch when most routes changed (congestion/resample),
-        # otherwise apply a delta to avoid scanning all routes
-        t0 = time.perf_counter()
-        if len(new_routes_by_index) >= len(original_routes) * 0.9:
-            complete_counts = count_edge_usage(list(new_routes_by_index.values()))
-        else:
-            complete_counts = dict(original_counts)
-            for idx, new_route in new_routes_by_index.items():
-                old_route = original_routes[idx]
-                for j in range(len(old_route.path) - 1):
-                    edge = (old_route.path[j], old_route.path[j + 1])
-                    if edge in complete_counts:
-                        complete_counts[edge] -= 1
-                        if complete_counts[edge] == 0:
-                            del complete_counts[edge]
-                for j in range(len(new_route.path) - 1):
-                    edge = (new_route.path[j], new_route.path[j + 1])
-                    complete_counts[edge] = complete_counts.get(edge, 0) + 1
-        t_count_complete_ms = (time.perf_counter() - t0) * 1000
-
-        t0 = time.perf_counter()
-        original_usage = build_edge_usage_stats(
-            self._edge_co2_cache,
-            original_counts,
-            len(original_routes),
-            edge_bc_cache=self._edge_bc_cache or None,
-        )
-        new_usage = build_edge_usage_stats(
-            self._edge_co2_cache,
-            complete_counts,
-            len(original_routes),
-            original_counts,
-            edge_bc_cache=self._edge_bc_cache or None,
-            delta_bc=delta_bc,
-        )
-        t_build_stats_ms = (time.perf_counter() - t0) * 1000
-
-        t_edge_usage_ms = t_count_original_ms + t_count_complete_ms + t_build_stats_ms
-        logger.info(
-            f"[TIMING] edge_usage detail | "
-            f"n_routes={len(original_routes)} n_affected={len(new_routes_by_index)} | "
-            f"count_original={t_count_original_ms:.1f}ms | "
-            f"count_complete_delta={t_count_complete_ms:.1f}ms | "
-            f"build_stats={t_build_stats_ms:.1f}ms | "
-            f"TOTAL={t_edge_usage_ms:.1f}ms"
-        )
-
-        t_total_ms = (time.perf_counter() - t_total_start) * 1000
-
-        timing = TimingStats(
-            cache_lookup_ms=round(t_cache_ms, 1),
-            graph_copy_ms=round(t_graph_copy_ms, 1),
-            apply_modifications_ms=round(t_apply_mods_ms, 1),
-            od_resampling_ms=(
-                round(t_od_resampling_ms, 1) if t_od_resampling_ms is not None else None
-            ),
-            affected_routes_ms=(
-                round(t_affected_routes_ms, 1)
-                if t_affected_routes_ms is not None
-                else None
-            ),
-            route_calculation_ms=round(t_route_calc_ms, 1),
-            impact_stats_ms=round(t_impact_stats_ms, 1),
-            edge_usage_stats_ms=round(t_edge_usage_ms, 1),
-            total_ms=round(t_total_ms, 1),
-        )
-
-        logger.info(
-            "[TIMING] recalculate | "
-            f"cache={timing.cache_lookup_ms}ms | "
-            f"graph_copy={timing.graph_copy_ms}ms | "
-            f"apply_mods={timing.apply_modifications_ms}ms | "
-            + (
-                f"od_resample={timing.od_resampling_ms}ms | "
-                if timing.od_resampling_ms is not None
-                else f"affected_routes={timing.affected_routes_ms}ms | "
-                + (f"delta_bc={round(t_delta_bc_ms, 1)}ms | " if t_delta_bc_ms > 0 else "")
-            )
-            + f"route_calc={timing.route_calculation_ms}ms | "
-            f"impact_stats={timing.impact_stats_ms}ms | "
-            f"edge_usage={timing.edge_usage_stats_ms}ms | "
-            f"TOTAL={timing.total_ms}ms"
-        )
-
-        return RecalculateResponse(
-            applied_modifications=applied,
-            original_edge_usage=original_usage,
-            new_edge_usage=new_usage,
-            impact_statistics=impact_stats,
-            timing=timing,
-        )
-
-    def get_graph_data(self) -> GraphData:
-        """Get complete graph data for visualization."""
-        if not self.graph:
-            raise RuntimeError("Graph not loaded")
-
-        edges = []
-        for u, v, d in self.graph.edges(data=True):
-            coords = (
-                [[lon, lat] for lon, lat in d["geometry"].coords]
-                if "geometry" in d
-                else [
-                    [self.graph.nodes[u]["x"], self.graph.nodes[u]["y"]],
-                    [self.graph.nodes[v]["x"], self.graph.nodes[v]["y"]],
-                ]
-            )
-
-            name_raw = d.get("name")
-            name = (
-                " - ".join(str(n) for n in name_raw if n)
-                if isinstance(name_raw, list)
-                else (str(name_raw) if name_raw else None)
-            )
-
-            highway_raw = d.get("highway", "Unknown")
-            edges.append(
-                GraphEdge(
-                    u=u,
-                    v=v,
-                    geometry=PathGeometry(coordinates=coords),
-                    name=name,
-                    highway=(
-                        highway_raw[0] if isinstance(highway_raw, list) else highway_raw
-                    ),
-                    speed_kph=d.get("speed_kph"),
-                    length=d.get("length"),
-                    travel_time=d.get("travel_time"),
-                )
-            )
-
-        return GraphData(
-            edges=edges,
-            node_count=len(self.graph.nodes),
-            edge_count=len(self.graph.edges),
-        )
-
-    def clear_route_cache(self):
-        """Clear the cached routes."""
-        self.route_cache.clear()
-        self.pairs_cache = None
 
     def generate_random_pairs(
         self, count: int = 100, seed: Optional[int] = None, radius_km: float = 2.0
     ) -> List[NodePair]:
-        """Generate random OD pairs within radius from Lausanne center."""
+        """Generate random OD pairs within a radius from Lausanne centre."""
         if not self.graph:
             raise RuntimeError("Graph not loaded")
 
@@ -1087,8 +194,7 @@ class GraphService:
             return (lat_km**2 + lon_km**2) ** 0.5
 
         nodes_in_radius = [
-            n
-            for n in self.graph.nodes()
+            n for n in self.graph.nodes()
             if distance_km(self.graph.nodes[n]) <= radius_km
         ]
         if len(nodes_in_radius) < 2:
@@ -1103,5 +209,268 @@ class GraphService:
             lon_km = (o_node["x"] - d_node["x"]) * 111.0 * 0.7
             if (lat_km**2 + lon_km**2) ** 0.5 >= min_dist:
                 pairs.append(NodePair(origin=o, destination=d))
-
         return pairs
+
+    # ── Routing ───────────────────────────────────────────────────────────────
+
+    async def calculate_routes(
+        self,
+        pairs: List[NodePair],
+        weight: str = "travel_time",
+        use_parallel: bool = None,
+    ) -> List[Route]:
+        """Calculate shortest paths for given OD pairs (weight = edge attribute to minimise)."""
+        if not self.graph or not pairs:
+            return []
+        origin_groups = routing_engine.group_pairs_by_origin(pairs)
+        logger.info(
+            f"[ROUTING] {len(pairs)} pairs → {len(origin_groups)} origins "
+            f"(avg {len(pairs)/len(origin_groups):.1f} dest/origin)"
+        )
+        routes = await routing_engine.calculate_routes_igraph(
+            self.graph, self._edge_metrics_cache, origin_groups, weight
+        )
+        logger.info(f"[ROUTING] Calculated {len(routes)} routes")
+        return routes
+
+    # ── Edge Modifications & Recalculation ────────────────────────────────────
+
+    async def _strategy_volume_model(
+        self,
+        pairs: List[NodePair],
+        congestion_iterations: int,
+        effective_modified_set: set,
+        timing: dict,
+    ) -> tuple:
+        """Volume model: measure actual route loads, apply BPR, iterate toward Wardrop UE.
+
+        All pairs are rerouted through the modified graph (not just affected ones),
+        since congestion redistributes load globally.
+        """
+        with timed("delta_bc", timing):
+            delta_bc = None
+            if self._edge_bc_cache and effective_modified_set:
+                new_bc, self._bc_sample_nodes = bpr.compute_betweenness(
+                    self.graph, self._bc_sample_nodes, label="delta-BC"
+                )
+                delta_bc = {
+                    (u, v): new_bc.get((u, v), 0.0) - self._edge_bc_cache.get((u, v), 0.0)
+                    for (u, v) in set(new_bc) | set(self._edge_bc_cache)
+                }
+
+        with timed("route_calculation", timing):
+            new_routes = await bpr.run_congestion_routing(
+                self.graph, self._edge_metrics_cache, pairs, congestion_iterations
+            )
+
+        new_routes_by_index = {i: route for i, route in enumerate(new_routes)}
+        affected_indices = list(range(len(new_routes)))
+        return new_routes_by_index, delta_bc, affected_indices
+
+    async def _strategy_targeted_bc(
+        self,
+        pairs: List[NodePair],
+        pairs_key: tuple,
+        effective_modified_set: set,
+        timing: dict,
+    ) -> tuple:
+        """Default model (Marco's): theoretical BC → duration_bc → route only affected pairs.
+
+        Only pairs whose original path used a modified edge are rerouted.
+        Congested travel times (duration_bc) are derived from the new theoretical BC
+        of the modified graph via the BPR formula.
+
+        This is computationally efficient and theoretically grounded: roads that
+        absorb rerouted traffic appear slower and attract fewer new routes.
+        """
+        with timed("affected_routes", timing):
+            edge_index = self._route_edge_index.get(pairs_key, {})
+            affected_set: set = set()
+            for edge in effective_modified_set:
+                affected_set.update(edge_index.get(edge, []))
+            affected_indices = sorted(affected_set)
+
+        with timed("delta_bc", timing):
+            delta_bc = None
+            if self._edge_bc_cache and effective_modified_set:
+                new_bc, self._bc_sample_nodes = bpr.compute_betweenness(
+                    self.graph, self._bc_sample_nodes, label="delta-BC"
+                )
+                delta_bc = {
+                    (u, v): new_bc.get((u, v), 0.0) - self._edge_bc_cache.get((u, v), 0.0)
+                    for (u, v) in set(new_bc) | set(self._edge_bc_cache)
+                }
+                bpr.write_bc_duration(self.graph, new_bc)
+
+        with timed("route_calculation", timing):
+            new_routes_by_index = {}
+            if affected_indices:
+                new_routes = await self.calculate_routes(
+                    [pairs[i] for i in affected_indices], "duration_bc"
+                )
+                for i, idx in enumerate(affected_indices):
+                    if i < len(new_routes):
+                        new_routes_by_index[idx] = new_routes[i]
+
+        return new_routes_by_index, delta_bc, affected_indices
+
+    async def recalculate_with_modifications(
+        self,
+        pairs: Optional[List[NodePair]] = None,
+        edge_modifications: List[EdgeModification] = None,
+        weight: str = "travel_time",
+        use_congestion: bool = False,
+        congestion_iterations: int = 1,
+    ) -> RecalculateResponse:
+        """Recalculate routes after applying edge modifications (remove or change speed).
+
+        Selects one of two strategies:
+        - default: targeted BC reroute — only affected pairs, BC-derived weights
+        - use_congestion=True: volume model — all pairs iteratively, Wardrop equilibrium
+
+        Edge modifications are applied in-place and rolled back in the finally block.
+        """
+        if not self.graph:
+            raise RuntimeError("Graph not loaded")
+
+        t_total_start = time.perf_counter()
+        timing: dict = {}
+
+        pairs = pairs or self.default_pairs
+        if pairs is None:
+            raise RuntimeError("No pairs available")
+        edge_modifications = edge_modifications or []
+        pairs_key = tuple((p.origin, p.destination) for p in pairs)
+
+        with timed("cache_lookup", timing):
+            if self.pairs_cache != pairs_key or pairs_key not in self.route_cache:
+                original_routes = await self.calculate_routes(pairs, weight)
+                self.pairs_cache = pairs_key
+                self.route_cache[pairs_key] = original_routes
+                self._route_edge_index[pairs_key] = routing_engine.build_route_edge_index(original_routes)
+            else:
+                original_routes = self.route_cache[pairs_key]
+
+        with timed("apply_modifications", timing):
+            applied, effective_modified_set, removed_edges, modified_edges = (
+                apply_edge_modifications(
+                    self.graph, self._edge_metrics_cache, self._edge_co2_cache,
+                    edge_modifications
+                )
+            )
+
+        try:
+            if use_congestion:
+                new_routes_by_index, delta_bc, affected_indices = (
+                    await self._strategy_volume_model(
+                        pairs, congestion_iterations, effective_modified_set, timing
+                    )
+                )
+            else:
+                new_routes_by_index, delta_bc, affected_indices = (
+                    await self._strategy_targeted_bc(
+                        pairs, pairs_key, effective_modified_set, timing
+                    )
+                )
+        finally:
+            restore_edge_modifications(
+                self.graph, self._edge_metrics_cache, self._edge_co2_cache,
+                removed_edges, modified_edges
+            )
+            for u, v, k, data in self.graph.edges(keys=True, data=True):
+                data.pop("duration_bc", None)
+
+        with timed("impact_stats", timing):
+            impact_stats, _ = compute_impact_statistics(
+                original_routes, new_routes_by_index, affected_indices, applied,
+                compute_comparisons=False,
+            )
+
+        with timed("edge_usage", timing):
+            edge_index = self._route_edge_index.get(pairs_key, {})
+            original_counts = {edge: len(indices) for edge, indices in edge_index.items()}
+
+            if len(new_routes_by_index) >= len(original_routes) * 0.9:
+                complete_counts = count_edge_usage(list(new_routes_by_index.values()))
+            else:
+                complete_counts = dict(original_counts)
+                for idx, new_route in new_routes_by_index.items():
+                    old_route = original_routes[idx]
+                    for j in range(len(old_route.path) - 1):
+                        edge = (old_route.path[j], old_route.path[j + 1])
+                        if edge in complete_counts:
+                            complete_counts[edge] -= 1
+                            if complete_counts[edge] == 0:
+                                del complete_counts[edge]
+                    for j in range(len(new_route.path) - 1):
+                        edge = (new_route.path[j], new_route.path[j + 1])
+                        complete_counts[edge] = complete_counts.get(edge, 0) + 1
+
+            original_usage = build_edge_usage_stats(
+                self._edge_co2_cache, original_counts, len(original_routes),
+                edge_bc_cache=self._edge_bc_cache or None,
+            )
+            new_usage = build_edge_usage_stats(
+                self._edge_co2_cache, complete_counts, len(original_routes),
+                original_counts, edge_bc_cache=self._edge_bc_cache or None,
+                delta_bc=delta_bc,
+            )
+
+        timing["total"] = (time.perf_counter() - t_total_start) * 1000
+
+        ts = TimingStats(
+            cache_lookup_ms=round(timing.get("cache_lookup", 0), 1),
+            graph_copy_ms=0.0,
+            apply_modifications_ms=round(timing.get("apply_modifications", 0), 1),
+            affected_routes_ms=(
+                round(timing["affected_routes"], 1) if "affected_routes" in timing else None
+            ),
+            route_calculation_ms=round(timing.get("route_calculation", 0), 1),
+            impact_stats_ms=round(timing.get("impact_stats", 0), 1),
+            edge_usage_stats_ms=round(timing.get("edge_usage", 0), 1),
+            total_ms=round(timing["total"], 1),
+        )
+        logger.info(
+            "[TIMING] recalculate | "
+            f"cache={ts.cache_lookup_ms}ms | "
+            f"apply_mods={ts.apply_modifications_ms}ms | "
+            + (f"affected_routes={ts.affected_routes_ms}ms | " if ts.affected_routes_ms else "")
+            + (f"delta_bc={timing.get('delta_bc', 0):.1f}ms | " if timing.get("delta_bc") else "")
+            + f"route_calc={ts.route_calculation_ms}ms | "
+            f"impact_stats={ts.impact_stats_ms}ms | "
+            f"edge_usage={ts.edge_usage_stats_ms}ms | "
+            f"TOTAL={ts.total_ms}ms"
+        )
+
+        return RecalculateResponse(
+            applied_modifications=applied,
+            original_edge_usage=original_usage,
+            new_edge_usage=new_usage,
+            impact_statistics=impact_stats,
+            timing=ts,
+        )
+
+    # ── Graph Data & Utilities ────────────────────────────────────────────────
+
+    def get_graph_info(self) -> dict:
+        if not self.graph:
+            raise RuntimeError("Graph not loaded")
+        return {
+            "node_count": len(self.graph.nodes),
+            "edge_count": len(self.graph.edges),
+            "sample_nodes": list(self.graph.nodes())[:20],
+        }
+
+    def get_edge_geometries(self, limit: Optional[int] = None) -> List[dict]:
+        if not self.graph:
+            raise RuntimeError("Graph not loaded")
+        return get_edge_geometries(self.graph, limit)
+
+    def get_graph_data(self):
+        if not self.graph:
+            raise RuntimeError("Graph not loaded")
+        return get_graph_data(self.graph)
+
+    def clear_route_cache(self):
+        self.route_cache.clear()
+        self.pairs_cache = None
