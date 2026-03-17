@@ -29,6 +29,8 @@ import pandas as pd
 from shapely import wkt
 from shapely.geometry import Polygon
 
+from enrich_pt_bike import enrich_pt_bike
+
 # ---------------------------------------------------------------------------
 # Lausanne bounding polygon (WGS84 / EPSG:4326)
 # ---------------------------------------------------------------------------
@@ -287,6 +289,23 @@ def parse_args() -> argparse.Namespace:
         help="Skip Swiss ALTI3D elevation enrichment (useful for quick testing)",
     )
     parser.add_argument(
+        "--no-enrichment",
+        action="store_true",
+        help="Skip public transport & bike infrastructure enrichment (faster rebuild)",
+    )
+    parser.add_argument(
+        "--pbf",
+        type=Path,
+        default=None,
+        help="Path to filtered Lausanne OSM PBF for transit enrichment (e.g. data/lausanne-filtered.osm.pbf). Falls back to Overpass API if not provided.",
+    )
+    parser.add_argument(
+        "--transit-output",
+        type=Path,
+        default=None,
+        help="Directory for transit GeoJSON output (transit_routes.geojson, transit_stops.geojson). E.g. ../../frontend/public/geodata",
+    )
+    parser.add_argument(
         "--no-gpkg",
         action="store_true",
         help="Skip GeoPackage export for QGIS",
@@ -301,24 +320,39 @@ def main() -> None:
     print("Lausanne Network Builder")
     print("=" * 60)
 
+    n_steps = 5
+
     # 1. Load or download
-    print("\n[1/4] Network …")
+    print(f"\n[1/{n_steps}] Network …")
     graph = load_or_download_network(args.output)
 
     # 2. Speeds & travel times
-    print("\n[2/4] Speeds & travel times …")
+    print(f"\n[2/{n_steps}] Speeds & travel times …")
     graph = add_speeds_and_times(graph)
 
     # 3. Elevation (optional)
     if not args.no_elevation:
-        print("\n[3/4] Elevation …")
+        print(f"\n[3/{n_steps}] Elevation …")
         graph = add_elevation(graph)
         graph = add_grades(graph)
     else:
-        print("\n[3/4] Elevation — skipped (--no-elevation)")
+        print(f"\n[3/{n_steps}] Elevation — skipped (--no-elevation)")
 
-    # 4. Save
-    print("\n[4/4] Saving …")
+    # 4. Public transport & bike infrastructure enrichment (optional)
+    if not args.no_enrichment:
+        print(f"\n[4/{n_steps}] Public transport & bike infrastructure …")
+        hull: Polygon = wkt.loads(LAUSANNE_HULL_WKT)  # type: ignore[assignment]
+        graph = enrich_pt_bike(
+            graph,
+            hull,
+            pbf_path=args.pbf,
+            transit_geojson_dir=args.transit_output,
+        )
+    else:
+        print(f"\n[4/{n_steps}] PT & bike enrichment — skipped (--no-enrichment)")
+
+    # 5. Save
+    print(f"\n[5/{n_steps}] Saving …")
     save_network(graph, args.output)
 
     if not args.no_gpkg:
