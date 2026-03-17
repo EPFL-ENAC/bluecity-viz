@@ -84,8 +84,6 @@ async def recalculate_routes(request: RecalculateRequest):
             pairs=request.pairs,
             edge_modifications=request.edge_modifications,
             weight=request.weight,
-            resample_od_pairs=request.resample_od_pairs,
-            sampling_config=request.sampling_config,
             use_congestion=request.use_congestion,
             congestion_iterations=request.congestion_iterations,
         )

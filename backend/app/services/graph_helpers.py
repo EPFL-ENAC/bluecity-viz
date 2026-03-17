@@ -1,10 +1,17 @@
-"""Graph helper functions for geometry, metrics and edge statistics."""
+"""Graph helper functions for geometry, metrics, edge statistics, and graph serialization."""
 
 import logging
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
-from app.models.route import EdgeUsageStats, PathGeometry, Route
+from app.models.route import (
+    EdgeModification,
+    EdgeUsageStats,
+    GraphData,
+    GraphEdge,
+    PathGeometry,
+    Route,
+)
 from app.services.co2_calculator import CO2Calculator
 
 
@@ -206,3 +213,175 @@ def build_edge_usage_stats(
     )
 
     return stats
+
+
+# ── Edge Modification Helpers ─────────────────────────────────────────────────
+
+
+def apply_edge_modifications(
+    graph,
+    edge_metrics_cache: dict,
+    edge_co2_cache: dict,
+    modifications: List[EdgeModification],
+) -> Tuple[list, set, list, list]:
+    """Apply edge modifications in-place; return rollback data.
+
+    Returns:
+        (applied, effective_modified_set, removed_edges, modified_edges)
+        - removed_edges: [(u, v, key, data_dict)] for rollback
+        - modified_edges: [(u, v, key, orig_speed, orig_tt, orig_co2)] for rollback
+    """
+    applied = []
+    effective_modified_set = set()
+    removed_edges = []
+    modified_edges = []
+
+    for mod in modifications:
+        if not graph.has_edge(mod.u, mod.v):
+            continue
+
+        if mod.action == "remove":
+            keys = list(graph[mod.u][mod.v].keys())
+            for key in keys:
+                removed_edges.append((mod.u, mod.v, key, dict(graph[mod.u][mod.v][key])))
+            for key in keys:
+                graph.remove_edge(mod.u, mod.v, key=key)
+            applied.append(mod)
+            effective_modified_set.add((mod.u, mod.v))
+
+        elif mod.action == "modify" and mod.speed_kph is not None:
+            edge_data_full = graph.get_edge_data(mod.u, mod.v)
+            key = 0
+            edge_data = (
+                edge_data_full[key]
+                if isinstance(edge_data_full, dict) and 0 in edge_data_full
+                else edge_data_full
+            )
+            if abs(edge_data.get("speed_kph", 0) - mod.speed_kph) < 0.1:
+                continue
+
+            modified_edges.append((
+                mod.u, mod.v, key,
+                edge_data.get("speed_kph"),
+                edge_data.get("travel_time"),
+                edge_data.get("co2_g"),
+            ))
+            length = edge_data.get("length", 0)
+            edge_data["speed_kph"] = mod.speed_kph
+            edge_data["travel_time"] = (
+                (length / 1000) / (mod.speed_kph / 3600) if mod.speed_kph > 0 else 0
+            )
+            elev_gain = edge_data.get("elevation_gain", 0)
+            edge_data["co2_g"] = CO2Calculator.calculate_edge_co2(
+                length=length, speed_kph=mod.speed_kph, elevation_gain=elev_gain
+            )
+            edge_metrics_cache[(mod.u, mod.v)] = (
+                edge_data["travel_time"], length, elev_gain, edge_data["co2_g"]
+            )
+            length_km = length / 1000
+            edge_co2_cache[(mod.u, mod.v)] = (
+                edge_data["co2_g"] / length_km if length_km > 0 else 0.0
+            )
+            applied.append(mod)
+            effective_modified_set.add((mod.u, mod.v))
+
+    return applied, effective_modified_set, removed_edges, modified_edges
+
+
+def restore_edge_modifications(
+    graph,
+    edge_metrics_cache: dict,
+    edge_co2_cache: dict,
+    removed_edges: list,
+    modified_edges: list,
+) -> None:
+    """Restore graph and caches to their pre-modification state."""
+    for u, v, key, data in removed_edges:
+        graph.add_edge(u, v, key=key, **data)
+
+    for u, v, key, orig_speed, orig_tt, orig_co2 in modified_edges:
+        ed = graph[u][v][key]
+        ed["speed_kph"] = orig_speed
+        ed["travel_time"] = orig_tt
+        ed["co2_g"] = orig_co2
+        length = ed.get("length", 0.0)
+        edge_metrics_cache[(u, v)] = (
+            orig_tt or 0.0, length, ed.get("elevation_gain", 0.0), orig_co2 or 0.0
+        )
+        length_km = length / 1000
+        edge_co2_cache[(u, v)] = (
+            (orig_co2 / length_km) if orig_co2 and length_km > 0 else 0.0
+        )
+
+
+# ── Graph Serialization ───────────────────────────────────────────────────────
+
+
+def get_edge_geometries(graph, limit: Optional[int] = None) -> List[dict]:
+    """Get edge geometries and attributes for Deck.gl visualization."""
+    edges = []
+    for i, (u, v, data) in enumerate(graph.edges(data=True)):
+        if limit and i >= limit:
+            break
+        coords = (
+            [[lon, lat] for lon, lat in data["geometry"].coords]
+            if "geometry" in data
+            else [
+                [graph.nodes[u]["x"], graph.nodes[u]["y"]],
+                [graph.nodes[v]["x"], graph.nodes[v]["y"]],
+            ]
+        )
+        name_raw = data.get("name")
+        name = (
+            (name_raw[0] if name_raw else None)
+            if isinstance(name_raw, list)
+            else (str(name_raw) if name_raw else None)
+        )
+        highway_raw = data.get("highway", "Unknown")
+        edges.append({
+            "u": int(u),
+            "v": int(v),
+            "coordinates": coords,
+            "travel_time": data.get("travel_time"),
+            "length": data.get("length"),
+            "speed_kph": data.get("speed_kph"),
+            "name": name,
+            "highway": highway_raw[0] if isinstance(highway_raw, list) else highway_raw,
+        })
+    return edges
+
+
+def get_graph_data(graph) -> GraphData:
+    """Get complete graph data for visualization."""
+    edges = []
+    for u, v, d in graph.edges(data=True):
+        coords = (
+            [[lon, lat] for lon, lat in d["geometry"].coords]
+            if "geometry" in d
+            else [
+                [graph.nodes[u]["x"], graph.nodes[u]["y"]],
+                [graph.nodes[v]["x"], graph.nodes[v]["y"]],
+            ]
+        )
+        name_raw = d.get("name")
+        name = (
+            " - ".join(str(n) for n in name_raw if n)
+            if isinstance(name_raw, list)
+            else (str(name_raw) if name_raw else None)
+        )
+        highway_raw = d.get("highway", "Unknown")
+        edges.append(GraphEdge(
+            u=u,
+            v=v,
+            geometry=PathGeometry(coordinates=coords),
+            name=name,
+            highway=(highway_raw[0] if isinstance(highway_raw, list) else highway_raw),
+            speed_kph=d.get("speed_kph"),
+            length=d.get("length"),
+            travel_time=d.get("travel_time"),
+        ))
+    return GraphData(
+        edges=edges,
+        node_count=len(graph.nodes),
+        edge_count=len(graph.edges),
+    )
