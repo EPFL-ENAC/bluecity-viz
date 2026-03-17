@@ -26,7 +26,7 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const isExpanded = ref(true)
+const isExpanded = ref(false)
 
 const hasImpact = computed(() => {
   return props.statistics && props.statistics.affected_routes > 0

@@ -73,13 +73,14 @@ watch(
   { deep: true }
 )
 
-// Watch for edge usage changes
+// Watch for edge usage changes (also re-runs when infrastructure filters change)
 watch(
   () =>
     [
       trafficStore.originalEdgeUsage,
       trafficStore.newEdgeUsage,
-      trafficStore.activeVisualization
+      trafficStore.activeVisualization,
+      trafficStore.filterBusRoutes,
     ] as const,
   ([originalUsage, newUsage, activeVis]) => {
     if (trafficStore.isRestoring) return // Skip during batch restore

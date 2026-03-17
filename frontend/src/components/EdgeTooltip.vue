@@ -101,6 +101,10 @@ function formatBCDelta(bc?: number): string {
         <span class="label">Speed:</span>
         <span class="value">{{ data.speed_kph }} km/h</span>
       </div>
+      <div v-if="data.bus_route_refs" class="tooltip-row bus-routes-row">
+        <span class="label">Bus lines:</span>
+        <span class="value bus-refs">{{ data.bus_route_refs }}</span>
+      </div>
     </div>
 
     <!-- Route Stats (if available) -->
@@ -259,5 +263,16 @@ function formatBCDelta(bc?: number): string {
   margin: 8px -12px -12px -12px;
   padding: 8px 12px;
   border-radius: 0 0 7px 7px;
+}
+
+.bus-routes-row {
+  align-items: flex-start;
+}
+
+.bus-refs {
+  max-width: 160px;
+  word-break: break-all;
+  text-align: right;
+  line-height: 1.4;
 }
 </style>
