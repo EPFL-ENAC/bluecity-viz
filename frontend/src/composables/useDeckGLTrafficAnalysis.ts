@@ -156,6 +156,7 @@ export interface EdgeTooltipData {
   length?: number
   travel_time?: number
   speed_kph?: number
+  bus_route_refs?: string
   // Route calculation stats (when available)
   frequency?: number
   count?: number
@@ -202,9 +203,12 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   let baseLayer: any = null
 
   /**
-   * Load graph edges as GeoJSON for efficient rendering and interaction
+   * Load graph edges as GeoJSON for efficient rendering and interaction.
+   * No-op if the graph is already loaded.
    */
   async function loadGraphEdges(): Promise<void> {
+    if (baseLayer !== null) return  // already loaded
+
     try {
       console.time('Loading graph edges as GeoJSON')
 
@@ -214,8 +218,6 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       edgeGeometries.value.forEach((edge) => {
         edgeMap.value.set(`${edge.u}-${edge.v}`, edge)
       })
-
-      console.log(`Loaded ${edges.length} edge geometries`)
 
       // Convert to GeoJSON format for Deck.gl
       const geojsonData: any = {
@@ -232,7 +234,9 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
             name: edge.name,
             highway: edge.highway,
             travel_time: edge.travel_time,
-            length: edge.length
+            length: edge.length,
+            bus_route_count: edge.bus_route_count ?? 0,
+            bus_route_refs: edge.bus_route_refs ?? '',
           }
         }))
       }
@@ -257,6 +261,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       console.error('Failed to load graph edges:', error)
     }
   }
+
 
   /**
    * Update modified edges visualization with hollow outlines and speed limit icons
@@ -430,10 +435,6 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   function visualizeEdgeUsage(newUsage: EdgeUsageStats[]): void {
     clearRoutes()
 
-    console.log('[DEBUG] visualizeEdgeUsage called')
-    console.log('[DEBUG] newUsage length:', newUsage.length)
-    console.log('[DEBUG] First 3 newUsage entries:', newUsage.slice(0, 3))
-
     // Cache edge stats for tooltip display
     const statsMap = new Map<string, EdgeUsageStats>()
     newUsage.forEach((stat) => {
@@ -472,21 +473,13 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       delta_betweenness: number
     })[]
 
-    // Sort edges by frequency (ascending) so larger edges are drawn last
-    edgesWithStats.sort((a, b) => a.frequency - b.frequency)
+    // Apply bus route filter if active
+    const displayEdges = trafficStore.filterBusRoutes
+      ? edgesWithStats.filter((e) => (e.bus_route_count ?? 0) > 0)
+      : edgesWithStats
 
-    console.log('[DEBUG] edgesWithStats length:', edgesWithStats.length)
-    console.log(
-      '[DEBUG] First 3 edgesWithStats:',
-      edgesWithStats.slice(0, 3).map((e) => ({
-        u: e.u,
-        v: e.v,
-        frequency: e.frequency,
-        delta_count: e.delta_count,
-        co2_total: e.co2_total,
-        co2_delta: e.co2_delta
-      }))
-    )
+    // Sort edges by frequency (ascending) so larger edges are drawn last
+    displayEdges.sort((a, b) => a.frequency - b.frequency)
 
     // Determine which value to use for coloring based on active visualization
     const activeMode = trafficStore.activeVisualization
@@ -494,7 +487,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     // Create outline layer
     const outlineLayer = new PathLayer({
       id: 'traffic-routes-outline',
-      data: edgesWithStats,
+      data: displayEdges,
       getPath: (d: EdgeGeometry) => d.coordinates,
       getColor: [0, 0, 0, 120], // Light dark outline
       getWidth: (d: any) => Math.max(4, Math.min(12, d.frequency * 100 + 4)), // 2px wider than main
@@ -507,7 +500,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     // Create main traffic layer with color from store
     const trafficLayer = new PathLayer({
       id: 'traffic-routes',
-      data: edgesWithStats,
+      data: displayEdges,
       getPath: (d: EdgeGeometry) => d.coordinates,
       getColor: (d: any) => {
         let value: number
@@ -609,6 +602,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       speedKph = Math.round(length / 1000 / (travelTime / 3600)) // km/h
     }
 
+    const busRefs = hoveredEdge.bus_route_refs || edgeGeom?.bus_route_refs
     tooltipData.value = {
       x: info.x,
       y: info.y,
@@ -617,6 +611,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       length: length,
       travel_time: travelTime,
       speed_kph: speedKph,
+      bus_route_refs: busRefs || undefined,
       // Add route stats if available
       frequency: edgeStats?.frequency ?? hoveredEdge.frequency,
       count: edgeStats?.count ?? hoveredEdge.count,

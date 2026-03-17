@@ -23,6 +23,8 @@ export interface EdgeGeometry {
   length?: number
   name?: string
   highway?: string
+  bus_route_count?: number
+  bus_route_refs?: string
 }
 
 /**
@@ -63,7 +65,9 @@ export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[
       travel_time: feature.properties.travel_time,
       length: feature.properties.length,
       name: feature.properties.name,
-      highway: feature.properties.highway
+      highway: feature.properties.highway,
+      bus_route_count: feature.properties.bus_route_count ?? 0,
+      bus_route_refs: feature.properties.bus_route_refs ?? ''
     }))
 
     if (limit) {

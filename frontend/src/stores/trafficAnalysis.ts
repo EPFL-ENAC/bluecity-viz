@@ -74,6 +74,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const impactStatistics = ref<ImpactStatistics | null>(null)
   const useCongestionModel = ref<boolean>(false)
   const congestionIterations = ref<number>(1)
+  const filterBusRoutes = ref<boolean>(false)
   // Visualization state
   const legendMode = ref<LegendMode>('none')
   const colorScale = ref<ColorScale>(null)
@@ -379,6 +380,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     bcDeltaMinValue.value = 0
     bcDeltaMaxValue.value = 0
     activeVisualization.value = 'none'
+    filterBusRoutes.value = false
   }
 
   function getColor(value: number): [number, number, number] {
@@ -489,6 +491,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     impactStatistics,
     useCongestionModel,
     congestionIterations,
+    filterBusRoutes,
 
     // Visualization state
     legendMode,

@@ -13,7 +13,8 @@ import {
   mdiDelete,
   mdiClose,
   mdiCancel,
-  mdiInformation
+  mdiInformation,
+  mdiBus,
 } from '@mdi/js'
 
 // Stores
@@ -398,6 +399,24 @@ watch(
               </v-card-text>
             </v-card>
           </div>
+
+          <!-- Infrastructure filter -->
+          <div v-if="trafficStore.hasCalculatedRoutes" class="mt-3">
+            <div class="text-caption font-weight-medium mb-2">Clip to infrastructure</div>
+            <div class="d-flex flex-wrap" style="gap: 6px">
+              <v-chip
+                :color="trafficStore.filterBusRoutes ? 'primary' : undefined"
+                :variant="trafficStore.filterBusRoutes ? 'tonal' : 'outlined'"
+                size="small"
+                @click="trafficStore.filterBusRoutes = !trafficStore.filterBusRoutes"
+              >
+                <template #prepend>
+                  <v-icon :icon="mdiBus" size="x-small" class="mr-1" />
+                </template>
+                Bus routes
+              </v-chip>
+            </div>
+          </div>
         </div>
       </v-expand-transition>
     </div>
@@ -540,4 +559,5 @@ watch(
   font-weight: bold;
   line-height: 1;
 }
+
 </style>
