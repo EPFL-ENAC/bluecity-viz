@@ -241,6 +241,43 @@ const trafficLegend = computed(() => {
       isCategorical: false,
       showZero: true
     }
+  } else if (mode === 'delta_relative') {
+    // Sample gradient in symlog-space so the colour ramp looks evenly distributed.
+    // Matches the constant=10 set in the store: linear within ±10%, log beyond.
+    const C = 10
+    const slMax = Math.log(1 + max / C) // max is absRelMax (positive)
+
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1) // t ∈ [0, 1]
+      // Invert the diverging-symlog transform to get the value at this visual position
+      const value =
+        t <= 0.5
+          ? C * (Math.exp((1 - 2 * t) * slMax) - 1)   // positive half: t=0 → max, t=0.5 → 0
+          : -(C * (Math.exp((2 * t - 1) * slMax) - 1)) // negative half: t=0.5 → 0, t=1 → -max
+      const [r, g, b] = trafficStore.getColor(value)
+      const sign = value >= 0 ? '+' : ''
+      colors.push({
+        color: `rgb(${r}, ${g}, ${b})`,
+        label: `${sign}${Math.round(value)}%`
+      })
+    }
+
+    // Format the extreme label nicely (e.g. "+3 000%" instead of "+3000%")
+    const fmtPct = (v: number) => {
+      const sign = v >= 0 ? '+' : ''
+      return `${sign}${Math.round(v).toLocaleString()}%`
+    }
+    colors[0].label = fmtPct(max)
+    colors[colors.length - 1].label = fmtPct(-max)
+
+    return {
+      label: 'Traffic Change (Relative)',
+      unit: `symlog scale  |  linear ≤ ±${C}%`,
+      colors,
+      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      isCategorical: false,
+      showZero: true
+    }
   } else {
     // Frequency mode: show actual max frequency from store
     for (let i = 0; i < steps; i++) {

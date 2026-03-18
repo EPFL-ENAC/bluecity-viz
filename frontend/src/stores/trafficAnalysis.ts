@@ -1,12 +1,12 @@
 import type { EdgeModification, ImpactStatistics } from '@/services/trafficAnalysis'
 import { rgb } from 'd3-color'
-import { scaleDiverging, scaleSequential } from 'd3-scale'
+import { scaleDiverging, scaleDivergingSymlog, scaleSequential } from 'd3-scale'
 import { interpolateSpectral, interpolateViridis } from 'd3-scale-chromatic'
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 
 type ColorScale = ((value: number) => string) | null
-type LegendMode = 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
+type LegendMode = 'none' | 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
 export type ModificationAction = 'remove' | 'speed50' | 'speed30' | 'speed10'
 
 // Cycle order for edge modification actions
@@ -74,6 +74,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const impactStatistics = ref<ImpactStatistics | null>(null)
   const useCongestionModel = ref<boolean>(false)
   const congestionIterations = ref<number>(1)
+  const elasticDemand = ref<boolean>(false)
   const filterBusRoutes = ref<boolean>(false)
   // Visualization state
   const legendMode = ref<LegendMode>('none')
@@ -98,8 +99,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const bcMaxValue = ref<number>(0)
   const bcDeltaMinValue = ref<number>(0)
   const bcDeltaMaxValue = ref<number>(0)
+  const deltaRelativeColorScale = ref<ColorScale>(null)
+  const deltaRelativeMinValue = ref<number>(0)
+  const deltaRelativeMaxValue = ref<number>(0)
   const activeVisualization = ref<
-    'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
+    'none' | 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
   >('none') // User-selected visualization
 
   // Computed: convert edgeModifications to API format
@@ -167,7 +171,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // Available visualization modes based on calculated data
   const availableVisualizations = computed(() => {
     const modes: Array<{
-      value: 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
+      value: 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
       label: string
     }> = []
     if (hasCalculatedRoutes.value) {
@@ -184,6 +188,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     )
     if (hasDelta) {
       modes.push({ value: 'delta', label: 'Traffic Change (Delta)' })
+      modes.push({ value: 'delta_relative', label: 'Traffic Change (Delta) Relative %' })
     }
     if (hasDelta && hasCO2) {
       modes.push({ value: 'co2_delta', label: 'CO₂ Emissions Change' })
@@ -302,18 +307,30 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         -absDeltaMax
       ])
 
-      // CO2 delta: co2_per_km × delta_frequency → same g/km unit as CO2 mode
+      // CO2 delta: fixed ±6 domain prevents sub-g/km changes from saturating the scale
       if (hasCO2) {
-        const co2Deltas = newUsage.map((d) => (d.co2_per_km ?? 0) * (d.delta_frequency ?? 0))
-        const absCO2DeltaMax = robustMax(co2Deltas.map(Math.abs))
-        co2DeltaMinValue.value = -absCO2DeltaMax
-        co2DeltaMaxValue.value = absCO2DeltaMax
+        const CO2_DELTA_CLAMP = 6
+        co2DeltaMinValue.value = -CO2_DELTA_CLAMP
+        co2DeltaMaxValue.value = CO2_DELTA_CLAMP
         co2DeltaColorScale.value = scaleDiverging(interpolateSpectral).domain([
-          absCO2DeltaMax,
+          CO2_DELTA_CLAMP,
           0,
-          -absCO2DeltaMax
+          -CO2_DELTA_CLAMP
         ])
       }
+
+      // Delta relative: (delta_frequency / original_frequency) * 100
+      const relValues = newUsage.map((d) => {
+        const origFreq = (d.frequency ?? 0) - (d.delta_frequency ?? 0)
+        return origFreq > 0.0001 ? ((d.delta_frequency ?? 0) / origFreq) * 100 : 0
+      })
+      // Symlog scale: linear within ±10%, logarithmic beyond — compresses outliers
+      // (e.g. +3000%) without hard-capping, keeping small changes visible
+      const absRelMax = Math.max(...relValues.map(Math.abs), 0.01)
+      deltaRelativeMinValue.value = -absRelMax
+      deltaRelativeMaxValue.value = absRelMax
+      const relScale = (scaleDivergingSymlog() as any).constant(10).domain([absRelMax, 0, -absRelMax])
+      deltaRelativeColorScale.value = (v: number) => interpolateSpectral(relScale(v))
 
       // Auto-select delta visualization when available
       activeVisualization.value = 'delta'
@@ -363,6 +380,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     deltaColorScale.value = null
     co2ColorScale.value = null
     co2DeltaColorScale.value = null
+    deltaRelativeColorScale.value = null
+    deltaRelativeMinValue.value = 0
+    deltaRelativeMaxValue.value = 0
     minValue.value = 0
     maxValue.value = 0
     frequencyMinValue.value = 0
@@ -401,6 +421,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       minValue.value = deltaMinValue.value
       maxValue.value = deltaMaxValue.value
       legendMode.value = 'delta'
+    } else if (activeVisualization.value === 'delta_relative' && deltaRelativeColorScale.value) {
+      colorScale.value = deltaRelativeColorScale.value
+      minValue.value = deltaRelativeMinValue.value
+      maxValue.value = deltaRelativeMaxValue.value
+      legendMode.value = 'delta_relative'
     } else if (activeVisualization.value === 'co2' && co2ColorScale.value) {
       colorScale.value = co2ColorScale.value
       minValue.value = co2MinValue.value
@@ -430,7 +455,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   }
 
   function setActiveVisualization(
-    mode: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
+    mode: 'none' | 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
   ) {
     activeVisualization.value = mode
     updateActiveColorScale()
@@ -444,7 +469,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     originalEdgeUsage: EdgeUsageStats[]
     newEdgeUsage: EdgeUsageStats[]
     impactStatistics: any | null
-    activeVisualization: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
+    activeVisualization: 'none' | 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
   }) {
     isRestoring.value = true
     isOpen.value = state.isOpen
@@ -491,6 +516,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     impactStatistics,
     useCongestionModel,
     congestionIterations,
+    elasticDemand,
     filterBusRoutes,
 
     // Visualization state
