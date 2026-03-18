@@ -80,11 +80,96 @@ def sample_od_pairs(
     return od_pairs
 
 
+def resample_od_destinations(
+    pairs: List,
+    nodes: pd.Series,
+    ig_modified,
+    idx_maps: dict,
+    config,
+) -> List:
+    """Resample destinations for each origin using travel times on the modified graph.
+
+    Preserves origin structure (same origins, same destination count per origin)
+    while choosing new destinations based on lognormal-weighted travel times
+    on the modified graph — modelling elastic demand adaptation.
+
+    Args:
+        pairs: Original NodePair list (provides origin set and dest counts)
+        nodes: Candidate pool — pd.Series {NX node ID → weight}
+        ig_modified: igraph.Graph built from modified NX graph, with "travel_time" attribute
+        idx_maps: Node/edge index maps from networkx_to_igraph_with_indices
+        config: SamplingConfig (uses lognorm_mu / lognorm_sigma)
+
+    Returns:
+        New list of NodePair objects (same length as input)
+    """
+    from app.models.route import NodePair
+
+    nx_to_ig = idx_maps["node_nx_to_ig"]
+
+    # Build candidate arrays (only nodes present in igraph)
+    candidate_nx_ids = [n for n in nodes.index if n in nx_to_ig]
+    candidate_ig_ids = [nx_to_ig[n] for n in candidate_nx_ids]
+    candidate_weights = nodes.reindex(candidate_nx_ids).values.astype(float)
+
+    # Count destinations per origin (ordered)
+    origin_dest_counts: Dict[int, int] = {}
+    for p in pairs:
+        origin_dest_counts[p.origin] = origin_dest_counts.get(p.origin, 0) + 1
+
+    valid_origin_nx = [nx for nx in origin_dest_counts if nx in nx_to_ig]
+    origin_ig_ids = [nx_to_ig[nx] for nx in valid_origin_nx]
+
+    # Compute travel-time matrix: origins × candidates
+    t_matrix = ig_modified.distances(
+        source=origin_ig_ids, target=candidate_ig_ids, weights="travel_time"
+    )
+
+    rng = np.random.RandomState()
+    new_pairs: List = []
+    failed_origins = []
+
+    for i, origin_nx in enumerate(valid_origin_nx):
+        n_dests = origin_dest_counts[origin_nx]
+        times = np.array(t_matrix[i], dtype=float)
+        time_weights = lognorm.pdf(times, s=config.lognorm_sigma, scale=np.exp(config.lognorm_mu))
+        combined = candidate_weights * time_weights
+        total = combined.sum()
+
+        if total == 0 or not np.isfinite(total):
+            failed_origins.append(origin_nx)
+            for p in pairs:
+                if p.origin == origin_nx:
+                    new_pairs.append(p)
+            continue
+
+        try:
+            dest_indices = rng.choice(
+                len(candidate_nx_ids), size=n_dests, replace=True, p=combined / total
+            )
+            for idx in dest_indices:
+                new_pairs.append(NodePair(origin=origin_nx, destination=candidate_nx_ids[idx]))
+        except Exception:
+            failed_origins.append(origin_nx)
+            for p in pairs:
+                if p.origin == origin_nx:
+                    new_pairs.append(p)
+
+    if failed_origins:
+        logger.warning(
+            f"resample_od_destinations: fallback to original pairs for "
+            f"{len(failed_origins)} origins"
+        )
+
+    return new_pairs
+
+
 def generate_research_based_pairs(
     g: nx.MultiDiGraph,
     n_pairs: int,
     config=None,
     seed: int = 42,
+    return_nodes: bool = False,
 ) -> List:
     """Generate OD pairs using research-based methodology.
 
@@ -189,4 +274,6 @@ def generate_research_based_pairs(
         for destination in destinations[: config.n_destinations_per_origin]:
             node_pairs.append(NodePair(origin=origin, destination=destination))
 
+    if return_nodes:
+        return node_pairs, nodes
     return node_pairs
