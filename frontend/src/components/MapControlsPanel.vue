@@ -3,7 +3,6 @@ import { ref, computed } from 'vue'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { recalculateRoutes } from '@/services/trafficAnalysis'
-import ImpactStatistics from './ImpactStatistics.vue'
 import {
   mdiChevronDown,
   mdiChevronRight,
@@ -106,6 +105,7 @@ async function calculateRoutes() {
     const result = await recalculateRoutes(trafficStore.edgeModificationsArray, {
       useCongestionModel: trafficStore.useCongestionModel,
       congestionIterations: trafficStore.congestionIterations,
+      elasticDemand: trafficStore.elasticDemand,
     })
     trafficStore.setEdgeUsage(
       result.original_edge_usage,
@@ -302,7 +302,7 @@ watch(
             </v-expand-transition>
           </div>
 
-          <!-- Volume model options -->
+          <!-- Routing model options -->
           <div class="mt-2">
             <v-checkbox
               v-model="trafficStore.useCongestionModel"
@@ -311,27 +311,26 @@ watch(
               density="compact"
             >
               <template #label>
-                <span>Volume model</span>
+                <span>Iterative model</span>
                 <v-tooltip location="right" max-width="320">
                   <template #activator="{ props }">
                     <v-icon v-bind="props" :icon="mdiInformation" size="small" class="ml-1 text-medium-emphasis" />
                   </template>
                   <div>
-                    <div class="font-weight-bold mb-1">Volume model vs. default</div>
+                    <div class="font-weight-bold mb-1">Static betweenness vs. iterative volumes</div>
                     <div class="mb-2">
-                      The <strong>default</strong> model uses theoretical betweenness centrality (BC)
-                      computed on the modified graph to derive congested travel times
-                      (<em>duration_bc</em>), then routes with those weights.
+                      <strong>Off — Static betweenness:</strong> BC is computed once on the
+                      modified graph to derive congested travel times (<em>duration_bc</em>),
+                      then all affected routes are re-run with those weights.
                       Roads that structurally attract more flow appear slower, discouraging
                       over-assignment without any iteration.
                     </div>
                     <div>
-                      The <strong>volume model</strong> counts actual simulated route volumes,
-                      normalises them to daily vehicle-km, and feeds that load into the same
-                      BPR speed-reduction formula. Routes are then re-run with the updated
+                      <strong>On — Iterative volumes:</strong> actual simulated route volumes
+                      are counted, normalised to daily vehicle-km, and fed into the BPR
+                      speed-reduction formula. Routes are then re-run with the updated
                       weights, repeating for the chosen number of iterations — converging
-                      toward a <em>Wardrop user equilibrium</em> where no driver can
-                      reduce their travel time by switching routes.
+                      toward a <em>Wardrop user equilibrium</em>.
                     </div>
                   </div>
                 </v-tooltip>
@@ -350,6 +349,33 @@ watch(
                 />
               </div>
             </v-expand-transition>
+
+            <v-checkbox
+              v-model="trafficStore.elasticDemand"
+              color="primary"
+              hide-details
+              density="compact"
+              class="mt-1"
+            >
+              <template #label>
+                <span>Elastic demand</span>
+                <v-tooltip location="right" max-width="320">
+                  <template #activator="{ props }">
+                    <v-icon v-bind="props" :icon="mdiInformation" size="small" class="ml-1 text-medium-emphasis" />
+                  </template>
+                  <div>
+                    <div class="font-weight-bold mb-1">Elastic demand</div>
+                    <div>
+                      When on, trip destinations are resampled to reflect that travellers
+                      adapt to new travel times. Closing a major road shifts trips to
+                      closer destinations rather than spiking total travel time.
+                      Origins remain unchanged; only destination choice responds to the
+                      modified network.
+                    </div>
+                  </div>
+                </v-tooltip>
+              </template>
+            </v-checkbox>
           </div>
 
           <!-- Calculate Button -->
@@ -421,11 +447,6 @@ watch(
       </v-expand-transition>
     </div>
 
-    <!-- Impact Statistics Section -->
-    <ImpactStatistics
-      v-if="trafficStore.impactStatistics"
-      :statistics="trafficStore.impactStatistics"
-    />
   </div>
 </template>
 
