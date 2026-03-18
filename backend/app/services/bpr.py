@@ -170,7 +170,7 @@ def apply_congestion_weights(graph, routes) -> None:
     counts = count_edge_usage(routes)
 
     total_veh_m = sum(
-        count * graph[u][v][0].get("length", 0)
+        count * next(iter(graph[u][v].values())).get("length", 0)
         for (u, v), count in counts.items()
         if graph.has_edge(u, v)
     )
