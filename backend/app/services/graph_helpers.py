@@ -349,6 +349,7 @@ def get_edge_geometries(graph, limit: Optional[int] = None) -> List[dict]:
             "highway": highway_raw[0] if isinstance(highway_raw, list) else highway_raw,
             "bus_route_count": int(data.get("bus_route_count", 0) or 0),
             "bus_route_refs": str(data.get("bus_route_refs", "") or ""),
+            "habitat_area_m2": float(data.get("habitat_area_m2", 0.0) or 0.0),
         })
     return edges
 
@@ -383,6 +384,7 @@ def get_graph_data(graph) -> GraphData:
             travel_time=d.get("travel_time"),
             bus_route_count=int(d.get("bus_route_count", 0) or 0),
             bus_route_refs=str(d.get("bus_route_refs", "") or ""),
+            habitat_area_m2=float(d.get("habitat_area_m2", 0.0) or 0.0),
         ))
     return GraphData(
         edges=edges,

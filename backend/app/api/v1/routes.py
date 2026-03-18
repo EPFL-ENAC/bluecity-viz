@@ -223,3 +223,37 @@ async def get_edge_geometries(response: Response, limit: Optional[int] = None):
         return edges
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/habitat-geojson")
+async def get_habitat_geojson():
+    """
+    Get habitat density as a GeoJSON FeatureCollection for MapLibre visualization.
+    """
+    try:
+        graph = graph_service.graph
+        features = []
+        for u, v, data in graph.edges(data=True):
+            coords = (
+                [[lon, lat] for lon, lat in data["geometry"].coords]
+                if "geometry" in data
+                else [
+                    [graph.nodes[u]["x"], graph.nodes[u]["y"]],
+                    [graph.nodes[v]["x"], graph.nodes[v]["y"]],
+                ]
+            )
+            length = float(data.get("length", 1.0) or 1.0)
+            habitat = float(data.get("habitat_area_m2", 0.0) or 0.0)
+            density = habitat / length if length > 0 else 0.0
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": coords},
+                "properties": {
+                    "u": int(u),
+                    "v": int(v),
+                    "habitat_density_m2_per_m": density,
+                },
+            })
+        return {"type": "FeatureCollection", "features": features}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
