@@ -90,6 +90,7 @@ def graphml_to_geojson(graphml_path: str, geojson_path: str) -> None:
             "travel_time": float(d.get("travel_time", 0)),
             "bus_route_count": int(d.get("bus_route_count", 0) or 0),
             "bus_route_refs": str(d.get("bus_route_refs", "") or ""),
+            "habitat_area_m2": float(d.get("habitat_area_m2", 0.0) or 0.0),
         })
     
     # Create GeoDataFrame

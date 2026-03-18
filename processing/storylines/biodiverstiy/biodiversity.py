@@ -1,8 +1,6 @@
 from matplotlib import pyplot as plt
 import contextily as ctx
 import geopandas as gpd
-import geoviews as gv
-import hvplot.pandas
 import pandas as pd
 import fiona
 import os
@@ -10,12 +8,12 @@ import os
 
 data_dir = os.path.join(os.getcwd(), 'data')
 
-gdb_path = os.path.join(data_dir, 'Lebensraumkarte_v1_1_VD_20241025.gdb')
+gdb_path = os.path.join(data_dir, 'HabitatMap_v1_2_20251211_VD.gdb')
 layers = fiona.listlayers(gdb_path)
 areas = gpd.read_file(gdb_path, layer=layers[0], columns=['TypoCH_NUM', 'TypoCH', 'POLYID', 'geometry'])
 
 roads_path = os.path.join(data_dir, 'lausanne_drive_edges.gpkg')
-roads = gpd.read_file(roads_path, columns=['geometry'])
+roads = gpd.read_file(roads_path, columns=['u', 'v', 'geometry'])
 
 buffer_distance = 10  # meters
 
@@ -118,3 +116,14 @@ roads_areas["sous_types"] = roads_areas.groupby('cluster_v2')["TypoCH"].transfor
 
 roads_areas["road_geometry"] = roads_areas["road_geometry"].to_wkt()
 roads_areas.to_file('roads_areas_clusters.gpkg', layer='roads_areas_clusters', driver='GPKG')
+
+# Export habitat area per road edge (keyed by osmnx u, v)
+roads_id_map = roads[['u', 'v']].copy()
+roads_id_map.index.name = 'road_id'
+
+road_habitat = roads_areas.groupby('road_id')['area'].sum().to_frame('habitat_area_m2')
+road_habitat = road_habitat.join(roads_id_map)
+road_habitat = road_habitat.dropna(subset=['u', 'v'])
+road_habitat[['u', 'v', 'habitat_area_m2']].to_csv(
+    os.path.join(data_dir, 'habitat_areas.csv'), index=False
+)

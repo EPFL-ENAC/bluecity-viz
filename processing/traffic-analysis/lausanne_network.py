@@ -30,6 +30,7 @@ from shapely import wkt
 from shapely.geometry import Polygon
 
 from enrich_pt_bike import enrich_pt_bike
+from enrich_habitat import enrich_habitat
 
 # ---------------------------------------------------------------------------
 # Lausanne bounding polygon (WGS84 / EPSG:4326)
@@ -310,6 +311,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip GeoPackage export for QGIS",
     )
+    parser.add_argument(
+        '--habitat-csv',
+        type=Path,
+        default=None,
+        help='Path to habitat_areas.csv from biodiversity pipeline',
+    )
     return parser.parse_args()
 
 
@@ -320,7 +327,7 @@ def main() -> None:
     print("Lausanne Network Builder")
     print("=" * 60)
 
-    n_steps = 5
+    n_steps = 6
 
     # 1. Load or download
     print(f"\n[1/{n_steps}] Network …")
@@ -351,8 +358,15 @@ def main() -> None:
     else:
         print(f"\n[4/{n_steps}] PT & bike enrichment — skipped (--no-enrichment)")
 
-    # 5. Save
-    print(f"\n[5/{n_steps}] Saving …")
+    # 5. Habitat areas (optional)
+    if args.habitat_csv:
+        print(f"\n[5/{n_steps}] Habitat areas …")
+        graph = enrich_habitat(graph, args.habitat_csv)
+    else:
+        print(f"\n[5/{n_steps}] Habitat areas — skipped (--habitat-csv not provided)")
+
+    # 6. Save
+    print(f"\n[6/{n_steps}] Saving …")
     save_network(graph, args.output)
 
     if not args.no_gpkg:
