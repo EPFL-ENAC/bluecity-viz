@@ -13,10 +13,10 @@ ENV UV_PROJECT_ENVIRONMENT=/app/.venv
 WORKDIR /app
 
 # Copy project files needed for dependency installation (separate layer for caching)
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock .python-version README.md ./
 
 # Install dependencies using uv sync (cached unless pyproject.toml/uv.lock change)
-RUN uv sync --frozen --no-cache
+RUN uv sync --frozen --no-cache --no-install-project
 
 # Stage 2: Build the final image
 
@@ -43,5 +43,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
-# Run the application using uv run
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--log-level", "info"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--log-level", "info"]
