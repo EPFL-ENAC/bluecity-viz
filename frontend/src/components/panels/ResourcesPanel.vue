@@ -2,6 +2,7 @@
 import AddSourceDialog from '@/components/panels/AddSourceDialog.vue'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { useCVRPStore } from '@/stores/cvrp'
 import { ref } from 'vue'
 import {
   mdiPlus,
@@ -15,6 +16,7 @@ import {
 // Use the layers store
 const layersStore = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
+const cvrpStore = useCVRPStore()
 
 // Local state for the component (only UI state)
 const dataSetsExpanded = ref(true)
@@ -31,7 +33,13 @@ const enabledVisualizations = ref(new Set<string>())
 // Functions for placeholder interactions
 const toggleTool = (toolId: string) => {
   if (toolId === 'traffic-analysis') {
+    if (!trafficStore.isOpen && cvrpStore.isOpen) cvrpStore.togglePanel()
     trafficStore.togglePanel()
+    return
+  }
+  if (toolId === 'cvrp') {
+    if (!cvrpStore.isOpen && trafficStore.isOpen) trafficStore.togglePanel()
+    cvrpStore.togglePanel()
     return
   }
 
@@ -168,6 +176,33 @@ const toggleVisualization = (vizId: string) => {
                       <div class="text-body-2 font-weight-medium">Traffic Analysis</div>
                       <div class="text-caption text-medium-emphasis">
                         Simulate edge removal and route recalculation
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </v-card-text>
+            </v-card>
+
+            <!-- Waste CVRP Analysis -->
+            <v-card
+              :class="['tool-card mb-1 cursor-pointer', { 'active-tool': cvrpStore.isOpen }]"
+              variant="outlined"
+              density="compact"
+              @click="toggleTool('cvrp')"
+            >
+              <v-card-text class="py-2 px-3">
+                <div class="d-flex align-center justify-space-between w-100">
+                  <div class="d-flex align-center flex-grow-1">
+                    <v-icon
+                      :icon="cvrpStore.isOpen ? mdiCheckboxMarked : mdiCheckboxBlankOutline"
+                      size="small"
+                      class="mr-2"
+                      :color="cvrpStore.isOpen ? 'primary' : 'grey'"
+                    />
+                    <div class="flex-grow-1">
+                      <div class="text-body-2 font-weight-medium">Waste CVRP Analysis</div>
+                      <div class="text-caption text-medium-emphasis">
+                        Optimise waste collection vehicle routes
                       </div>
                     </div>
                   </div>

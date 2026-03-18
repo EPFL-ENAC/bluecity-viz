@@ -2,7 +2,7 @@ import { fetchEdgeGeometries, type EdgeGeometry } from '@/services/trafficAnalys
 import { useTrafficAnalysisStore, type ModificationAction } from '@/stores/trafficAnalysis'
 import { PathStyleExtension } from '@deck.gl/extensions'
 import { GeoJsonLayer, PathLayer, TextLayer } from '@deck.gl/layers'
-import type { Ref } from 'vue'
+import type { Ref, ShallowRef } from 'vue'
 import { ref, shallowRef } from 'vue'
 
 // Colors for different modification types (matching MapControlsPanel actionColors)
@@ -171,6 +171,7 @@ export interface EdgeTooltipData {
 interface DeckGLTrafficAnalysisReturn {
   layers: Ref<any[]>
   tooltipData: Ref<EdgeTooltipData | null>
+  edgeMap: ShallowRef<Map<string, EdgeGeometry>>
   loadGraphEdges: () => Promise<void>
   updateModifiedEdges: () => void
   visualizeEdgeUsage: (newUsage: EdgeUsageStats[]) => void
@@ -641,6 +642,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
   return {
     layers,
     tooltipData,
+    edgeMap,
     loadGraphEdges,
     updateModifiedEdges,
     visualizeEdgeUsage,

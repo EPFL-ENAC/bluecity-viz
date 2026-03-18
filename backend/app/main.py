@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api.v1 import cvrp as cvrp_router
 from app.api.v1 import routes
 from app.config import settings
 
@@ -38,6 +39,23 @@ async def lifespan(app: FastAPI):
             sampling_config=None,  # Use default configuration
         )
         print("Default routes initialized")
+
+        # Initialize CVRP service with waste centroid CSVs
+        backend_dir = Path(__file__).parent.parent
+        centroids_path_setting = settings.cvrp_centroids_dir
+        if Path(centroids_path_setting).is_absolute():
+            centroids_full_path = Path(centroids_path_setting)
+        else:
+            centroids_full_path = (backend_dir / centroids_path_setting).resolve()
+
+        cvrp_router.cvrp_service.set_graph_service(routes.graph_service)
+        if centroids_full_path.exists():
+            print(f"Initializing CVRP service from: {centroids_full_path}")
+            cvrp_router.cvrp_service.initialize(str(centroids_full_path))
+            print("CVRP service initialized")
+        else:
+            print(f"Warning: Centroids directory not found at {centroids_full_path}")
+            print("CVRP endpoints will return errors until centroids are available")
     else:
         print(f"Warning: Graph file not found at {full_path}")
         print("API will be available but route endpoints will fail")
@@ -73,6 +91,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(routes.router, prefix="/api/v1")
+app.include_router(cvrp_router.router, prefix="/api/v1")
 
 # Mount static data directory for serving GeoJSON files
 data_dir = Path(__file__).parent.parent / "data"

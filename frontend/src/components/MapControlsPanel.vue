@@ -2,7 +2,10 @@
 import { ref, computed } from 'vue'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { useCVRPStore } from '@/stores/cvrp'
 import ImpactStatistics from './ImpactStatistics.vue'
+import CVRPPanel from './CVRPPanel.vue'
+import CVRPStatistics from './CVRPStatistics.vue'
 import { recalculateRoutes } from '@/services/trafficAnalysis'
 import {
   mdiChevronDown,
@@ -20,11 +23,12 @@ import {
 // Stores
 const layersStore = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
+const cvrpStore = useCVRPStore()
 
 // Expansion states
 const layersExpanded = ref(true)
 const trafficExpanded = ref(false)
-const modifiedEdgesExpanded = ref(true)
+const modificationsExpanded = ref(true)
 
 // Traffic analysis state
 const loadingMessage = ref('')
@@ -149,6 +153,15 @@ watch(
     }
   }
 )
+
+watch(
+  () => cvrpStore.isOpen,
+  (isOpen) => {
+    if (isOpen) {
+      modificationsExpanded.value = true
+    }
+  }
+)
 </script>
 
 <template>
@@ -208,6 +221,85 @@ watch(
       </v-expand-transition>
     </div>
 
+    <!-- Shared Modifications Section -->
+    <div v-if="trafficStore.isOpen || cvrpStore.isOpen" class="control-section">
+      <div class="section-header" @click="modificationsExpanded = !modificationsExpanded">
+        <div class="d-flex align-center flex-grow-1">
+          <v-btn
+            :icon="modificationsExpanded ? mdiChevronDown : mdiChevronRight"
+            variant="text"
+            density="compact"
+            size="small"
+          />
+          <span class="section-title">MODIFIED EDGES ({{ trafficStore.edgeModificationsCount }})</span>
+        </div>
+        <v-btn
+          v-if="trafficStore.edgeModificationsCount > 0"
+          :icon="mdiDelete"
+          size="x-small"
+          variant="outlined"
+          @click.stop="trafficStore.clearEdgeModifications()"
+        />
+      </div>
+      <v-expand-transition>
+        <div v-show="modificationsExpanded" class="section-content">
+          <v-card
+            variant="outlined"
+            flat
+            max-height="200px"
+            class="overflow-y-auto"
+          >
+            <v-list
+              v-if="trafficStore.edgeModificationsCount > 0"
+              density="compact"
+              class="pa-0"
+            >
+              <v-list-item
+                v-for="edge in trafficStore.edgeModificationsForDisplay"
+                :key="`${edge.u}-${edge.v}`"
+                class="px-2"
+              >
+                <template #prepend>
+                  <div
+                    class="modification-icon mr-2"
+                    :style="{ borderColor: actionColors[edge.action] }"
+                  >
+                    <span v-if="edge.action === 'remove'">
+                      <v-icon :icon="mdiCancel" size="12" />
+                    </span>
+                    <span v-else class="speed-label">
+                      {{
+                        edge.action === 'speed10'
+                          ? '10'
+                          : edge.action === 'speed30'
+                          ? '30'
+                          : '50'
+                      }}
+                    </span>
+                  </div>
+                </template>
+                <v-list-item-title class="text-caption">
+                  {{ edge.name }}
+                  <span v-if="edge.isBidirectional" class="text-grey"> (↔)</span>
+                </v-list-item-title>
+                <template #append>
+                  <v-btn
+                    :icon="mdiClose"
+                    size="x-small"
+                    variant="text"
+                    @click="removeEdge(edge.u, edge.v)"
+                  />
+                </template>
+              </v-list-item>
+            </v-list>
+            <div v-else class="text-center py-4 text-caption text-medium-emphasis">
+              Click on edges to modify them (cycles: remove → 10 → 30 → 50 km/h)
+            </div>
+          </v-card>
+        </div>
+      </v-expand-transition>
+    </div>
+
     <!-- Traffic Analysis Section -->
     <div v-if="trafficStore.isOpen" class="control-section">
       <div class="section-header" @click="trafficExpanded = !trafficExpanded">
@@ -223,86 +315,6 @@ watch(
       </div>
       <v-expand-transition>
         <div v-show="trafficExpanded" class="section-content">
-          <!-- Modified Edges -->
-          <div class="mb-3">
-            <div class="d-flex align-center justify-space-between mb-2">
-              <div class="d-flex align-center">
-                <v-btn
-                  :icon="modifiedEdgesExpanded ? mdiChevronDown : mdiChevronRight"
-                  size="x-small"
-                  variant="text"
-                  @click="modifiedEdgesExpanded = !modifiedEdgesExpanded"
-                />
-                <span class="text-caption font-weight-medium">
-                  Modified Edges ({{ trafficStore.edgeModificationsCount }})
-                </span>
-              </div>
-              <v-btn
-                v-if="trafficStore.edgeModificationsCount > 0"
-                :icon="mdiDelete"
-                size="x-small"
-                variant="outlined"
-                @click="trafficStore.clearEdgeModifications()"
-              />
-            </div>
-            <v-expand-transition>
-              <v-card
-                v-show="modifiedEdgesExpanded"
-                variant="outlined"
-                flat
-                max-height="200px"
-                class="overflow-y-auto"
-              >
-                <v-list
-                  v-if="trafficStore.edgeModificationsCount > 0"
-                  density="compact"
-                  class="pa-0"
-                >
-                  <v-list-item
-                    v-for="edge in trafficStore.edgeModificationsForDisplay"
-                    :key="`${edge.u}-${edge.v}`"
-                    class="px-2"
-                  >
-                    <template #prepend>
-                      <div
-                        class="modification-icon mr-2"
-                        :style="{ borderColor: actionColors[edge.action] }"
-                      >
-                        <span v-if="edge.action === 'remove'">
-                          <v-icon :icon="mdiCancel" size="12" />
-                        </span>
-                        <span v-else class="speed-label">
-                          {{
-                            edge.action === 'speed10'
-                              ? '10'
-                              : edge.action === 'speed30'
-                              ? '30'
-                              : '50'
-                          }}
-                        </span>
-                      </div>
-                    </template>
-                    <v-list-item-title class="text-caption">
-                      {{ edge.name }}
-                      <span v-if="edge.isBidirectional" class="text-grey"> (↔)</span>
-                    </v-list-item-title>
-                    <template #append>
-                      <v-btn
-                        :icon="mdiClose"
-                        size="x-small"
-                        variant="text"
-                        @click="removeEdge(edge.u, edge.v)"
-                      />
-                    </template>
-                  </v-list-item>
-                </v-list>
-                <div v-else class="text-center py-4 text-caption text-medium-emphasis">
-                  Click on edges to modify them (cycles: remove → 10 → 30 → 50 km/h)
-                </div>
-              </v-card>
-            </v-expand-transition>
-          </div>
-
           <!-- Routing model options -->
           <div class="mt-2">
             <v-checkbox
@@ -450,10 +462,14 @@ watch(
 
     <!-- Impact Statistics Section -->
     <ImpactStatistics
-      v-if="trafficStore.impactStatistics"
+      v-if="trafficStore.isOpen && trafficStore.impactStatistics"
       :statistics="trafficStore.impactStatistics"
       :elastic-demand="trafficStore.elasticDemand"
     />
+
+    <!-- Waste Collection (CVRP) Section -->
+    <CVRPPanel v-if="cvrpStore.isOpen" />
+    <CVRPStatistics v-if="cvrpStore.isOpen" />
 
   </div>
 </template>

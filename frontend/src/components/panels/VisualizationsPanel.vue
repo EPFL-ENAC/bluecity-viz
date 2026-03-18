@@ -4,19 +4,38 @@ import DeckGLOverlay from '@/components/DeckGLOverlay.vue'
 import LegendMap from '@/components/LegendMap.vue'
 import MapControlsPanel from '@/components/MapControlsPanel.vue'
 import EdgeTooltip from '@/components/EdgeTooltip.vue'
+import CVRPTooltip from '@/components/CVRPTooltip.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
 import { useDeckGLTrafficAnalysis } from '@/composables/useDeckGLTrafficAnalysis'
+import { useDeckGLCVRP } from '@/composables/useDeckGLCVRP'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { inject, watch, onMounted, type Ref } from 'vue'
+import { useCVRPStore } from '@/stores/cvrp'
+import { inject, watch, onMounted, computed, type Ref } from 'vue'
 
 // Use the map logic composable
 const { map, parameters, center, zoom, syncAllLayersVisibility, layersStore } = useMapLogic()
 
 // Use the traffic analysis store
 const trafficStore = useTrafficAnalysisStore()
+const cvrpStore = useCVRPStore()
 
 // Use Deck.gl traffic analysis
 const deckGLTraffic = useDeckGLTrafficAnalysis()
+
+// Use Deck.gl CVRP layers
+const deckGLCVRP = useDeckGLCVRP(deckGLTraffic.edgeMap)
+
+// Combined layers for Deck.gl overlay.
+// When CVRP has results, suppress the colored traffic route analysis layers so they
+// don't clutter the waste collection view. Keep the grey base network and modification
+// indicators so the user still sees which edges are modified.
+const combinedLayers = computed(() => {
+  const trafficLayers = (trafficStore.isOpen || cvrpStore.isOpen) ? deckGLTraffic.layers.value : []
+  const filteredTrafficLayers = cvrpStore.hasResult
+    ? trafficLayers.filter((l: any) => !l.id.startsWith('traffic-routes'))
+    : trafficLayers
+  return [...filteredTrafficLayers, ...deckGLCVRP.layers.value]
+})
 
 // Get the provided map ref from parent
 const mapComponentRef = inject<Ref<any>>('mapRef')
@@ -37,9 +56,13 @@ function handleDeckClick(info: any) {
   deckGLTraffic.handleClick(info)
 }
 
-// Handle Deck.gl hover events for tooltips
+// Handle Deck.gl hover events for tooltips.
+// When CVRP results are active, suppress the traffic edge tooltip — the CVRP route
+// layer handles its own hover via the onHover callback on the PathLayer.
 function handleDeckHover(info: any) {
-  deckGLTraffic.handleHover(info)
+  if (!cvrpStore.hasResult) {
+    deckGLTraffic.handleHover(info)
+  }
 }
 
 // Setup edge click callback (always active when traffic panel is open)
@@ -62,11 +85,24 @@ watch(
   }
 )
 
+// Watch for CVRP panel open/close
+watch(
+  () => cvrpStore.isOpen,
+  async (isOpen) => {
+    if (isOpen) {
+      await deckGLTraffic.loadGraphEdges()
+      setupEdgeClickCallback()
+    } else {
+      cvrpStore.clearResult()
+    }
+  }
+)
+
 // Watch for edge modifications changes
 watch(
   () => trafficStore.edgeModifications,
   () => {
-    if (trafficStore.isOpen && !trafficStore.isRestoring) {
+    if ((trafficStore.isOpen || cvrpStore.isOpen) && !trafficStore.isRestoring) {
       deckGLTraffic.updateModifiedEdges()
     }
   },
@@ -119,15 +155,17 @@ watch(
 )
 
 onMounted(async () => {
-  if (trafficStore.isOpen) {
-    await deckGLTraffic.loadGraphEdges()
+  await deckGLTraffic.loadGraphEdges()
+  if (trafficStore.isOpen || cvrpStore.isOpen) {
     setupEdgeClickCallback()
 
     // Restore modified edges visualization if any exist
     if (trafficStore.edgeModifications.size > 0) {
       deckGLTraffic.updateModifiedEdges()
     }
+  }
 
+  if (trafficStore.isOpen) {
     // Restore traffic visualization if data exists
     const activeVis = trafficStore.activeVisualization
     if (trafficStore.originalEdgeUsage.length > 0 && activeVis !== 'none') {
@@ -155,15 +193,18 @@ onMounted(async () => {
       </template>
     </MapLibreMap>
 
-    <!-- Deck.gl Canvas (traffic analysis layers only) -->
+    <!-- Deck.gl Canvas (traffic analysis + CVRP layers) -->
     <DeckGLOverlay
-      :layers="trafficStore.isOpen ? deckGLTraffic.layers.value : []"
+      :layers="combinedLayers"
       :on-click="handleDeckClick"
       :on-hover="handleDeckHover"
     />
 
-    <!-- Edge Tooltip -->
+    <!-- Edge Tooltip (traffic analysis) -->
     <EdgeTooltip :data="deckGLTraffic.tooltipData.value" />
+
+    <!-- CVRP Route Tooltip -->
+    <CVRPTooltip :data="deckGLCVRP.cvrpTooltipData.value" />
 
     <!-- Unified Map Controls (Layers + Traffic Analysis) -->
     <MapControlsPanel />
