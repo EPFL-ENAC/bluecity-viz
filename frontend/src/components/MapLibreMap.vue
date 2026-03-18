@@ -122,9 +122,10 @@ function initMap() {
     loading.value = false
     map.value.resize()
 
-    // Add all sources dynamically
+    // Add all sources dynamically (strip custom fields id/label before passing to MapLibre)
     Object.entries(mapConfig.layers).forEach(([, { id, source, layer }]) => {
-      map.value?.addSource(id, source)
+      const { id: _id, label: _label, ...sourceSpec } = source as any
+      map.value?.addSource(id, sourceSpec)
       map.value?.addLayer(layer)
     })
 
@@ -327,9 +328,10 @@ watch(
     map.value.once('styledata', () => {
       if (!map.value) return
 
-      // Re-add all sources and layers
+      // Re-add all sources and layers (strip custom fields id/label before passing to MapLibre)
       Object.entries(mapConfig.layers).forEach(([, { id, source, layer }]) => {
-        map.value?.addSource(id, source)
+        const { id: _id, label: _label, ...sourceSpec } = source as any
+        map.value?.addSource(id, sourceSpec)
         map.value?.addLayer(layer)
       })
 
