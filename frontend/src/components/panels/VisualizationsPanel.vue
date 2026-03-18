@@ -155,7 +155,7 @@ onMounted(async () => {
       </template>
     </MapLibreMap>
 
-    <!-- Deck.gl Canvas (always mounted, shows layers only when traffic analysis is active) -->
+    <!-- Deck.gl Canvas (traffic analysis layers only) -->
     <DeckGLOverlay
       :layers="trafficStore.isOpen ? deckGLTraffic.layers.value : []"
       :on-click="handleDeckClick"

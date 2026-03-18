@@ -337,7 +337,6 @@ const toggleCategory = (
 
 const show = ref(true)
 
-// Show legend if there are MapLibre layers OR traffic visualization is active
 const shouldShowLegend = computed(() => {
   return allLegends.value.length > 0 || trafficLegend.value !== null
 })

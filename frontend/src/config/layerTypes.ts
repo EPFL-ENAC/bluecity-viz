@@ -1,7 +1,7 @@
-import type { LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
+import type { GeoJSONSourceSpecification, LayerSpecification, VectorSourceSpecification } from 'maplibre-gl'
 
 export type CustomLayerSpecification = LayerSpecification & { groupId: string }
-export type CustomSourceSpecification = VectorSourceSpecification & {
+export type CustomSourceSpecification = (VectorSourceSpecification | GeoJSONSourceSpecification) & {
   id: string
   label?: string
 }

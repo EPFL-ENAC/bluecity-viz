@@ -5,6 +5,7 @@ import {
 } from '@/config/correlation'
 import type { CustomSourceSpecification } from '@/config/layerTypes'
 import { baseUrlOptions, type MapLayerConfig } from '@/config/layerTypes'
+import { biodiversityLayers, biodiversitySources } from '@/config/biodiversity'
 import { sp0MigrationLayers, sp0MigrationSources } from '@/config/sp0_migration'
 import { sp2MobilityLayers, sp2MobilitySources } from '@/config/sp2_mobility'
 import { sp3NatureLayers, sp3NatureSources } from '@/config/sp3_nature'
@@ -21,7 +22,8 @@ export const mapConfig = {
     ...sp6MaterialsLayers,
     ...sp7VehicleLayers,
     ...allCorrelationLayers,
-    ...sp0MigrationLayers
+    ...sp0MigrationLayers,
+    ...biodiversityLayers,
   ] as MapLayerConfig[],
   sources: [
     ...sp2MobilitySources,
@@ -30,7 +32,8 @@ export const mapConfig = {
     ...sp6MaterialsSources,
     ...sp7VehicleSources,
     ...sp0MigrationSources,
-    ...correlationSources
+    ...correlationSources,
+    ...biodiversitySources,
   ] as CustomSourceSpecification[]
 }
 
@@ -65,6 +68,6 @@ export const layerGroups = [
     layers: sp6MaterialsLayers
   },
   { id: 'sp7', label: 'SP7 Goods', expanded: false, multiple: false, layers: sp7VehicleLayers },
-  ...correlationLayerGroups
-  // Add other groups as needed
+  ...correlationLayerGroups,
+  { id: 'biodiversity', label: 'Biodiversity', expanded: false, multiple: false, layers: biodiversityLayers },
 ]
