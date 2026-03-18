@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import ImpactStatistics from './ImpactStatistics.vue'
 import { recalculateRoutes } from '@/services/trafficAnalysis'
 import {
   mdiChevronDown,
@@ -446,6 +447,13 @@ watch(
         </div>
       </v-expand-transition>
     </div>
+
+    <!-- Impact Statistics Section -->
+    <ImpactStatistics
+      v-if="trafficStore.impactStatistics"
+      :statistics="trafficStore.impactStatistics"
+      :elastic-demand="trafficStore.elasticDemand"
+    />
 
   </div>
 </template>

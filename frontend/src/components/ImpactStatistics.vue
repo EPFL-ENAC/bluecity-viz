@@ -40,6 +40,14 @@ const hasImpact = computed(() => {
   return !props.elasticDemand && props.statistics && props.statistics.affected_routes > 0
 })
 
+// Elastic: show system-level totals regardless of affected count
+const hasElasticTotals = computed(() => {
+  return props.elasticDemand && props.statistics && (
+    props.statistics.total_distance_increase_km !== 0 ||
+    props.statistics.total_time_increase_minutes !== 0
+  )
+})
+
 const affectedPercent = computed(() => {
   if (!props.statistics || props.statistics.total_routes === 0) return 0
   return ((props.statistics.affected_routes / props.statistics.total_routes) * 100).toFixed(1)
@@ -164,6 +172,23 @@ function formatWithSign(value: number, decimals: number = 2): string {
             <span class="stat-value"
               >{{ formatWithSign(statistics.max_co2_increase_grams, 0) }} g</span
             >
+          </div>
+        </div>
+
+        <!-- Total system impact (elastic demand) -->
+        <div v-if="hasElasticTotals" class="stat-group">
+          <div class="stat-group-label">System-level total</div>
+          <div class="stat-row">
+            <span class="stat-label">Distance:</span>
+            <span class="stat-value">{{ formatWithSign(statistics.total_distance_increase_km, 2) }} km</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Time:</span>
+            <span class="stat-value">{{ formatWithSign(statistics.total_time_increase_minutes, 1) }} min</span>
+          </div>
+          <div v-if="statistics.total_co2_increase_grams !== undefined" class="stat-row">
+            <span class="stat-label">CO₂:</span>
+            <span class="stat-value">{{ formatWithSign(statistics.total_co2_increase_grams / 1000, 2) }} kg</span>
           </div>
         </div>
 
