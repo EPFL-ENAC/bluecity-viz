@@ -33,3 +33,5 @@ processing/**/*.pmtiles
 processing/**/*.graphml
 
 processing/**/BlueCity_Demo2/**
+processing/**/*/*.pbf
+processing/traffic-analysis/cache/
