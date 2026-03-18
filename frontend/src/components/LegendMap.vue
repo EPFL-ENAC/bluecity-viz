@@ -5,6 +5,8 @@ import type { MapLayerConfig } from '@/config/layerTypes'
 import { type LayerSpecification } from 'maplibre-gl'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { useCVRPStore, getVehicleColor } from '@/stores/cvrp'
+import { interpolateViridis } from 'd3-scale-chromatic'
 
 type LegendColor = {
   color: string
@@ -18,6 +20,7 @@ const props = defineProps<{
 
 const store = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
+const cvrpStore = useCVRPStore()
 
 /**
  * Generate legend colors for a given layer's paint property.
@@ -131,7 +134,7 @@ const trafficLegend = computed(() => {
   const min = trafficStore.minValue
   const max = trafficStore.maxValue
 
-  if (mode === 'none' || !scale) {
+  if (!trafficStore.isOpen || mode === 'none' || !scale) {
     return null
   }
 
@@ -300,11 +303,54 @@ const trafficLegend = computed(() => {
   }
 })
 
+// Generate CVRP legend
+const cvrpLegend = computed(() => {
+  if (!cvrpStore.isOpen || !cvrpStore.hasResult || !cvrpStore.lastResult) return null
+
+  if (cvrpStore.visualizationMode === 'heatmap') {
+    const steps = 40
+    const max = cvrpStore.edgeLoadMax
+    const colors: LegendColor[] = []
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1)
+      const value = max * (1 - t)
+      const hex = interpolateViridis(1 - t)
+      colors.push({ color: hex, label: value >= 1000 ? `${(value / 1000).toFixed(1)}k` : Math.round(value).toString() })
+    }
+    return {
+      label: 'Edge Load',
+      unit: `Total load (${cvrpStore.lastResult.load_unit})`,
+      colors,
+      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      isCategorical: false,
+      showZero: false,
+    }
+  }
+
+  // Routes mode: one color swatch per vehicle (simple swatches, no MapLibre filter checkboxes)
+  const nRoutes = cvrpStore.lastResult.n_routes
+  const colors: LegendColor[] = Array.from({ length: nRoutes }, (_, i) => {
+    const [r, g, b] = getVehicleColor(i)
+    return { color: `rgb(${r},${g},${b})`, label: `Vehicle ${i + 1}` }
+  })
+  return {
+    label: 'Vehicle Routes',
+    unit: `${nRoutes} vehicle${nRoutes !== 1 ? 's' : ''}`,
+    colors,
+    isSwatches: true,
+    isCategorical: false,
+    gradient: undefined,
+  }
+})
+
 // Combine MapLibre and traffic legends
 const allLegends = computed(() => {
   const legends = [...generatedLayersWithColors.value]
   if (trafficLegend.value) {
     legends.push(trafficLegend.value as any)
+  }
+  if (cvrpLegend.value) {
+    legends.push(cvrpLegend.value as any)
   }
   return legends
 })
@@ -356,7 +402,7 @@ const shouldShowLegend = computed(() => {
           </h5>
           <div v-if="layer.unit" class="layer-legend-unit">{{ layer.unit }}</div>
         </div>
-        <!-- Categorical Color Display with Checkboxes -->
+        <!-- Categorical Color Display with Checkboxes (MapLibre layers) -->
         <div v-if="layer?.isCategorical" class="categorical-legend">
           <div v-for="item in layer.colors" :key="item.label" class="legend-item">
             <v-checkbox
@@ -379,6 +425,13 @@ const shouldShowLegend = computed(() => {
                 </div>
               </template>
             </v-checkbox>
+          </div>
+        </div>
+        <!-- Simple color swatches (no MapLibre filter, e.g. CVRP vehicles) -->
+        <div v-else-if="layer?.isSwatches" class="categorical-legend">
+          <div v-for="item in layer.colors" :key="item.label" class="legend-item swatch-item">
+            <div class="color-box" :style="{ backgroundColor: item.color }"></div>
+            <div class="label text-body-2">{{ item.label }}</div>
           </div>
         </div>
         <!-- Continuous Color Ramp -->
@@ -536,6 +589,10 @@ const shouldShowLegend = computed(() => {
 
 .legend-checkbox {
   width: 100%;
+}
+
+.swatch-item {
+  padding: 1px 0;
 }
 
 .gradient-ramp {

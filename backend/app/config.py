@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     geojson_path: str = "data/lausanne.geojson"
     default_weight: str = "travel_time"
 
+    # CVRP settings
+    # Directory containing *_final_clustered_centroids.csv files.
+    cvrp_centroids_dir: str = "data"
+
     # API settings
     api_v1_prefix: str = "/api/v1"
 
