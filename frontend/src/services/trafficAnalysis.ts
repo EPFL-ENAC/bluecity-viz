@@ -120,7 +120,7 @@ export interface TimingStats {
 
 export async function recalculateRoutes(
   edgeModifications: EdgeModification[],
-  options?: { useCongestionModel?: boolean; congestionIterations?: number }
+  options?: { useCongestionModel?: boolean; congestionIterations?: number; elasticDemand?: boolean }
 ): Promise<{
   applied_modifications: EdgeModification[]
   original_edge_usage: EdgeUsageStats[]
@@ -139,6 +139,7 @@ export async function recalculateRoutes(
       include_geometry: true,
       use_congestion: options?.useCongestionModel ?? false,
       congestion_iterations: options?.congestionIterations ?? 1,
+      resample_destinations: options?.elasticDemand ?? false,
     })
   })
   if (!response.ok) {

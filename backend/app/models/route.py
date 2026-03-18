@@ -93,6 +93,8 @@ class RecalculateRequest(BaseModel):
         description="Use iterative congestion-aware routing on modified graph")
     congestion_iterations: int = Field(default=1, ge=1, le=5,
         description="Number of volume→speed→reroute iterations (ignored if use_congestion=False)")
+    resample_destinations: bool = Field(default=False,
+        description="Resample trip destinations using travel times on the modified graph (elastic demand)")
 
 
 class RouteComparison(BaseModel):
@@ -199,6 +201,7 @@ class TimingStats(BaseModel):
     cache_lookup_ms: float = Field(..., description="Original route lookup or computation")
     graph_copy_ms: float = Field(..., description="Graph deep-copy")
     apply_modifications_ms: float = Field(..., description="Applying edge modifications")
+    od_resampling_ms: Optional[float] = Field(None, description="OD destination resampling (elastic demand mode only)")
     affected_routes_ms: Optional[float] = Field(None, description="Affected-route detection (targeted BC mode only)")
     route_calculation_ms: float = Field(..., description="New route computation on modified graph")
     impact_stats_ms: float = Field(..., description="Impact statistics computation")

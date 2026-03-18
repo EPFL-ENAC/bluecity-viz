@@ -17,6 +17,7 @@ import osmnx as ox
 
 from app.models.route import (
     EdgeModification,
+    ImpactStatistics,
     NodePair,
     RecalculateResponse,
     Route,
@@ -65,6 +66,8 @@ class GraphService:
         self._route_edge_index: dict = {}
         self._edge_bc_cache: dict = {}
         self._bc_sample_nodes: list = []
+        self.od_nodes = None  # pd.Series {NX node ID → weight} — candidate pool for resampling
+        self.sampling_config = None
 
         if graph_path:
             self.load_graph(graph_path)
@@ -148,9 +151,10 @@ class GraphService:
         if sampling_method == "research":
             from app.services.node_sampling_service import SamplingConfig, generate_research_based_pairs
             config = sampling_config or SamplingConfig()
+            self.sampling_config = config
             print(f"[STARTUP] Using research-based sampling with {count} OD pairs")
-            self.default_pairs = generate_research_based_pairs(
-                self.graph, n_pairs=count, config=config, seed=seed
+            self.default_pairs, self.od_nodes = generate_research_based_pairs(
+                self.graph, n_pairs=count, config=config, seed=seed, return_nodes=True
             )
         else:
             print(f"[STARTUP] Using simple random sampling with {count} OD pairs")
@@ -321,6 +325,7 @@ class GraphService:
         weight: str = "travel_time",
         use_congestion: bool = False,
         congestion_iterations: int = 1,
+        resample_destinations: bool = False,
     ) -> RecalculateResponse:
         """Recalculate routes after applying edge modifications (remove or change speed).
 
@@ -359,8 +364,25 @@ class GraphService:
                 )
             )
 
+        resampled_pairs = None
         try:
-            if use_congestion:
+            if resample_destinations and self.od_nodes is not None and self.sampling_config is not None:
+                with timed("od_resampling", timing):
+                    from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
+                    from app.services.routing_engine import copy_weight_to_igraph
+                    from app.services.sampling.od_sampler import resample_od_destinations
+                    ig_mod, idx_maps_mod = networkx_to_igraph_with_indices(self.graph)
+                    copy_weight_to_igraph(self.graph, ig_mod, idx_maps_mod, "travel_time")
+                    resampled_pairs = resample_od_destinations(
+                        pairs, self.od_nodes, ig_mod, idx_maps_mod, self.sampling_config
+                    )
+
+                with timed("route_calculation", timing):
+                    all_new_routes = await self.calculate_routes(resampled_pairs, weight)
+                new_routes_by_index = {i: r for i, r in enumerate(all_new_routes)}
+                delta_bc = None
+                affected_indices = list(range(len(all_new_routes)))
+            elif use_congestion:
                 new_routes_by_index, delta_bc, affected_indices = (
                     await self._strategy_volume_model(
                         pairs, congestion_iterations, effective_modified_set, timing
@@ -381,10 +403,29 @@ class GraphService:
                 data.pop("duration_bc", None)
 
         with timed("impact_stats", timing):
-            impact_stats, _ = compute_impact_statistics(
-                original_routes, new_routes_by_index, affected_indices, applied,
-                compute_comparisons=False,
-            )
+            if resampled_pairs is not None:
+                # Elastic demand: per-route comparison is meaningless (destinations changed).
+                # Compare aggregate totals: sum of all new trips vs sum of all original trips.
+                orig_time_s = sum(r.travel_time or 0 for r in original_routes)
+                new_time_s = sum(r.travel_time or 0 for r in new_routes_by_index.values())
+                orig_dist_m = sum(r.distance or 0 for r in original_routes)
+                new_dist_m = sum(r.distance or 0 for r in new_routes_by_index.values())
+                orig_co2_g = sum(r.co2_emissions or 0 for r in original_routes)
+                new_co2_g = sum(r.co2_emissions or 0 for r in new_routes_by_index.values())
+                failed = sum(1 for r in new_routes_by_index.values() if not r.path)
+                impact_stats = ImpactStatistics(
+                    total_routes=len(original_routes),
+                    affected_routes=0,
+                    failed_routes=failed,
+                    total_distance_increase_km=(new_dist_m - orig_dist_m) / 1000,
+                    total_time_increase_minutes=(new_time_s - orig_time_s) / 60,
+                    total_co2_increase_grams=new_co2_g - orig_co2_g,
+                )
+            else:
+                impact_stats, _ = compute_impact_statistics(
+                    original_routes, new_routes_by_index, affected_indices, applied,
+                    compute_comparisons=False,
+                )
 
         with timed("edge_usage", timing):
             edge_index = self._route_edge_index.get(pairs_key, {})
@@ -422,6 +463,9 @@ class GraphService:
             cache_lookup_ms=round(timing.get("cache_lookup", 0), 1),
             graph_copy_ms=0.0,
             apply_modifications_ms=round(timing.get("apply_modifications", 0), 1),
+            od_resampling_ms=(
+                round(timing["od_resampling"], 1) if "od_resampling" in timing else None
+            ),
             affected_routes_ms=(
                 round(timing["affected_routes"], 1) if "affected_routes" in timing else None
             ),
@@ -434,6 +478,7 @@ class GraphService:
             "[TIMING] recalculate | "
             f"cache={ts.cache_lookup_ms}ms | "
             f"apply_mods={ts.apply_modifications_ms}ms | "
+            + (f"od_resample={ts.od_resampling_ms}ms | " if ts.od_resampling_ms else "")
             + (f"affected_routes={ts.affected_routes_ms}ms | " if ts.affected_routes_ms else "")
             + (f"delta_bc={timing.get('delta_bc', 0):.1f}ms | " if timing.get("delta_bc") else "")
             + f"route_calc={ts.route_calculation_ms}ms | "

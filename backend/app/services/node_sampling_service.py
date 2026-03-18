@@ -9,6 +9,7 @@ from app.services.sampling import (  # noqa: F401
     igraph_matrix_to_dict,
     load_edge_attributes,
     networkx_to_igraph_with_indices,
+    resample_od_destinations,
     sample_od_pairs,
     show_weight_info,
     travel_time_matrix_igraph,

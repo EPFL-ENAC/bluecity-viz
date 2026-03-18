@@ -18,6 +18,7 @@ from app.services.sampling.igraph_utils import (
 )
 from app.services.sampling.od_sampler import (
     generate_research_based_pairs,
+    resample_od_destinations,
     sample_od_pairs,
     show_weight_info,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "igraph_matrix_to_dict",
     "load_edge_attributes",
     "networkx_to_igraph_with_indices",
+    "resample_od_destinations",
     "sample_od_pairs",
     "show_weight_info",
     "travel_time_matrix_igraph",
