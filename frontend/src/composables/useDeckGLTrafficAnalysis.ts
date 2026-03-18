@@ -457,7 +457,11 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
               co2_total: (stat.co2_per_km ?? 0) * stat.count,
               co2_delta: (stat.co2_per_km ?? 0) * (stat.delta_frequency ?? 0),
               betweenness_centrality: stat.betweenness_centrality ?? 0,
-              delta_betweenness: stat.delta_betweenness ?? 0
+              delta_betweenness: stat.delta_betweenness ?? 0,
+              delta_relative: (() => {
+                const origFreq = stat.frequency - (stat.delta_frequency ?? 0)
+                return origFreq > 0.0001 ? ((stat.delta_frequency ?? 0) / origFreq) * 100 : 0
+              })()
             }
           : null
       })
@@ -471,6 +475,7 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
       co2_delta: number
       betweenness_centrality: number
       delta_betweenness: number
+      delta_relative: number
     })[]
 
     // Apply bus route filter if active
@@ -516,6 +521,8 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
           value = d.betweenness_centrality
         } else if (activeMode === 'betweenness_delta') {
           value = d.delta_betweenness
+        } else if (activeMode === 'delta_relative') {
+          value = d.delta_relative
         } else {
           value = d.frequency
         }

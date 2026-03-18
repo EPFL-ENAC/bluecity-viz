@@ -26,7 +26,7 @@ export interface TrafficAnalysisState {
     delta_betweenness?: number
   }>
   impactStatistics: any | null
-  activeVisualization: 'none' | 'frequency' | 'delta' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
+  activeVisualization: 'none' | 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
 }
 
 // Investigation interface
