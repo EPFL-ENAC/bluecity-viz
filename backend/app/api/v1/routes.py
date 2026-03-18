@@ -130,8 +130,8 @@ async def generate_random_pairs(request: RandomPairsRequest):
 
         if request.sampling_method == "research":
             from app.services.node_sampling_service import (
-              SamplingConfig,
-              generate_research_based_pairs,
+                SamplingConfig,
+                generate_research_based_pairs,
             )
 
             config = request.sampling_config or SamplingConfig()
@@ -245,15 +245,18 @@ async def get_habitat_geojson():
             length = float(data.get("length", 1.0) or 1.0)
             habitat = float(data.get("habitat_area_m2", 0.0) or 0.0)
             density = habitat / length if length > 0 else 0.0
-            features.append({
-                "type": "Feature",
-                "geometry": {"type": "LineString", "coordinates": coords},
-                "properties": {
-                    "u": int(u),
-                    "v": int(v),
-                    "habitat_density_m2_per_m": density,
-                },
-            })
+            if habitat > 0:
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "LineString", "coordinates": coords},
+                        "properties": {
+                            "u": int(u),
+                            "v": int(v),
+                            "habitat_density_m2_per_m": density,
+                        },
+                    }
+                )
         return {"type": "FeatureCollection", "features": features}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
