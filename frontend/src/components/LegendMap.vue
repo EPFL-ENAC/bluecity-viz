@@ -344,8 +344,8 @@ const cvrpLegend = computed(() => {
 })
 
 // Combine MapLibre and traffic legends
-const allLegends = computed(() => {
-  const legends = [...generatedLayersWithColors.value]
+const allLegends = computed<Record<string, any>[]>(() => {
+  const legends: Record<string, any>[] = [...generatedLayersWithColors.value]
   if (trafficLegend.value) {
     legends.push(trafficLegend.value as any)
   }
