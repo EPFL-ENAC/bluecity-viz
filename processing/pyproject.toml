@@ -19,6 +19,7 @@ dependencies = [
     "rio-vrt>=0.3.1",
     "tqdm>=4.67.3",
     "contextily>=1.7.0",
+    "fiona>=1.9.0",
 ]
 
 [project.optional-dependencies]
