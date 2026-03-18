@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { mdiChevronDown, mdiChevronRight } from '@mdi/js'
 
 export interface ImpactStats {
@@ -22,14 +22,22 @@ export interface ImpactStats {
 
 interface Props {
   statistics: ImpactStats | null
+  elasticDemand?: boolean
 }
 
 const props = defineProps<Props>()
 
 const isExpanded = ref(false)
 
+// Auto-expand when new statistics arrive
+watch(
+  () => props.statistics,
+  (val) => { if (val) isExpanded.value = true }
+)
+
+// Inelastic: per-route comparison, affected_routes > 0
 const hasImpact = computed(() => {
-  return props.statistics && props.statistics.affected_routes > 0
+  return !props.elasticDemand && props.statistics && props.statistics.affected_routes > 0
 })
 
 const affectedPercent = computed(() => {
@@ -45,6 +53,7 @@ function formatWithSign(value: number, decimals: number = 2): string {
   const formatted = value.toFixed(decimals)
   return value > 0 ? `+${formatted}` : formatted
 }
+
 </script>
 
 <template>
@@ -68,7 +77,7 @@ function formatWithSign(value: number, decimals: number = 2): string {
             <span class="stat-label">Total Routes:</span>
             <span class="stat-value">{{ statistics.total_routes }}</span>
           </div>
-          <div class="stat-row">
+          <div v-if="!elasticDemand" class="stat-row">
             <span class="stat-label">Affected:</span>
             <span class="stat-value">
               {{ statistics.affected_routes }} ({{ affectedPercent }}%)
@@ -80,7 +89,7 @@ function formatWithSign(value: number, decimals: number = 2): string {
           </div>
         </div>
 
-        <!-- Total Impact -->
+        <!-- Total Impact (inelastic demand) -->
         <div v-if="hasImpact" class="stat-group">
           <div class="stat-group-label">Total Impact</div>
           <div class="stat-row">
@@ -103,7 +112,7 @@ function formatWithSign(value: number, decimals: number = 2): string {
           </div>
         </div>
 
-        <!-- Average Impact -->
+        <!-- Average Impact (inelastic demand) -->
         <div v-if="hasImpact" class="stat-group">
           <div class="stat-group-label">Average (per affected)</div>
           <div class="stat-row">
@@ -135,7 +144,7 @@ function formatWithSign(value: number, decimals: number = 2): string {
           </div>
         </div>
 
-        <!-- Maximum Impact -->
+        <!-- Maximum Impact (inelastic demand) -->
         <div v-if="hasImpact" class="stat-group">
           <div class="stat-group-label">Maximum (worst case)</div>
           <div class="stat-row">
@@ -158,8 +167,8 @@ function formatWithSign(value: number, decimals: number = 2): string {
           </div>
         </div>
 
-        <!-- No impact message -->
-        <div v-if="!hasImpact && statistics.affected_routes === 0" class="text-center py-2">
+        <!-- No impact message (inelastic only) -->
+        <div v-if="!elasticDemand && !hasImpact && statistics.affected_routes === 0" class="text-center py-2">
           <span class="text-caption text-medium-emphasis">No routes affected</span>
         </div>
       </div>
@@ -169,7 +178,7 @@ function formatWithSign(value: number, decimals: number = 2): string {
 
 <style scoped>
 .impact-statistics {
-  border-bottom: 1px solid #e0e0e0;
+  /* no border-bottom: now a standalone floating panel */
 }
 
 .section-header {
@@ -208,6 +217,7 @@ function formatWithSign(value: number, decimals: number = 2): string {
   border-bottom: none;
 }
 
+
 .stat-group-label {
   font-size: 0.625rem;
   font-weight: 500;
@@ -232,10 +242,12 @@ function formatWithSign(value: number, decimals: number = 2): string {
 
 .stat-value {
   font-weight: 500;
+  font-size: 0.8rem;
   color: rgb(var(--v-theme-on-surface));
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
 
 .stat-secondary {
   font-size: 0.688rem;
