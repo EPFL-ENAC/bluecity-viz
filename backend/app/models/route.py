@@ -238,6 +238,7 @@ class GraphEdge(BaseModel):
     travel_time: Optional[float] = Field(None, description="Travel time in seconds")
     bus_route_count: int = Field(0, description="Number of bus lines using this edge")
     bus_route_refs: str = Field("", description="Comma-separated bus route references")
+    habitat_area_m2: float = Field(0.0, description="Total habitat area within 10m buffer (m²)")
 
 
 class GraphData(BaseModel):
