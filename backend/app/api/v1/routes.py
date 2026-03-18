@@ -1,9 +1,13 @@
 """Route calculation endpoints."""
 
+import logging
+import traceback
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from app.models.route import (
     GraphData,
@@ -90,6 +94,7 @@ async def recalculate_routes(request: RecalculateRequest):
         )
         return result
     except Exception as e:
+        logger.error("Recalculate error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
