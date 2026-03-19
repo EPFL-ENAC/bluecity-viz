@@ -4,7 +4,6 @@ from typing import Dict, List, Tuple
 
 import igraph as ig
 import networkx as nx
-import osmnx as ox
 
 
 def networkx_to_igraph_with_indices(
@@ -17,8 +16,9 @@ def networkx_to_igraph_with_indices(
             node_nx_to_ig, node_ig_to_nx  — node ID ↔ igraph vertex index
             edge_nx_to_ig, edge_ig_to_nx  — (u, v, key) ↔ igraph edge tuple
     """
-    e = ox.graph_to_gdfs(g, nodes=False, edges=True)
-    nx.set_edge_attributes(g, {idx: idx for idx in e.index}, name="nx_edge_id")
+    nx.set_edge_attributes(
+        g, {(u, v, k): (u, v, k) for u, v, k in g.edges(keys=True)}, name="nx_edge_id"
+    )
     h = ig.Graph.from_networkx(g)
 
     idx_maps = {
