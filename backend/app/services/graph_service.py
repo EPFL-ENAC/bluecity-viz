@@ -180,6 +180,19 @@ class GraphService:
         )
         logging.info("[STARTUP] CO2/km congestion update complete")
 
+        corrupt = [
+            (u, v, k, type(data).__name__)
+            for u, v, k, data in self.graph.edges(keys=True, data=True)
+            if not isinstance(data, dict)
+        ]
+        if corrupt:
+            logging.error(
+                f"[STARTUP] Graph integrity check FAILED: {len(corrupt)} corrupt edge(s) — "
+                f"{corrupt[:5]}"
+            )
+        else:
+            logging.info(f"[STARTUP] Graph integrity check passed ({self.graph.number_of_edges()} edges)")
+
     def generate_random_pairs(
         self, count: int = 100, seed: Optional[int] = None, radius_km: float = 2.0
     ) -> List[NodePair]:
@@ -400,7 +413,13 @@ class GraphService:
                 removed_edges, modified_edges
             )
             for u, v, k, data in self.graph.edges(keys=True, data=True):
-                data.pop("duration_bc", None)
+                if isinstance(data, dict):
+                    data.pop("duration_bc", None)
+                else:
+                    logger.error(
+                        f"Graph corruption detected: edge ({u},{v},{k}) data is "
+                        f"{type(data).__name__!r} instead of dict — value={data!r}"
+                    )
 
         with timed("impact_stats", timing):
             if resampled_pairs is not None:
