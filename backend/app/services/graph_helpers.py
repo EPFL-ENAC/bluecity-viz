@@ -250,38 +250,34 @@ def apply_edge_modifications(
             effective_modified_set.add((mod.u, mod.v))
 
         elif mod.action == "modify" and mod.speed_kph is not None:
-            edge_data_full = graph.get_edge_data(mod.u, mod.v)
-            key = 0
-            edge_data = (
-                edge_data_full[key]
-                if isinstance(edge_data_full, dict) and 0 in edge_data_full
-                else edge_data_full
-            )
-            if abs(edge_data.get("speed_kph", 0) - mod.speed_kph) < 0.1:
-                continue
+            keys = list(graph[mod.u][mod.v].keys())
+            for key in keys:
+                edge_data = graph[mod.u][mod.v][key]
+                if abs(edge_data.get("speed_kph", 0) - mod.speed_kph) < 0.1:
+                    continue
 
-            modified_edges.append((
-                mod.u, mod.v, key,
-                edge_data.get("speed_kph"),
-                edge_data.get("travel_time"),
-                edge_data.get("co2_g"),
-            ))
-            length = edge_data.get("length", 0)
-            edge_data["speed_kph"] = mod.speed_kph
-            edge_data["travel_time"] = (
-                (length / 1000) / (mod.speed_kph / 3600) if mod.speed_kph > 0 else 0
-            )
-            elev_gain = edge_data.get("elevation_gain", 0)
-            edge_data["co2_g"] = CO2Calculator.calculate_edge_co2(
-                length=length, speed_kph=mod.speed_kph, elevation_gain=elev_gain
-            )
-            edge_metrics_cache[(mod.u, mod.v)] = (
-                edge_data["travel_time"], length, elev_gain, edge_data["co2_g"]
-            )
-            length_km = length / 1000
-            edge_co2_cache[(mod.u, mod.v)] = (
-                edge_data["co2_g"] / length_km if length_km > 0 else 0.0
-            )
+                modified_edges.append((
+                    mod.u, mod.v, key,
+                    edge_data.get("speed_kph"),
+                    edge_data.get("travel_time"),
+                    edge_data.get("co2_g"),
+                ))
+                length = edge_data.get("length", 0)
+                edge_data["speed_kph"] = mod.speed_kph
+                edge_data["travel_time"] = (
+                    (length / 1000) / (mod.speed_kph / 3600) if mod.speed_kph > 0 else 0
+                )
+                elev_gain = edge_data.get("elevation_gain", 0)
+                edge_data["co2_g"] = CO2Calculator.calculate_edge_co2(
+                    length=length, speed_kph=mod.speed_kph, elevation_gain=elev_gain
+                )
+                edge_metrics_cache[(mod.u, mod.v)] = (
+                    edge_data["travel_time"], length, elev_gain, edge_data["co2_g"]
+                )
+                length_km = length / 1000
+                edge_co2_cache[(mod.u, mod.v)] = (
+                    edge_data["co2_g"] / length_km if length_km > 0 else 0.0
+                )
             applied.append(mod)
             effective_modified_set.add((mod.u, mod.v))
 
