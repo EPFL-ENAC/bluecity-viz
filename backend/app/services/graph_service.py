@@ -7,11 +7,12 @@ Delegates to specialised modules:
   sampling/       — research-based OD pair generation
 """
 
+import asyncio
 import logging
+import random
 import time
 from pathlib import Path
 from typing import List, Optional
-import random
 
 import osmnx as ox
 
@@ -68,6 +69,11 @@ class GraphService:
         self._bc_sample_nodes: list = []
         self.od_nodes = None  # pd.Series {NX node ID → weight} — candidate pool for resampling
         self.sampling_config = None
+        # Serialises recalculate_with_modifications: it mutates self.graph and the
+        # edge caches in place and rolls them back, with awaits in between. Without
+        # this lock, concurrent requests interleave on the single event loop and
+        # corrupt the shared NetworkX adjacency structure (parallel-edge data races).
+        self._recalc_lock = asyncio.Lock()
 
         if graph_path:
             self.load_graph(graph_path)
@@ -149,7 +155,10 @@ class GraphService:
             raise RuntimeError("Graph not loaded")
 
         if sampling_method == "research":
-            from app.services.node_sampling_service import SamplingConfig, generate_research_based_pairs
+            from app.services.node_sampling_service import (
+                SamplingConfig,
+                generate_research_based_pairs,
+            )
             config = sampling_config or SamplingConfig()
             self.sampling_config = config
             print(f"[STARTUP] Using research-based sampling with {count} OD pairs")
@@ -340,6 +349,33 @@ class GraphService:
         congestion_iterations: int = 1,
         resample_destinations: bool = False,
     ) -> RecalculateResponse:
+        """Serialise recalculation to protect the shared in-place-mutated graph.
+
+        The actual work mutates self.graph and the edge caches and rolls them back,
+        with awaits in between. Holding _recalc_lock for the whole operation prevents
+        concurrent requests from interleaving on the single event loop and corrupting
+        the shared NetworkX adjacency structure. The critical section is ~75 ms, so
+        serialisation is imperceptible to users.
+        """
+        async with self._recalc_lock:
+            return await self._recalculate_with_modifications_locked(
+                pairs=pairs,
+                edge_modifications=edge_modifications,
+                weight=weight,
+                use_congestion=use_congestion,
+                congestion_iterations=congestion_iterations,
+                resample_destinations=resample_destinations,
+            )
+
+    async def _recalculate_with_modifications_locked(
+        self,
+        pairs: Optional[List[NodePair]] = None,
+        edge_modifications: List[EdgeModification] = None,
+        weight: str = "travel_time",
+        use_congestion: bool = False,
+        congestion_iterations: int = 1,
+        resample_destinations: bool = False,
+    ) -> RecalculateResponse:
         """Recalculate routes after applying edge modifications (remove or change speed).
 
         Selects one of two strategies:
@@ -381,8 +417,8 @@ class GraphService:
         try:
             if resample_destinations and self.od_nodes is not None and self.sampling_config is not None:
                 with timed("od_resampling", timing):
-                    from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
                     from app.services.routing_engine import copy_weight_to_igraph
+                    from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
                     from app.services.sampling.od_sampler import resample_od_destinations
                     ig_mod, idx_maps_mod = networkx_to_igraph_with_indices(self.graph)
                     copy_weight_to_igraph(self.graph, ig_mod, idx_maps_mod, "travel_time")
