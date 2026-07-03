@@ -1,0 +1,7 @@
+data/cache/
+data/index_mapping.csv
+outputs/
+.ipynb_checkpoints/
+__pycache__/
+.venv/
+.claude/
