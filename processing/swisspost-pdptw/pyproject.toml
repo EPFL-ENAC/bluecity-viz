@@ -24,7 +24,7 @@ dependencies = [
     # Plotting / notebooks
     "matplotlib>=3.8.0",
     "folium>=0.15.0",
-    "jupyter>=1.0.0",
+    "marimo>=0.10",
 ]
 
 [build-system]

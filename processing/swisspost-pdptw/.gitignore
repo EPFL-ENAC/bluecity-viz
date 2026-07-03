@@ -1,6 +1,7 @@
 data/cache/
 data/index_mapping.csv
 outputs/
+__marimo__/
 .ipynb_checkpoints/
 __pycache__/
 .venv/

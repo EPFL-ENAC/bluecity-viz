@@ -1,25 +1,27 @@
-PY := uv run python
-SRC := $(wildcard notebooks/src/*.py)
-NB  := $(patsubst notebooks/src/%.py,notebooks/%.ipynb,$(SRC))
+NBS := $(sort $(wildcard notebooks/0*.py))
 
-.PHONY: all sync notebooks run-all clean
+.PHONY: all sync edit run-all check clean
 
-all: notebooks
+all: check
 
 sync:
 	uv sync
 
-# Generate .ipynb from py:percent sources
-notebooks: $(NB)
+# Open a notebook in the marimo editor: make edit NB=04  (default: first one)
+NB ?= 01
+edit:
+	uv run marimo edit notebooks/$(NB)_*.py
 
-notebooks/%.ipynb: notebooks/src/%.py
-	$(PY) -m sppdptw.nb_convert $< $@
-
-# Execute every notebook in order (fails loudly on any error)
-run-all: notebooks
-	for nb in notebooks/0*.ipynb; do \
-		uv run jupyter nbconvert --to notebook --execute --inplace $$nb || exit 1; \
+# Execute every notebook top-to-bottom as a script (fails loudly on any error)
+run-all:
+	for nb in $(NBS); do \
+		echo "=== $$nb ==="; \
+		uv run python $$nb || exit 1; \
 	done
 
+# Validate marimo format / dataflow
+check:
+	uv run marimo check $(NBS)
+
 clean:
-	rm -rf outputs data/cache notebooks/*.ipynb
+	rm -rf outputs data/cache notebooks/__marimo__

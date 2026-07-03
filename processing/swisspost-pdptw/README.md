@@ -24,20 +24,22 @@ They are not GPS-measured reality, so a clean decomposition of the divergence is
 | 04 | `04_od_matrix_comparison` | Is the OSM↔SwissPost matrix gap a uniform factor k, or structural? |
 | 05 | `05_model_faithfulness` | How much of the tour-level gap does each modeling difference explain? Final verdict. |
 
-Each notebook is generated from a `notebooks/src/*.py` source file (py:percent format — easier to
-review and diff). Regenerate the `.ipynb` files with:
-
-```bash
-make notebooks
-```
+The notebooks are [marimo](https://marimo.io) notebooks — pure Python files (clean git diffs,
+no hidden state, reactive execution). The config inputs (e.g. the OSM matrix path in
+notebook 04) are interactive UI elements.
 
 ## Setup
 
 ```bash
 uv sync
-make notebooks       # generate .ipynb from notebooks/src/*.py
-uv run jupyter lab
+make edit NB=01      # open a notebook in the marimo editor
+make run-all         # execute all notebooks top-to-bottom as scripts
+make check           # validate marimo format / dataflow
 ```
+
+Note on reactivity: notebook 04's first run downloads the Bern OSM graph (minutes) and
+notebook 05 runs ~28 PyVRP solves (~90 s) — both are disk-cached (`data/cache/`,
+`notebooks/__marimo__/`), so re-runs and reactive updates are instant.
 
 The notebooks read the data directly from `../../SWISS POST DATA/DATA/` (checked into this repo).
 The Bern-area OSM graph used by notebook 04 is downloaded once (network required) and cached in
