@@ -18,6 +18,7 @@ They are not GPS-measured reality, so a clean decomposition of the divergence is
 
 | # | Notebook | Question it answers |
 |---|----------|---------------------|
+| 00 | `00_executive_summary` | **Client-facing summary**: the whole story in one document, computed live, with "how to read this" notes. Export it with `make export` → `outputs/executive_summary.html` (single self-contained file, no code shown). |
 | 01 | `01_pdptw_methodology` | How does the PDPTW model work, mathematically and in code? What does the solver guarantee? |
 | 02 | `02_data_characterization` | What exactly is in the Swiss Post data? What units/properties does the matrix have? What do the extraction assumptions/bugs change? |
 | 03 | `03_swisspost_solution_analysis` | What are Swiss Post's benchmark values, precisely? (tour decomposition: drive + service + wait) |
@@ -35,6 +36,7 @@ uv sync
 make edit NB=01      # open a notebook in the marimo editor
 make run-all         # execute all notebooks top-to-bottom as scripts
 make check           # validate marimo format / dataflow
+make export          # render the executive summary to outputs/executive_summary.html
 ```
 
 Note on reactivity: notebook 04's first run downloads the Bern OSM graph (minutes) and

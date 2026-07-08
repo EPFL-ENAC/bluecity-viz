@@ -1,6 +1,6 @@
 NBS := $(sort $(wildcard notebooks/0*.py))
 
-.PHONY: all sync edit run-all check clean
+.PHONY: all sync edit run-all check export clean
 
 all: check
 
@@ -22,6 +22,11 @@ run-all:
 # Validate marimo format / dataflow
 check:
 	uv run marimo check $(NBS)
+
+# Client-facing deliverable: the executive summary as one self-contained HTML file
+export:
+	uv run marimo export html --no-include-code \
+		notebooks/00_executive_summary.py -o outputs/executive_summary.html
 
 clean:
 	rm -rf outputs data/cache notebooks/__marimo__
