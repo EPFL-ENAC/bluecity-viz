@@ -92,9 +92,7 @@ def _process_centroids(
 
     gdf = gpd.GeoDataFrame(
         df,
-        geometry=df.apply(
-            lambda row: Point(row["centroid_lon"], row["centroid_lat"]), axis=1
-        ),
+        geometry=df.apply(lambda row: Point(row["centroid_lon"], row["centroid_lat"]), axis=1),
     )
     hull: Polygon = wkt.loads(LAUSANNE_HULL_WKT)
     filtered_gdf = gdf[gdf["geometry"].apply(lambda geom: geom.within(hull))].copy()
@@ -164,9 +162,7 @@ def _create_distance_matrix(
     unique_ig_nodes = list(set(node_df["node_ig"].tolist()))
     od_distance = g_ig.distances(unique_ig_nodes, unique_ig_nodes, weights="length")
 
-    inaccessible_indices = [
-        i for i, dist in enumerate(od_distance[0]) if dist == float("inf")
-    ]
+    inaccessible_indices = [i for i, dist in enumerate(od_distance[0]) if dist == float("inf")]
 
     return od_distance, inaccessible_indices
 
@@ -301,9 +297,7 @@ def _calculate_load_progression(routes: List[Dict], node_df: pd.DataFrame) -> Li
                     cumulative_load = 0
                 elif loc_idx != 0:
                     cumulative_load += demands.get(loc_idx, 0)
-                progression.append(
-                    {"location_idx": loc_idx, "cumulative_load": cumulative_load}
-                )
+                progression.append({"location_idx": loc_idx, "cumulative_load": cumulative_load})
 
             result.append(
                 {
@@ -380,9 +374,7 @@ def _route_on_graph(
                         )
                     else:
                         path_nx = [ig_to_nx[n] for n in path_ig]
-                        path_length = g_ig.distances(
-                            [from_ig], [to_ig], weights="length"
-                        )[0][0]
+                        path_length = g_ig.distances([from_ig], [to_ig], weights="length")[0][0]
                         successful += 1
                         graph_paths.append(
                             {
@@ -564,9 +556,7 @@ class CVRPService:
                 self._csv_paths[waste_type] = str(csv_file)
                 self._node_dfs[waste_type] = node_df
                 loaded += 1
-                logger.info(
-                    "Loaded %d client nodes for waste type %s", len(node_df), waste_type
-                )
+                logger.info("Loaded %d client nodes for waste type %s", len(node_df), waste_type)
             except Exception as exc:
                 logger.error("Failed to load centroids for %s: %s", waste_type, exc)
 
@@ -607,8 +597,7 @@ class CVRPService:
         waste_type = request.waste_type
         if waste_type not in self._node_dfs:
             raise ValueError(
-                f"Waste type '{waste_type}' not available. "
-                f"Available: {list(self._node_dfs.keys())}"
+                f"Waste type '{waste_type}' not available. Available: {list(self._node_dfs.keys())}"
             )
 
         t_start = time.perf_counter()
@@ -620,9 +609,9 @@ class CVRPService:
 
         # Use all pre-snapped centroids (base centroid_waste is count of centroids per node)
         node_df = self._node_dfs[waste_type].copy()
-        node_df["centroid_waste"] = (
-            node_df["centroid_waste"] * request.waste_per_centroid
-        ).astype(int)
+        node_df["centroid_waste"] = (node_df["centroid_waste"] * request.waste_per_centroid).astype(
+            int
+        )
         # Ensure minimum of 1
         node_df.loc[node_df["centroid_waste"] < 1, "centroid_waste"] = 1
 
@@ -656,9 +645,7 @@ class CVRPService:
         # We can reuse existing node mappings since we only change edge weights/removal
         # but nodes remain the same — just update node_ig from the new idx_maps
         node_df = node_df.copy()
-        node_df["node_ig"] = node_df["node"].map(
-            lambda n: idx_maps["node_nx_to_ig"].get(n, -1)
-        )
+        node_df["node_ig"] = node_df["node"].map(lambda n: idx_maps["node_nx_to_ig"].get(n, -1))
         # Remove nodes that couldn't be mapped (shouldn't happen, but be safe)
         node_df = node_df[node_df["node_ig"] >= 0].copy()
 
@@ -692,9 +679,7 @@ class CVRPService:
         )
 
         # Build route_segments for API response
-        route_segments = self._build_route_segments(
-            routing_result, load_progression, graph
-        )
+        route_segments = self._build_route_segments(routing_result, load_progression, graph)
 
         # Build edge_loads list for API response
         edge_loads = [
@@ -714,20 +699,22 @@ class CVRPService:
         }
 
     @staticmethod
-    def _get_edge_geometry_coords(
-        graph: nx.MultiDiGraph, u: int, v: int
-    ) -> list:
+    def _get_edge_geometry_coords(graph: nx.MultiDiGraph, u: int, v: int) -> list:
         """Return coordinate list for edge (u, v), using Shapely geometry if available."""
         edge_data = graph.get_edge_data(u, v)
         if edge_data is None:
-            return [[graph.nodes[u]["x"], graph.nodes[u]["y"]],
-                    [graph.nodes[v]["x"], graph.nodes[v]["y"]]]
+            return [
+                [graph.nodes[u]["x"], graph.nodes[u]["y"]],
+                [graph.nodes[v]["x"], graph.nodes[v]["y"]],
+            ]
         key = min(edge_data.keys())
         geom = edge_data[key].get("geometry")
         if geom is not None and hasattr(geom, "coords"):
             return [[lon, lat] for lon, lat in geom.coords]
-        return [[graph.nodes[u]["x"], graph.nodes[u]["y"]],
-                [graph.nodes[v]["x"], graph.nodes[v]["y"]]]
+        return [
+            [graph.nodes[u]["x"], graph.nodes[u]["y"]],
+            [graph.nodes[v]["x"], graph.nodes[v]["y"]],
+        ]
 
     @staticmethod
     def _build_route_segments(
@@ -758,9 +745,7 @@ class CVRPService:
                 edge_coords = CVRPService._get_edge_geometry_coords(graph, u, v)
                 coords.extend(edge_coords if i == 0 else edge_coords[1:])
 
-            load = segment_loads.get(
-                (gp["route_id"], gp["trip_id"], gp["segment_id"]), 0.0
-            )
+            load = segment_loads.get((gp["route_id"], gp["trip_id"], gp["segment_id"]), 0.0)
             segments.append(
                 CVRPRouteSegment(
                     route_id=gp["route_id"],

@@ -124,11 +124,7 @@ def calculate_edge_co2(graph, u: int, v: int) -> Optional[float]:
 
     edge_time = edge_data.get("travel_time", 0)
     edge_len = edge_data.get("length", 0)
-    speed_kph = (
-        (edge_len / 1000) / (edge_time / 3600)
-        if edge_time > 0 and edge_len > 0
-        else None
-    )
+    speed_kph = (edge_len / 1000) / (edge_time / 3600) if edge_time > 0 and edge_len > 0 else None
 
     edge_elev = 0.0
     if u in graph.nodes and v in graph.nodes:
@@ -176,9 +172,7 @@ def build_edge_usage_stats(
         if original_counts is not None:
             if (u, v) in original_counts:
                 delta_count = count - original_counts[(u, v)]
-                orig_freq = (
-                    original_counts[(u, v)] / total_routes if total_routes > 0 else 0
-                )
+                orig_freq = original_counts[(u, v)] / total_routes if total_routes > 0 else 0
                 delta_freq = freq - orig_freq
             else:
                 delta_count = count
@@ -256,12 +250,16 @@ def apply_edge_modifications(
                 if abs(edge_data.get("speed_kph", 0) - mod.speed_kph) < 0.1:
                     continue
 
-                modified_edges.append((
-                    mod.u, mod.v, key,
-                    edge_data.get("speed_kph"),
-                    edge_data.get("travel_time"),
-                    edge_data.get("co2_g"),
-                ))
+                modified_edges.append(
+                    (
+                        mod.u,
+                        mod.v,
+                        key,
+                        edge_data.get("speed_kph"),
+                        edge_data.get("travel_time"),
+                        edge_data.get("co2_g"),
+                    )
+                )
                 length = edge_data.get("length", 0)
                 edge_data["speed_kph"] = mod.speed_kph
                 edge_data["travel_time"] = (
@@ -272,7 +270,10 @@ def apply_edge_modifications(
                     length=length, speed_kph=mod.speed_kph, elevation_gain=elev_gain
                 )
                 edge_metrics_cache[(mod.u, mod.v)] = (
-                    edge_data["travel_time"], length, elev_gain, edge_data["co2_g"]
+                    edge_data["travel_time"],
+                    length,
+                    elev_gain,
+                    edge_data["co2_g"],
                 )
                 length_km = length / 1000
                 edge_co2_cache[(mod.u, mod.v)] = (
@@ -302,12 +303,13 @@ def restore_edge_modifications(
         ed["co2_g"] = orig_co2
         length = ed.get("length", 0.0)
         edge_metrics_cache[(u, v)] = (
-            orig_tt or 0.0, length, ed.get("elevation_gain", 0.0), orig_co2 or 0.0
+            orig_tt or 0.0,
+            length,
+            ed.get("elevation_gain", 0.0),
+            orig_co2 or 0.0,
         )
         length_km = length / 1000
-        edge_co2_cache[(u, v)] = (
-            (orig_co2 / length_km) if orig_co2 and length_km > 0 else 0.0
-        )
+        edge_co2_cache[(u, v)] = (orig_co2 / length_km) if orig_co2 and length_km > 0 else 0.0
 
 
 # ── Graph Serialization ───────────────────────────────────────────────────────
@@ -334,19 +336,21 @@ def get_edge_geometries(graph, limit: Optional[int] = None) -> List[dict]:
             else (str(name_raw) if name_raw else None)
         )
         highway_raw = data.get("highway", "Unknown")
-        edges.append({
-            "u": int(u),
-            "v": int(v),
-            "coordinates": coords,
-            "travel_time": data.get("travel_time"),
-            "length": data.get("length"),
-            "speed_kph": data.get("speed_kph"),
-            "name": name,
-            "highway": highway_raw[0] if isinstance(highway_raw, list) else highway_raw,
-            "bus_route_count": int(data.get("bus_route_count", 0) or 0),
-            "bus_route_refs": str(data.get("bus_route_refs", "") or ""),
-            "habitat_area_m2": float(data.get("habitat_area_m2", 0.0) or 0.0),
-        })
+        edges.append(
+            {
+                "u": int(u),
+                "v": int(v),
+                "coordinates": coords,
+                "travel_time": data.get("travel_time"),
+                "length": data.get("length"),
+                "speed_kph": data.get("speed_kph"),
+                "name": name,
+                "highway": highway_raw[0] if isinstance(highway_raw, list) else highway_raw,
+                "bus_route_count": int(data.get("bus_route_count", 0) or 0),
+                "bus_route_refs": str(data.get("bus_route_refs", "") or ""),
+                "habitat_area_m2": float(data.get("habitat_area_m2", 0.0) or 0.0),
+            }
+        )
     return edges
 
 
@@ -369,19 +373,21 @@ def get_graph_data(graph) -> GraphData:
             else (str(name_raw) if name_raw else None)
         )
         highway_raw = d.get("highway", "Unknown")
-        edges.append(GraphEdge(
-            u=u,
-            v=v,
-            geometry=PathGeometry(coordinates=coords),
-            name=name,
-            highway=(highway_raw[0] if isinstance(highway_raw, list) else highway_raw),
-            speed_kph=d.get("speed_kph"),
-            length=d.get("length"),
-            travel_time=d.get("travel_time"),
-            bus_route_count=int(d.get("bus_route_count", 0) or 0),
-            bus_route_refs=str(d.get("bus_route_refs", "") or ""),
-            habitat_area_m2=float(d.get("habitat_area_m2", 0.0) or 0.0),
-        ))
+        edges.append(
+            GraphEdge(
+                u=u,
+                v=v,
+                geometry=PathGeometry(coordinates=coords),
+                name=name,
+                highway=(highway_raw[0] if isinstance(highway_raw, list) else highway_raw),
+                speed_kph=d.get("speed_kph"),
+                length=d.get("length"),
+                travel_time=d.get("travel_time"),
+                bus_route_count=int(d.get("bus_route_count", 0) or 0),
+                bus_route_refs=str(d.get("bus_route_refs", "") or ""),
+                habitat_area_m2=float(d.get("habitat_area_m2", 0.0) or 0.0),
+            )
+        )
     return GraphData(
         edges=edges,
         node_count=len(graph.nodes),

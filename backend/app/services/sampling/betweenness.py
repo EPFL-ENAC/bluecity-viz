@@ -21,9 +21,7 @@ def load_edge_attributes(g: nx.MultiDiGraph) -> pd.DataFrame:
     length = pd.Series(nx.get_edge_attributes(g, "length"), name="length")
 
     lanes = nx.get_edge_attributes(g, "lanes")
-    lanes = pd.Series(
-        {idx: lanes.get(idx, 2) for idx in length.index}, name="lanes"
-    ).fillna(2)
+    lanes = pd.Series({idx: lanes.get(idx, 2) for idx in length.index}, name="lanes").fillna(2)
     lanes = lanes.apply(lambda v: v[0] if isinstance(v, list) else v).astype(int)
 
     speed_kph = pd.Series(nx.get_edge_attributes(g, "speed_kph"), name="speed_kph")
@@ -52,9 +50,7 @@ def assign_edge_weight(
         speed_kph_new = edge_attr["speed_kph"] / (
             1 + betweenness / edge_attr["lanes"] / betweenness_to_slowdown
         )
-        speed_reduction = (
-            (edge_attr["speed_kph"] - speed_kph_new) / edge_attr["speed_kph"] * 100
-        )
+        speed_reduction = (edge_attr["speed_kph"] - speed_kph_new) / edge_attr["speed_kph"] * 100
         logger.info(
             f"Speed reduction — Avg: {speed_reduction.mean():.1f}%  "
             f"Max: {speed_reduction.max():.1f}%"

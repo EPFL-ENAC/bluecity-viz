@@ -71,7 +71,7 @@ async def calculate_routes_igraph(
     else:
         t0 = time.time()
         h, idx_maps = networkx_to_igraph_with_indices(graph)
-        logger.info(f"Graph conversion: {(time.time()-t0):.2f}s")
+        logger.info(f"Graph conversion: {(time.time() - t0):.2f}s")
         if weight not in h.es.attributes():
             copy_weight_to_igraph(graph, h, idx_maps, weight)
 
@@ -115,28 +115,30 @@ async def calculate_routes_igraph(
                 if compute_metrics:
                     travel_time = distance = elevation_gain = co2 = 0.0
                     for u, v in zip(path_nx[:-1], path_nx[1:]):
-                        tt, dist, elev, co2_g = edge_metrics_cache.get(
-                            (u, v), (0.0, 0.0, 0.0, 0.0)
-                        )
+                        tt, dist, elev, co2_g = edge_metrics_cache.get((u, v), (0.0, 0.0, 0.0, 0.0))
                         travel_time += tt
                         distance += dist
                         elevation_gain += elev
                         co2 += co2_g
-                    all_routes.append(Route(
-                        origin=pair_obj.origin,
-                        destination=pair_obj.destination,
-                        path=path_nx,
-                        travel_time=travel_time,
-                        distance=distance,
-                        elevation_gain=(elevation_gain if elevation_gain > 0 else None),
-                        co2_emissions=co2,
-                    ))
+                    all_routes.append(
+                        Route(
+                            origin=pair_obj.origin,
+                            destination=pair_obj.destination,
+                            path=path_nx,
+                            travel_time=travel_time,
+                            distance=distance,
+                            elevation_gain=(elevation_gain if elevation_gain > 0 else None),
+                            co2_emissions=co2,
+                        )
+                    )
                 else:
-                    all_routes.append(Route(
-                        origin=pair_obj.origin,
-                        destination=pair_obj.destination,
-                        path=path_nx,
-                    ))
+                    all_routes.append(
+                        Route(
+                            origin=pair_obj.origin,
+                            destination=pair_obj.destination,
+                            path=path_nx,
+                        )
+                    )
 
         except Exception as e:
             logger.warning(f"Failed to route from origin {origin_nx}: {e}")
@@ -148,6 +150,6 @@ async def calculate_routes_igraph(
     if total_time > 0:
         logger.info(
             f"Calculated {len(all_routes)} routes in {total_time:.2f}s "
-            f"({len(all_routes)/total_time:.0f} routes/sec, igraph: {t_routing_pure:.2f}s)"
+            f"({len(all_routes) / total_time:.0f} routes/sec, igraph: {t_routing_pure:.2f}s)"
         )
     return all_routes

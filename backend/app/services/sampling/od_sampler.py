@@ -1,7 +1,7 @@
 """OD pair sampling using lognormal travel-time weighting."""
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import networkx as nx
 import numpy as np
@@ -14,17 +14,14 @@ logger = logging.getLogger(__name__)
 def show_weight_info(lognorm_mu: float, lognorm_sigma: float) -> None:
     """Log relative destination weights at representative travel times."""
     max_time = np.exp(lognorm_mu - lognorm_sigma**2)
-    logger.info(
-        f"Maximum weight at {max_time:.0f} s ({max_time/60:.1f} min) travel time"
-    )
+    logger.info(f"Maximum weight at {max_time:.0f} s ({max_time / 60:.1f} min) travel time")
     times = [1, 2, 5, 10, 30, 60]
     weights = lognorm.pdf(
         [max_time] + [t * 60 for t in times], s=lognorm_sigma, scale=np.exp(lognorm_mu)
     )
     weights = weights / weights[0]
     logger.info(
-        "Relative weights: "
-        + ", ".join(f"{t} min: {w:.2f}" for t, w in zip(times, weights[1:]))
+        "Relative weights: " + ", ".join(f"{t} min: {w:.2f}" for t, w in zip(times, weights[1:]))
     )
 
 
@@ -49,9 +46,7 @@ def sample_od_pairs(
         n_samples: Number of origins to sample (each gets n_samples destinations)
         t_matrix_dict: {origin_nx_id: {dest_nx_id: travel_time_s}}
     """
-    origins = list(
-        nodes.sample(n_samples, random_state=rng, replace=True, weights=nodes).index
-    )
+    origins = list(nodes.sample(n_samples, random_state=rng, replace=True, weights=nodes).index)
 
     od_pairs: Dict[int, List[int]] = {}
     failed_origins = []
@@ -63,9 +58,7 @@ def sample_od_pairs(
 
         try:
             destinations = list(
-                nodes.sample(
-                    n_samples, random_state=rng, replace=True, weights=weights
-                ).index
+                nodes.sample(n_samples, random_state=rng, replace=True, weights=weights).index
             )
             od_pairs[origin] = destinations
         except ValueError:
@@ -73,8 +66,7 @@ def sample_od_pairs(
 
     if failed_origins:
         logger.warning(
-            f"Failed to sample destinations for {len(failed_origins)} origins "
-            f"(disconnected nodes?)"
+            f"Failed to sample destinations for {len(failed_origins)} origins (disconnected nodes?)"
         )
 
     return od_pairs
@@ -236,9 +228,7 @@ def generate_research_based_pairs(
         targets=nodes_ig,
     )
     betweenness = {idx_maps["edge_ig_to_nx"][idx]: bc for idx, bc in bc_dict.items()}
-    betweenness = pd.Series(
-        {k: betweenness.get(k, 0) for k in edge_attr.index}, name="betweenness"
-    )
+    betweenness = pd.Series({k: betweenness.get(k, 0) for k in edge_attr.index}, name="betweenness")
 
     # Step 3: BC-congested edge weights
     edge_weight_bc = "duration_bc"
@@ -246,9 +236,7 @@ def generate_research_based_pairs(
         g, edge_weight_bc, edge_attr, betweenness, config.betweenness_to_slowdown
     )
     duration = nx.get_edge_attributes(g, edge_weight_bc)
-    h.es[edge_weight_bc] = [
-        duration[idx_maps["edge_ig_to_nx"][idx]] for idx in h.get_edgelist()
-    ]
+    h.es[edge_weight_bc] = [duration[idx_maps["edge_ig_to_nx"][idx]] for idx in h.get_edgelist()]
 
     # Step 4: Travel-time matrix
     logger.info("Computing travel-time matrix...")

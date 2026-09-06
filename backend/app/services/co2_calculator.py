@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 class CO2Calculator:
     # Speed-emission coefficients (g CO₂ / km)
-    IDLE_COEFF: float = 2400.0   # penalty for low-speed / stop-start operation
+    IDLE_COEFF: float = 2400.0  # penalty for low-speed / stop-start operation
     ROLLING_COEFF: float = 120.0  # constant rolling-resistance term
-    AERO_COEFF: float = 0.004    # aerodynamic drag (increases with v²)
+    AERO_COEFF: float = 0.004  # aerodynamic drag (increases with v²)
 
     # Fallback speed when neither speed_kph nor travel_time is available
     DEFAULT_SPEED_KPH: float = 40.0
@@ -51,11 +51,7 @@ class CO2Calculator:
         """Return CO₂ emission rate in g/km for a given constant speed."""
         if speed_kph <= 0:
             return cls.IDLE_COEFF + cls.ROLLING_COEFF  # pathological edge
-        return (
-            cls.IDLE_COEFF / speed_kph
-            + cls.ROLLING_COEFF
-            + cls.AERO_COEFF * speed_kph ** 2
-        )
+        return cls.IDLE_COEFF / speed_kph + cls.ROLLING_COEFF + cls.AERO_COEFF * speed_kph**2
 
     @classmethod
     def calculate_edge_co2(

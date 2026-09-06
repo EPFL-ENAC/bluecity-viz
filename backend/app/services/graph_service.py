@@ -87,9 +87,15 @@ class GraphService:
         self.graph = ox.load_graphml(graph_path)
         total = len(self.graph.edges)
 
-        if sum(1 for _, _, d in self.graph.edges(data=True) if d.get("speed_kph", 0) > 0) < total * 0.9:
+        if (
+            sum(1 for _, _, d in self.graph.edges(data=True) if d.get("speed_kph", 0) > 0)
+            < total * 0.9
+        ):
             self.graph = ox.routing.add_edge_speeds(self.graph)
-        if sum(1 for _, _, d in self.graph.edges(data=True) if d.get("travel_time", 0) > 0) < total * 0.9:
+        if (
+            sum(1 for _, _, d in self.graph.edges(data=True) if d.get("travel_time", 0) > 0)
+            < total * 0.9
+        ):
             self.graph = ox.routing.add_edge_travel_times(self.graph)
 
         print(f"Loaded graph: {len(self.graph.nodes)} nodes, {total} edges")
@@ -159,6 +165,7 @@ class GraphService:
                 SamplingConfig,
                 generate_research_based_pairs,
             )
+
             config = sampling_config or SamplingConfig()
             self.sampling_config = config
             print(f"[STARTUP] Using research-based sampling with {count} OD pairs")
@@ -167,14 +174,18 @@ class GraphService:
             )
         else:
             print(f"[STARTUP] Using simple random sampling with {count} OD pairs")
-            self.default_pairs = self.generate_random_pairs(count=count, seed=seed, radius_km=radius_km)
+            self.default_pairs = self.generate_random_pairs(
+                count=count, seed=seed, radius_km=radius_km
+            )
 
         self.default_routes = await self.calculate_routes(self.default_pairs, weight="travel_time")
 
         pairs_key = tuple((p.origin, p.destination) for p in self.default_pairs)
         self.pairs_cache = pairs_key
         self.route_cache[pairs_key] = self.default_routes
-        self._route_edge_index[pairs_key] = routing_engine.build_route_edge_index(self.default_routes)
+        self._route_edge_index[pairs_key] = routing_engine.build_route_edge_index(
+            self.default_routes
+        )
         print(f"[STARTUP] Pre-calculated {len(self.default_routes)} routes")
 
         logging.info("[STARTUP] Computing betweenness centrality...")
@@ -200,7 +211,9 @@ class GraphService:
                 f"{corrupt[:5]}"
             )
         else:
-            logging.info(f"[STARTUP] Graph integrity check passed ({self.graph.number_of_edges()} edges)")
+            logging.info(
+                f"[STARTUP] Graph integrity check passed ({self.graph.number_of_edges()} edges)"
+            )
 
     def generate_random_pairs(
         self, count: int = 100, seed: Optional[int] = None, radius_km: float = 2.0
@@ -220,8 +233,7 @@ class GraphService:
             return (lat_km**2 + lon_km**2) ** 0.5
 
         nodes_in_radius = [
-            n for n in self.graph.nodes()
-            if distance_km(self.graph.nodes[n]) <= radius_km
+            n for n in self.graph.nodes() if distance_km(self.graph.nodes[n]) <= radius_km
         ]
         if len(nodes_in_radius) < 2:
             nodes_in_radius = list(self.graph.nodes())
@@ -251,7 +263,7 @@ class GraphService:
         origin_groups = routing_engine.group_pairs_by_origin(pairs)
         logger.info(
             f"[ROUTING] {len(pairs)} pairs → {len(origin_groups)} origins "
-            f"(avg {len(pairs)/len(origin_groups):.1f} dest/origin)"
+            f"(avg {len(pairs) / len(origin_groups):.1f} dest/origin)"
         )
         routes = await routing_engine.calculate_routes_igraph(
             self.graph, self._edge_metrics_cache, origin_groups, weight
@@ -401,25 +413,31 @@ class GraphService:
                 original_routes = await self.calculate_routes(pairs, weight)
                 self.pairs_cache = pairs_key
                 self.route_cache[pairs_key] = original_routes
-                self._route_edge_index[pairs_key] = routing_engine.build_route_edge_index(original_routes)
+                self._route_edge_index[pairs_key] = routing_engine.build_route_edge_index(
+                    original_routes
+                )
             else:
                 original_routes = self.route_cache[pairs_key]
 
         with timed("apply_modifications", timing):
             applied, effective_modified_set, removed_edges, modified_edges = (
                 apply_edge_modifications(
-                    self.graph, self._edge_metrics_cache, self._edge_co2_cache,
-                    edge_modifications
+                    self.graph, self._edge_metrics_cache, self._edge_co2_cache, edge_modifications
                 )
             )
 
         resampled_pairs = None
         try:
-            if resample_destinations and self.od_nodes is not None and self.sampling_config is not None:
+            if (
+                resample_destinations
+                and self.od_nodes is not None
+                and self.sampling_config is not None
+            ):
                 with timed("od_resampling", timing):
                     from app.services.routing_engine import copy_weight_to_igraph
                     from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
                     from app.services.sampling.od_sampler import resample_od_destinations
+
                     ig_mod, idx_maps_mod = networkx_to_igraph_with_indices(self.graph)
                     copy_weight_to_igraph(self.graph, ig_mod, idx_maps_mod, "travel_time")
                     resampled_pairs = resample_od_destinations(
@@ -432,21 +450,20 @@ class GraphService:
                 delta_bc = None
                 affected_indices = list(range(len(all_new_routes)))
             elif use_congestion:
-                new_routes_by_index, delta_bc, affected_indices = (
-                    await self._strategy_volume_model(
-                        pairs, congestion_iterations, effective_modified_set, timing
-                    )
+                new_routes_by_index, delta_bc, affected_indices = await self._strategy_volume_model(
+                    pairs, congestion_iterations, effective_modified_set, timing
                 )
             else:
-                new_routes_by_index, delta_bc, affected_indices = (
-                    await self._strategy_targeted_bc(
-                        pairs, pairs_key, effective_modified_set, timing
-                    )
+                new_routes_by_index, delta_bc, affected_indices = await self._strategy_targeted_bc(
+                    pairs, pairs_key, effective_modified_set, timing
                 )
         finally:
             restore_edge_modifications(
-                self.graph, self._edge_metrics_cache, self._edge_co2_cache,
-                removed_edges, modified_edges
+                self.graph,
+                self._edge_metrics_cache,
+                self._edge_co2_cache,
+                removed_edges,
+                modified_edges,
             )
             for u, v, k, data in self.graph.edges(keys=True, data=True):
                 if isinstance(data, dict):
@@ -478,7 +495,10 @@ class GraphService:
                 )
             else:
                 impact_stats, _ = compute_impact_statistics(
-                    original_routes, new_routes_by_index, affected_indices, applied,
+                    original_routes,
+                    new_routes_by_index,
+                    affected_indices,
+                    applied,
                     compute_comparisons=False,
                 )
 
@@ -503,12 +523,17 @@ class GraphService:
                         complete_counts[edge] = complete_counts.get(edge, 0) + 1
 
             original_usage = build_edge_usage_stats(
-                self._edge_co2_cache, original_counts, len(original_routes),
+                self._edge_co2_cache,
+                original_counts,
+                len(original_routes),
                 edge_bc_cache=self._edge_bc_cache or None,
             )
             new_usage = build_edge_usage_stats(
-                self._edge_co2_cache, complete_counts, len(original_routes),
-                original_counts, edge_bc_cache=self._edge_bc_cache or None,
+                self._edge_co2_cache,
+                complete_counts,
+                len(original_routes),
+                original_counts,
+                edge_bc_cache=self._edge_bc_cache or None,
                 delta_bc=delta_bc,
             )
 

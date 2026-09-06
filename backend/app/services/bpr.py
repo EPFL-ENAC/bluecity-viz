@@ -11,7 +11,7 @@ All functions take explicit graph/cache parameters and have no service-layer dep
 import logging
 import random
 import time
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from app.services.co2_calculator import CO2Calculator
 from app.services.graph_helpers import count_edge_usage
@@ -67,11 +67,7 @@ def compute_betweenness(
         nodes_nx = random.sample(all_nx, n)
         reused = False
 
-    nodes_ig = [
-        idx_maps["node_nx_to_ig"][n]
-        for n in nodes_nx
-        if n in idx_maps["node_nx_to_ig"]
-    ]
+    nodes_ig = [idx_maps["node_nx_to_ig"][n] for n in nodes_nx if n in idx_maps["node_nx_to_ig"]]
 
     t0 = time.perf_counter()
     bc_raw = edge_betweenness_igraph(
@@ -148,9 +144,7 @@ def write_bc_duration(graph, bc_dict: dict) -> None:
         length = data.get("length") or 1.0
         speed_cong = speed_free / (1 + bc / (_get_lanes(data) * config.betweenness_to_slowdown))
         data["duration_bc"] = (
-            (length / 1000) / (speed_cong / 3.6)
-            if speed_cong > 0
-            else data.get("travel_time", 0)
+            (length / 1000) / (speed_cong / 3.6) if speed_cong > 0 else data.get("travel_time", 0)
         )
 
 
@@ -182,15 +176,11 @@ def apply_congestion_weights(graph, routes) -> None:
         speed_cong = speed_free / (1 + volume / (_get_lanes(data) * config.betweenness_to_slowdown))
         length = data.get("length", 0)
         data["duration_bc"] = (
-            (length / 1000) / (speed_cong / 3600)
-            if speed_cong > 0
-            else data.get("travel_time", 0)
+            (length / 1000) / (speed_cong / 3600) if speed_cong > 0 else data.get("travel_time", 0)
         )
 
 
-async def run_congestion_routing(
-    graph, edge_metrics_cache: dict, pairs, n_iterations: int
-) -> List:
+async def run_congestion_routing(graph, edge_metrics_cache: dict, pairs, n_iterations: int) -> List:
     """Route pairs iteratively, converging toward Wardrop user equilibrium.
 
     At equilibrium, no driver can reduce their travel time by switching routes.
@@ -213,8 +203,12 @@ async def run_congestion_routing(
     # Iteration 0: free-flow routing (path only, no metrics yet)
     copy_weight_to_igraph(graph, h, idx_maps, "travel_time")
     routes = await calculate_routes_igraph(
-        graph, edge_metrics_cache, origin_groups,
-        "travel_time", compute_metrics=False, prebuilt_igraph=prebuilt,
+        graph,
+        edge_metrics_cache,
+        origin_groups,
+        "travel_time",
+        compute_metrics=False,
+        prebuilt_igraph=prebuilt,
     )
 
     for i in range(n_iterations):
@@ -222,8 +216,12 @@ async def run_congestion_routing(
         copy_weight_to_igraph(graph, h, idx_maps, "duration_bc")
         is_final = i == n_iterations - 1
         routes = await calculate_routes_igraph(
-            graph, edge_metrics_cache, origin_groups,
-            "duration_bc", compute_metrics=is_final, prebuilt_igraph=prebuilt,
+            graph,
+            edge_metrics_cache,
+            origin_groups,
+            "duration_bc",
+            compute_metrics=is_final,
+            prebuilt_igraph=prebuilt,
         )
 
     return routes

@@ -220,9 +220,9 @@ async def get_edge_geometries(response: Response, limit: Optional[int] = None):
 
         # Add Server-Timing headers
         response.headers["Server-Timing"] = (
-            f"data;dur={data_time*1000:.1f}, "
-            f"json;dur={json_time*1000:.1f}, "
-            f"total;dur={total_time*1000:.1f}"
+            f"data;dur={data_time * 1000:.1f}, "
+            f"json;dur={json_time * 1000:.1f}, "
+            f"total;dur={total_time * 1000:.1f}"
         )
 
         return edges

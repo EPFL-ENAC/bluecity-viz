@@ -43,6 +43,4 @@ class SamplingConfig(BaseModel):
     lognorm_mu: float = Field(
         default=6.85, description="Lognormal mu parameter (fitted to travel survey)"
     )
-    lognorm_sigma: float = Field(
-        default=0.83, gt=0, description="Lognormal sigma parameter"
-    )
+    lognorm_sigma: float = Field(default=0.83, gt=0, description="Lognormal sigma parameter")
