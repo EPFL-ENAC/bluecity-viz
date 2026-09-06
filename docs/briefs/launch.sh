@@ -10,7 +10,7 @@
 set -euo pipefail
 
 BRIEFS="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$(git -C "$BRIEFS" rev-parse --git-common-dir)/.." && pwd)"
+ROOT="$(cd "$(git -C "$BRIEFS" rev-parse --path-format=absolute --git-common-dir)/.." && pwd)"
 cd "$ROOT"
 echo "main checkout: $ROOT"
 
