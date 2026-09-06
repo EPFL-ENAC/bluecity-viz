@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import 'maplibre-gl/dist/maplibre-gl.css'
-import LoadingCircle from '@/components/LoadingCircle.vue'
+import LoadingBar from '@/components/LoadingBar.vue'
 import { mapConfig } from '@/config/mapConfig'
 import { useMapEvents } from '@/composables/useMapEvents'
+import {
+  buildStyle,
+  clearPatterns,
+  loadTiles,
+  setMapTheme,
+  theme as basemapTheme,
+  wirePatterns
+} from '@/utils/epflBasemap'
 
 import {
-  FullscreenControl,
+  AttributionControl,
   Map,
   NavigationControl,
   ScaleControl,
@@ -13,6 +21,7 @@ import {
   type FilterSpecification,
   type LngLatLike,
   type StyleSetterOptions,
+  type StyleSpecification,
   addProtocol
 } from 'maplibre-gl'
 import type { LegendColor } from '@/utils/legendColor'
@@ -64,7 +73,16 @@ const map = ref<any | undefined>(undefined)
 const hasLoaded = ref(false)
 const protocol = new Protocol()
 
-const styleSpec = computed(() => {
+// Ink-on-paper theme of the Trait basemap, light and dark.
+const traitTheme = computed(() =>
+  themeStore.isDark
+    ? basemapTheme({ ink: '#E6E6E6', paper: '#141414', density: 0.8 })
+    : basemapTheme({ ink: '#141414', paper: '#ffffff', density: 0.8 })
+)
+
+// Either a style URL (public/style/*.json) or a style built by the EPFL engine.
+const styleSpec = computed<string | StyleSpecification>(() => {
+  if (themeStore.isTrait) return buildStyle('contour', traitTheme.value)
   return themeStore.theme
 })
 
@@ -73,10 +91,18 @@ const mapEventManager = useMapEvents(map as Ref<Map | undefined>)
 
 addProtocol('pmtiles', protocol.tile)
 
-function initMap() {
+async function initMap() {
+  // The Trait style needs the OpenFreeMap tile URLs (memoised fetch). Build the
+  // first style here rather than reading styleSpec: that computed may already
+  // have been evaluated (and cached) before the tile URLs arrived.
+  await loadTiles()
+  const initialStyle: string | StyleSpecification = themeStore.isTrait
+    ? buildStyle('contour', traitTheme.value)
+    : themeStore.theme
+
   const newMap = new Map({
     container: container.value as HTMLDivElement,
-    style: styleSpec.value,
+    style: initialStyle,
     center: props.center,
     zoom: props.zoom,
     minZoom: props.minZoom,
@@ -107,14 +133,13 @@ function initMap() {
 
   const mapInstance = map.value as Map
 
-  // map.showTileBoundaries = true
-  mapInstance.addControl(new NavigationControl({}))
-  mapInstance.addControl(new ScaleControl({}))
-  mapInstance.addControl(
-    new FullscreenControl({
-      container: document.getElementById('map-time-input-container') ?? undefined
-    })
-  )
+  // Trait textures are drawn on demand, once per map.
+  setMapTheme(mapInstance, traitTheme.value)
+  wirePatterns(mapInstance)
+
+  mapInstance.addControl(new NavigationControl({ showCompass: false }), 'top-right')
+  mapInstance.addControl(new ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-left')
+  mapInstance.addControl(new AttributionControl({ compact: true }), 'bottom-right')
 
   mapInstance.on('load', () => {
     if (!map.value) return
@@ -321,6 +346,10 @@ watch(
       visible: map.value?.getLayoutProperty(layer.id, 'visibility') !== 'none'
     }))
 
+    // Drop the generated textures so they are redrawn with the new ink colour.
+    setMapTheme(map.value as Map, traitTheme.value)
+    clearPatterns(map.value as Map)
+
     // Set the new style
     map.value.setStyle(styleSpec)
 
@@ -331,8 +360,8 @@ watch(
       // Re-add all sources and layers (strip custom fields id/label before passing to MapLibre)
       Object.entries(mapConfig.layers).forEach(([, { id, source, layer }]) => {
         const { id: _id, label: _label, ...sourceSpec } = source as any
-        map.value?.addSource(id, sourceSpec)
-        map.value?.addLayer(layer)
+        if (!map.value?.getSource(id)) map.value?.addSource(id, sourceSpec)
+        if (!map.value?.getLayer(layer.id)) map.value?.addLayer(layer)
       })
 
       // Restore layer visibility
@@ -346,15 +375,19 @@ watch(
 </script>
 
 <template>
-  <v-container class="pa-0 position-relative fill-height" fluid>
-    <div ref="container" class="map fill-height">
-      <loading-circle :loading="loading" />
-    </div>
+  <div class="map-wrapper">
+    <LoadingBar :loading="loading" />
+    <div ref="container" class="map" />
     <slot name="legend"></slot>
-  </v-container>
+  </div>
 </template>
 
 <style scoped>
+.map-wrapper {
+  position: absolute;
+  inset: 0;
+}
+
 .map {
   height: 100%;
   width: 100%;
@@ -365,9 +398,10 @@ watch(
 <style>
 /* Global styles for the popup (not scoped) */
 .feature-popup .maplibregl-popup-content {
-  background: rgba(255, 255, 255, 0.95);
-  padding: 10px;
-  font-family: inherit;
+  background: var(--bc-panel);
+  color: var(--bc-ink);
+  padding: 10px 12px;
+  font-family: var(--bc-font-sans);
   overflow-y: auto;
   max-height: 500px;
 }
@@ -391,11 +425,12 @@ watch(
 }
 
 .property-name {
-  font-weight: bold;
+  font-family: var(--bc-font-mono);
   text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.7);
+  letter-spacing: 0.06em;
+  color: var(--bc-grey);
   white-space: nowrap;
-  font-size: smaller;
+  font-size: var(--bc-fs-micro);
 }
 
 .property-value {

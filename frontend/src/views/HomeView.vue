@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import CollectionsPanel from '@/components/panels/CollectionsPanel.vue'
 import VisualizationsPanel from '@/components/panels/VisualizationsPanel.vue'
-import ResourcesPanel from '@/components/panels/ResourcesPanel.vue'
+import InvestigationSection from '@/components/sidebar/InvestigationSection.vue'
+import DatasetsSection from '@/components/sidebar/DatasetsSection.vue'
+import LayersSection from '@/components/sidebar/LayersSection.vue'
+import ToolsSection from '@/components/sidebar/ToolsSection.vue'
+import BcIcon from '@/components/ui/BcIcon.vue'
 import { ref, watch, provide } from 'vue'
-import { mdiMenu, mdiMenuOpen } from '@mdi/js'
 import { useThemeStore } from '@/stores/theme'
 import { useTheme } from 'vuetify'
-
-// Navigation drawer states
-const collectionsDrawer = ref(true)
-const resourcesDrawer = ref(true)
 
 // Map reference to pass to child components
 const mapComponentRef = ref<any>(null)
@@ -17,102 +15,138 @@ const mapComponentRef = ref<any>(null)
 // Provide map ref to children
 provide('mapRef', mapComponentRef)
 
-// Use theme store for theme selector
+// Use theme store for the basemap selector
 const themeStore = useThemeStore()
 
 // Vuetify theme management
 const vuetifyTheme = useTheme()
 
-// Watch for theme changes and update Vuetify theme
+// The UI follows the basemap: dark basemap, dark UI. tokens.css reads
+// data-theme on <html>, Vuetify reads its own theme name.
 watch(
-  () => themeStore.theme,
-  (newTheme) => {
-    const vuetifyThemeName = newTheme === 'style/light.json' ? 'light' : 'dark'
-    console.log('Updating Vuetify theme to:', vuetifyThemeName)
-    vuetifyTheme.change(vuetifyThemeName)
+  () => themeStore.isDark,
+  (isDark) => {
+    document.documentElement.dataset.theme = isDark ? 'dark' : 'light'
+    vuetifyTheme.change(isDark ? 'workbench-dark' : 'workbench')
   },
   { immediate: true }
 )
 </script>
 
 <template>
-  <v-layout class="fill-height">
-    <!-- Top App Bar -->
-    <v-app-bar class="border-b-sm" flat>
-      <!-- Collections Section (300px width to match drawer) -->
-      <div class="collections-header">
-        <v-btn
-          :icon="collectionsDrawer ? mdiMenuOpen : mdiMenu"
-          variant="text"
-          @click="collectionsDrawer = !collectionsDrawer"
-        />
-        <span class="text-subtitle-1">COLLECTIONS</span>
+  <div class="workbench">
+    <aside class="sidebar">
+      <div class="sidebar__head">
+        <span class="sidebar__epfl">EPFL</span>
+        <span class="sidebar__app">BlueCity Viz</span>
+        <v-menu location="bottom end">
+          <template #activator="{ props: menuProps }">
+            <span v-bind="menuProps" class="bc-micro basemap">
+              {{ themeStore.themeLabel }}
+              <BcIcon name="chevron-down" />
+            </span>
+          </template>
+          <div class="basemap__menu">
+            <div
+              v-for="item in themeStore.themes"
+              :key="item.value"
+              class="basemap__item"
+              :data-on="item.value === themeStore.theme ? 'true' : 'false'"
+              @click="themeStore.setTheme(item.value)"
+            >
+              {{ item.label }}
+            </div>
+          </div>
+        </v-menu>
       </div>
-      <!-- Main Content Area (flexible) -->
-      <div class="main-header">
-        <div class="app-title">
-          <span class="text-subtitle-1">BLUECITY VIZ</span>
-        </div>
-      </div>
-      <div class="theme-selector ml-4">
-        <v-select
-          v-model="themeStore.theme"
-          :items="themeStore.themes"
-          item-value="value"
-          item-title="label"
-          label="Theme"
-          density="compact"
-          variant="plain"
-          hide-details
-          style="width: 150px"
-        />
-      </div>
-      <!-- Resources Section (300px width to match drawer) -->
-      <div class="resources-header">
-        <span class="text-subtitle-1">RESOURCES</span>
-        <v-btn
-          :icon="resourcesDrawer ? mdiMenuOpen : mdiMenu"
-          variant="text"
-          @click="resourcesDrawer = !resourcesDrawer"
-        />
-      </div>
-    </v-app-bar>
 
-    <!-- Collections Navigation Drawer (Left) -->
-    <v-navigation-drawer v-model="collectionsDrawer" location="start" width="300" permanent>
-      <div class="pa-2">
-        <CollectionsPanel />
+      <div class="bc-scroll">
+        <InvestigationSection />
+        <DatasetsSection />
+        <LayersSection />
+        <ToolsSection />
       </div>
-    </v-navigation-drawer>
+    </aside>
 
-    <!-- Resources Navigation Drawer (Right) -->
-    <v-navigation-drawer v-model="resourcesDrawer" location="end" width="300" permanent>
-      <div class="pa-2">
-        <ResourcesPanel />
-      </div>
-    </v-navigation-drawer>
-
-    <!-- Main Content Area -->
-    <v-main>
+    <div class="stage">
       <VisualizationsPanel />
-    </v-main>
-  </v-layout>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.collections-header,
-.resources-header {
-  width: 300px;
+.workbench {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  height: 100vh;
+  background: var(--bc-ground);
 }
 
-.main-header {
-  flex: 1;
+.sidebar {
+  width: var(--bc-sidebar-w);
+  flex: none;
+  border-right: 1px solid var(--bc-line);
+  background: var(--bc-panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar__head {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 14px;
+  padding: 18px var(--bc-pad-x) 16px;
+  border-bottom: 1px solid var(--bc-line);
+}
+
+.sidebar__epfl {
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.04em;
+}
+
+.sidebar__app {
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.basemap {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.basemap:hover {
+  color: var(--bc-ink);
+}
+
+.basemap__menu {
+  background: var(--bc-panel);
+  border: 1px solid var(--bc-line);
+  min-width: 140px;
+}
+
+.basemap__item {
+  padding: 8px 14px;
+  font-size: var(--bc-fs-body);
+  cursor: pointer;
+  transition: background var(--bc-t);
+}
+
+.basemap__item:hover {
+  background: var(--bc-hover);
+}
+
+.basemap__item[data-on='true'] {
+  color: var(--bc-accent);
+}
+
+.stage {
+  flex: 1;
+  position: relative;
+  min-width: 0;
 }
 </style>

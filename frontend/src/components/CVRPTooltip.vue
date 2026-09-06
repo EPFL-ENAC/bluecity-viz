@@ -50,56 +50,45 @@ function formatLoad(kg: number): string {
 <style scoped>
 .cvrp-tooltip {
   position: fixed;
-  z-index: 1001;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 12px;
-  min-width: 170px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-size: 13px;
+  background: var(--bc-panel);
+  color: var(--bc-ink);
+  border: 1px solid var(--bc-line);
+  padding: 10px 12px;
+  min-width: 160px;
+  max-width: 260px;
+  font-size: 12px;
   pointer-events: none;
+  z-index: 1001;
 }
 
 .tooltip-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
-  font-size: 14px;
-  color: #1a1a1a;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #eee;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
 }
 
 .vehicle-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.tooltip-section {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  width: 11px;
+  height: 11px;
+  flex: none;
 }
 
 .tooltip-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 2px 0;
+  gap: 12px;
+  padding: 1px 0;
 }
 
 .label {
-  color: #666;
-  font-size: 12px;
+  color: var(--bc-grey);
 }
 
 .value {
-  font-weight: 500;
-  color: #1a1a1a;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 </style>

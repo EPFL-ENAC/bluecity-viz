@@ -108,11 +108,8 @@ function formatBCDelta(bc?: number): string {
     </div>
 
     <!-- Route Stats (if available) -->
-    <div
-      v-if="data.frequency !== undefined || data.count !== undefined"
-      class="tooltip-section route-stats"
-    >
-      <div class="section-title">Route Statistics</div>
+    <div v-if="data.frequency !== undefined || data.count !== undefined" class="tooltip-section">
+      <div class="bc-micro section-title">Route Statistics</div>
       <div v-if="data.count !== undefined" class="tooltip-row">
         <span class="label">Usage count:</span>
         <span class="value">{{ data.count }}</span>
@@ -133,11 +130,8 @@ function formatBCDelta(bc?: number): string {
     </div>
 
     <!-- CO2 Stats (if available) -->
-    <div
-      v-if="data.co2_per_km || data.co2_total || data.co2_delta"
-      class="tooltip-section co2-stats"
-    >
-      <div class="section-title">CO₂ Emissions</div>
+    <div v-if="data.co2_per_km || data.co2_total || data.co2_delta" class="tooltip-section">
+      <div class="bc-micro section-title">CO₂ Emissions</div>
       <div v-if="data.co2_per_km" class="tooltip-row">
         <span class="label">Per km:</span>
         <span class="value">{{ formatCO2(data.co2_per_km) }}</span>
@@ -155,16 +149,13 @@ function formatBCDelta(bc?: number): string {
     </div>
 
     <!-- Betweenness Centrality (if available) -->
-    <div v-if="data.betweenness_centrality" class="tooltip-section bc-stats">
-      <div class="section-title">Betweenness Centrality</div>
+    <div v-if="data.betweenness_centrality" class="tooltip-section">
+      <div class="bc-micro section-title">Betweenness Centrality</div>
       <div class="tooltip-row">
         <span class="label">BC:</span>
         <span class="value">{{ formatBC(data.betweenness_centrality) }}</span>
       </div>
-      <div
-        v-if="data.delta_betweenness && data.delta_betweenness !== 0"
-        class="tooltip-row"
-      >
+      <div v-if="data.delta_betweenness && data.delta_betweenness !== 0" class="tooltip-row">
         <span class="label">Change:</span>
         <span
           class="value"
@@ -180,99 +171,59 @@ function formatBCDelta(bc?: number): string {
 <style scoped>
 .edge-tooltip {
   position: fixed;
-  z-index: 1001;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 12px;
+  background: var(--bc-panel);
+  color: var(--bc-ink);
+  border: 1px solid var(--bc-line);
+  padding: 10px 12px;
   min-width: 180px;
   max-width: 280px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-size: 13px;
+  font-size: 12px;
   pointer-events: none;
+  z-index: 1001;
 }
 
 .tooltip-header {
-  font-weight: 600;
-  font-size: 14px;
-  color: #1a1a1a;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #eee;
-  word-break: break-word;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
 }
 
-.tooltip-section {
-  margin-bottom: 8px;
-}
-
-.tooltip-section:last-child {
-  margin-bottom: 0;
+.tooltip-section + .tooltip-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--bc-line);
 }
 
 .section-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: #666;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
   margin-bottom: 4px;
-  margin-top: 4px;
 }
 
 .tooltip-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 2px 0;
+  gap: 12px;
+  padding: 1px 0;
 }
 
 .label {
-  color: #666;
-  font-size: 12px;
+  color: var(--bc-grey);
 }
 
 .value {
-  font-weight: 500;
-  color: #1a1a1a;
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
+/* the sign is what matters, blue for up and ink for down */
 .value.positive {
-  color: #dc2626;
+  color: var(--bc-accent);
 }
 
 .value.negative {
-  color: #16a34a;
+  color: var(--bc-ink);
 }
 
-.route-stats {
-  background: #f8f9fa;
-  margin: 8px -12px;
-  padding: 8px 12px;
-}
-
-.co2-stats {
-  background: #fef3c7;
-  margin: 8px -12px;
-  padding: 8px 12px;
-}
-
-.bc-stats {
-  background: #ede9fe;
-  margin: 8px -12px -12px -12px;
-  padding: 8px 12px;
-  border-radius: 0 0 7px 7px;
-}
-
-.bus-routes-row {
-  align-items: flex-start;
-}
-
-.bus-refs {
-  max-width: 160px;
-  word-break: break-all;
-  text-align: right;
-  line-height: 1.4;
+.bus-routes-row .bus-refs {
+  word-break: break-word;
 }
 </style>

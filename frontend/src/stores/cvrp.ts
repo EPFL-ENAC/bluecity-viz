@@ -1,33 +1,23 @@
+import type { CVRPSolveResponse } from '@/services/cvrp'
+import { fetchCVRPCentroids, solveCVRP } from '@/services/cvrp'
+import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { scaleSequential } from 'd3-scale'
 import { interpolateViridis } from 'd3-scale-chromatic'
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { solveCVRP, fetchCVRPCentroids } from '@/services/cvrp'
-import type { CVRPSolveResponse } from '@/services/cvrp'
-import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { computed, ref } from 'vue'
 
-// Up to 15 distinct vehicle colors (HSL hue-spaced)
-const VEHICLE_COLORS: [number, number, number, number][] = Array.from({ length: 15 }, (_, i) => {
-  const hue = (i * 360) / 15
-  // Convert HSL to RGB approximately (saturation 70%, lightness 50%)
-  const h = hue / 360
-  const s = 0.7
-  const l = 0.5
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s
-  const p = 2 * l - q
-  const hue2rgb = (t: number) => {
-    if (t < 0) t += 1
-    if (t > 1) t -= 1
-    if (t < 1 / 6) return p + (q - p) * 6 * t
-    if (t < 1 / 2) return q
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
-    return p
-  }
-  const r = Math.round(hue2rgb(h + 1 / 3) * 255)
-  const g = Math.round(hue2rgb(h) * 255)
-  const b = Math.round(hue2rgb(h - 1 / 3) * 255)
-  return [r, g, b, 200] as [number, number, number, number]
-})
+// Okabe-Ito palette: colour-blind safe, and the data-viz palette of the
+// EPFL design system. 8 colours, reused past the 8th vehicle.
+const VEHICLE_COLORS: [number, number, number, number][] = [
+  [0, 114, 178, 200], // #0072B2 blue
+  [230, 159, 0, 200], // #E69F00 orange
+  [0, 158, 115, 200], // #009E73 green
+  [213, 94, 0, 200], // #D55E00 vermillion
+  [86, 180, 233, 200], // #56B4E9 sky blue
+  [204, 121, 167, 200], // #CC79A7 purple
+  [240, 228, 66, 200], // #F0E442 yellow
+  [0, 0, 0, 200] // #000000 black
+]
 
 export function getVehicleColor(routeId: number): [number, number, number, number] {
   return VEHICLE_COLORS[routeId % VEHICLE_COLORS.length]
@@ -98,7 +88,7 @@ export const useCVRPStore = defineStore('cvrp', () => {
         max_runtime: maxRuntime.value,
         waste_per_centroid: 10,
         load_unit: loadUnit.value,
-        edge_modifications: trafficStore.edgeModificationsArray,
+        edge_modifications: trafficStore.edgeModificationsArray
       })
       setResult(response)
     } finally {
@@ -136,6 +126,6 @@ export const useCVRPStore = defineStore('cvrp', () => {
     loadCentroids,
     clearResult,
     togglePanel,
-    getEdgeLoadColor,
+    getEdgeLoadColor
   }
 })
