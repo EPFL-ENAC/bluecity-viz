@@ -2,6 +2,7 @@
   "name": "bluecity-viz",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@11.25.0",
   "license": "GPL-3.0-or-later",
   "scripts": {
     "dev": "vite",
@@ -16,6 +17,7 @@
   },
   "dependencies": {
     "@deck.gl/core": "^9.2.2",
+    "@deck.gl/extensions": "^9.2.2",
     "@deck.gl/geo-layers": "^9.2.2",
     "@deck.gl/layers": "^9.2.2",
     "@deck.gl/mapbox": "^9.2.2",
@@ -36,6 +38,9 @@
   "devDependencies": {
     "@mdi/js": "^7.2.96",
     "@rushstack/eslint-patch": "^1.2.0",
+    "@types/d3-color": "^3.1.3",
+    "@types/d3-scale": "^4.0.9",
+    "@types/d3-scale-chromatic": "^3.1.0",
     "@types/jsdom": "^21.1.0",
     "@types/lodash": "^4.17.1",
     "@types/node": "^18.14.2",

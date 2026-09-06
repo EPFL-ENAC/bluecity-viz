@@ -114,7 +114,7 @@ fi
 #    purpose: it is a third uv project, rarely touched on a feature branch, and
 #    each worktree already carries node_modules plus a backend venv. Run
 #    `cd processing && uv sync` by hand in a worktree that needs it.
-[ -d frontend/node_modules ] || (cd frontend && npm install)
+[ -d frontend/node_modules ] || (cd frontend && pnpm install --frozen-lockfile)
 [ -d backend/.venv ] || (cd backend && uv sync)
 
 # 6. The push guard, as a plain pre-push hook. Worktrees share the common hooks

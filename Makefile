@@ -16,20 +16,20 @@ dev: ## Start frontend and backend development servers
 	@echo "Starting backend and frontend development servers..."
 	@trap 'kill 0' INT; \
 	cd backend && uv run python -m uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) --reload & \
-	cd frontend && npm run dev & \
+	cd frontend && pnpm run dev & \
 	wait
 
 dev-frontend: ## Start only frontend development server
-	cd frontend && npm run dev
+	cd frontend && pnpm run dev
 
 dev-backend: ## Start only backend development server
 	cd backend && uv run python -m uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) --reload
 
 build: ## Build frontend for production
-	cd frontend && npm run build
+	cd frontend && pnpm run build
 
 install: ## Install all dependencies
-	cd frontend && npm install
+	cd frontend && pnpm install
 	cd backend && uv sync
 	cd processing && uv sync
 
