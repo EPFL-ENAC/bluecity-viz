@@ -1,0 +1,14 @@
+# Per-repo wt config (https://github.com/timvw/wt) — overrides [hooks] from
+# ~/.config/wt/config.toml for this repo. wt exports $WT_PATH (the worktree),
+# $WT_BRANCH and $WT_MAIN to every hook.
+#
+# The scripts are taken from the main checkout so a branch that predates them
+# still gets set up — but located through git's common dir, not $WT_MAIN: wt
+# calls whichever worktree has the default branch checked out "main", which is
+# wrong the moment someone checks out `dev` in a worktree. wt-setup.sh is
+# idempotent because some wt builds run post_checkout on create as well.
+# Details: docs/worktree-env/files/worktree-dev-environment.md
+[hooks]
+post_create   = ['''"$(dirname "$(git -C "$WT_PATH" rev-parse --path-format=absolute --git-common-dir)")/scripts/wt-setup.sh"''']
+post_checkout = ['''"$(dirname "$(git -C "$WT_PATH" rev-parse --path-format=absolute --git-common-dir)")/scripts/wt-setup.sh"''']
+pre_remove    = ['''"$(dirname "$(git -C "$WT_PATH" rev-parse --path-format=absolute --git-common-dir)")/scripts/wt-teardown.sh"''']
