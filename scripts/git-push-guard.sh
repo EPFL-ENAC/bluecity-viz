@@ -6,7 +6,8 @@
 # Claude's own deny rules cover the same pushes, but this runs in git itself, so
 # it holds for any process in the worktree and can't be talked around.
 # The branch list is duplicated from wt-lib.sh on purpose: the guard must not
-# depend on a file that could be missing in an old branch.
+# depend on a file that could be missing in an old branch. Change both (and the
+# completion filter in wt-go.bash).
 set -euo pipefail
 [ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ] || exit 0   # main checkout
 PROTECTED="dev main"

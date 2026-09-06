@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One command from branch name to a running, attached dev session — whether the
 # branch is brand new, exists without a worktree, or already has one:
-#   scripts/wt-new.sh <branch> [base=origin/dev] [--prompt <file-or-text>] [--no-attach]
+#   scripts/wt-new.sh <branch> [base=origin/<BASE_BRANCH>] [--prompt <file-or-text>] [--no-attach]
 # (or: make go BRANCH=feat/x)
 # wt create / wt checkout → .wt.toml hooks (deps, env, ports, detached tmux
 # session) → attach. Detach with prefix+d; you land back where you started.
@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-base="${base:-origin/dev}"
+base="${base:-origin/$BASE_BRANCH}"
 [ -n "$branch" ] || die "usage: wt-new.sh <branch> [base] [--prompt <file-or-text>] [--no-attach]"
 
 # `wtgo all` — after a reboot: bring every set-up worktree's session back,
@@ -62,9 +62,12 @@ fi
 # resolution (see the guide's gotchas); the protected branches are off-limits.
 case " $PROTECTED_BRANCHES " in *" $branch "*) die "$branch never gets a worktree — work on a feature branch";; esac
 # Work against the main checkout wherever this runs from — a worktree cwd, or a
-# shell whose environment carries a stale ROOT from an old tmux session.
+# shell whose environment carries a stale ROOT from an old tmux session. Say
+# which repo that is: with one `wtgo` shared by several repos, "where did that
+# worktree go" must not need a `tmux ls` to answer.
 ROOT="$(main_checkout)"
 cd "$ROOT"
+echo "==> $(repo_name): $branch (main checkout $ROOT)"
 if [ -z "$(worktree_path_for "$branch")" ]; then
   if git show-ref --verify --quiet "refs/heads/$branch" ||
      git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
@@ -73,7 +76,7 @@ if [ -z "$(worktree_path_for "$branch")" ]; then
     wt checkout "$branch"
   else
     # A local ref can silently be stale (a branch cut from it then lacks recent
-    # fixes); refresh the remote ones so the origin/dev default is current.
+    # fixes); refresh the remote ones so the origin/<base> default is current.
     case "$base" in origin/*) git fetch --quiet origin "${base#origin/}" || echo "warning: fetch failed, using cached $base";; esac
     wt create "$branch" "$base"
   fi

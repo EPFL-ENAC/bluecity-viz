@@ -6,7 +6,7 @@
 BACKEND_PORT ?= 8000
 
 .PHONY: help dev build install clean upload-frontend-geodata list-geodata check-bucket-env check-geodata clean-geodata
-.PHONY: dev-all new go wt-land wt-done wt-open
+.PHONY: dev-all tmux-dev-all new go wt-land wt-done wt-open
 
 help: ## Show this help message
 	@echo "BlueCity Viz - Available commands:"
@@ -35,7 +35,11 @@ install: ## Install all dependencies
 
 # --- dev sessions and git worktrees (docs/worktree-env/)
 
-dev-all: ## tmux session "<repo>/<branch>" with claude, backend, frontend and shell panes
+# Both servers in this terminal (same as `make dev`, the name matches resslab-hub).
+# In a worktree, export its ports first: set -a; . .env.worktree; set +a
+dev-all: dev ## Same as `make dev` (both servers in this terminal)
+
+tmux-dev-all: ## tmux session "<repo>/<branch>" with claude, backend, frontend and shell panes
 	scripts/tmux-dev.sh
 
 new: ## make new BRANCH=feat/x [BASE=origin/dev] [PROMPT=brief.md] : worktree + deps + session, attached

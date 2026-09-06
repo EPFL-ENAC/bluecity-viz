@@ -2,8 +2,9 @@
 # Land a worktree's branch into $BASE_BRANCH (dev) and clean everything up.
 #   scripts/wt-land.sh <branch>            rebase onto origin/dev, push, open a PR, squash-merge
 #                                          (auto-merge when checks pass), update local dev, remove the worktree
-#   scripts/wt-land.sh <branch> --local    rebase, `git merge --no-ff` into dev here, run lint+test,
-#                                          push dev, remove the worktree   (WT_SKIP_CHECKS=1 skips lint+test)
+#   scripts/wt-land.sh <branch> --local    rebase, `git merge --no-ff` into dev here, run the CI checks
+#                                          (frontend lint + type-check, backend ruff), push dev, remove
+#                                          the worktree   (WT_SKIP_CHECKS=1 skips the checks)
 # Run it from the main checkout: gh refuses to delete a branch git still has
 # checked out in a worktree (cli/cli#13380), and this is the one place allowed to
 # push dev (scripts/git-push-guard.sh blocks that from worktrees).
@@ -67,7 +68,14 @@ case "$mode" in
     git checkout "$BASE_BRANCH"
     git pull --ff-only origin "$BASE_BRANCH"
     git merge --no-ff "$branch" -m "Merge branch '$branch' into $BASE_BRANCH"
-    if [ "${WT_SKIP_CHECKS:-0}" != 1 ]; then make lint && make test; fi
+    # The root Makefile has no lint/test target: run the frontend checks CI runs,
+    # and on the backend the same blocking selection as CI's flake8 step (syntax
+    # errors and undefined names) through ruff, the only linter in its deps.
+    # --no-fix: pyproject turns fixes on, and a land must not edit files.
+    if [ "${WT_SKIP_CHECKS:-0}" != 1 ]; then
+      (cd frontend && npm run lint && npm run type-check)
+      (cd backend && uv run ruff check --no-fix --select E9,F63,F7,F82 app)
+    fi
     git push origin "$BASE_BRANCH"
     git checkout "$prev"
     cleanup

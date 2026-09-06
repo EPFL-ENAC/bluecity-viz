@@ -16,8 +16,12 @@ SCRIPTS="$(dirname "$(readlink -f "$0")")"
 # shell in every pane inherits it, and any wt script run from those shells then
 # targets this checkout no matter what directory it is run from. The
 # set-environment call scrubs a server that an earlier version already poisoned.
+# The .env.worktree keys get the same treatment: a server started from a shell
+# that had a worktree's file sourced would give its ports to every later session,
+# including the main checkout's, whose frontend still looks for the backend on 8000.
 export -n ROOT || true
 tmux set-environment -gu ROOT 2>/dev/null || true
+for key in $ENV_WORKTREE_KEYS; do tmux set-environment -gu "$key" 2>/dev/null || true; done
 load_env_worktree
 BRANCH="$(current_branch)"
 SESSION="$(session_name "$BRANCH")"
@@ -77,7 +81,9 @@ URLS
 
 # Every pane exports .env.worktree so the Makefiles (BACKEND_PORT) and vite
 # (FRONTEND_PORT, and BACKEND_PORT for its /api proxy) see the same values.
-LOAD='set -a; [ -f "$(git rev-parse --show-toplevel)/.env.worktree" ] && . "$(git rev-parse --show-toplevel)/.env.worktree"; set +a'
+# No file (the main checkout): unset the keys instead, so nothing inherited from a
+# worktree shell or the tmux server sticks to this pane.
+LOAD='set -a; if [ -f "$(git rev-parse --show-toplevel)/.env.worktree" ]; then . "$(git rev-parse --show-toplevel)/.env.worktree"; else unset '"$ENV_WORKTREE_KEYS"'; fi; set +a'
 
 # What the claude pane runs. A PROMPT.md at the checkout root is a one-shot
 # brief (wtgo --prompt, or written by hand): rename it, then start claude on it
@@ -140,11 +146,14 @@ P_CLAUDE="$(tmux display-message -p -t "=$SESSION:dev" '#{pane_id}')"
 P_BACKEND="$(tmux split-window -h -l 50% -P -F '#{pane_id}' -t "$P_CLAUDE" -c "$ROOT/backend")"
 P_FRONTEND="$(tmux split-window -v -l 67% -P -F '#{pane_id}' -t "$P_BACKEND" -c "$ROOT/frontend")"
 P_SHELL="$(tmux split-window -v -l 50% -P -F '#{pane_id}' -t "$P_FRONTEND" -c "$ROOT")"
-tmux select-pane -t "$P_CLAUDE" -T claude
-tmux set-option -p -t "$P_CLAUDE" @wt_role claude   # stable handle: the title follows claude's own
-tmux select-pane -t "$P_BACKEND" -T backend
-tmux select-pane -t "$P_FRONTEND" -T frontend
-tmux select-pane -t "$P_SHELL" -T shell
+# Titles are for the eye; @wt_role is the stable handle scripts look panes up
+# by (send_brief here, claude-notify.sh): claude rewrites its pane title as it
+# works, and a title is not a tmux target anyway.
+for spec in "$P_CLAUDE claude" "$P_BACKEND backend" "$P_FRONTEND frontend" "$P_SHELL shell"; do
+  set -- $spec
+  tmux select-pane -t "$1" -T "$2"
+  tmux set-option -p -t "$1" @wt_role "$2"
+done
 tmux set-option -w -t "=$SESSION:dev" pane-border-status top
 
 tmux send-keys -t "$P_BACKEND" "$LOAD; make dev" C-m
