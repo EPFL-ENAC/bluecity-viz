@@ -13,7 +13,7 @@ BlueCity Viz is a geospatial urban analytics platform with three main components
 
 ### Root (from repo root)
 ```bash
-make install        # Install all dependencies (frontend npm + backend/processing uv sync)
+make install        # Install all dependencies (frontend pnpm + backend/processing uv sync)
 make dev            # Start both backend (port 8000) and frontend (port 5173) concurrently
 make dev-frontend   # Frontend only
 make dev-backend    # Backend only
@@ -22,11 +22,11 @@ make build          # Production build (type-check + vite build)
 
 ### Frontend (from `frontend/`)
 ```bash
-npm run lint        # ESLint with auto-fix
-npm run format      # Prettier
-npm run type-check  # vue-tsc --noEmit
-npm run test:unit   # Vitest
-npm run schema      # Regenerate frontend/schema/parameters.schema.json from TypeScript types
+pnpm run lint       # ESLint with auto-fix
+pnpm run format     # Prettier
+pnpm run type-check # vue-tsc --noEmit
+pnpm run test:unit  # Vitest
+pnpm run schema     # Regenerate frontend/schema/parameters.schema.json from TypeScript types
 ```
 
 ### Backend (from `backend/`)
