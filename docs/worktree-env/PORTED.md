@@ -1,7 +1,8 @@
 # Port done: what landed in bluecity-viz, and what is left for you
 
-Ported from the handoff in this folder on 2026-09-01. Read `README.md` for the
-why; this file is only what is specific to bluecity-viz.
+Ported from the handoff in this folder on 2026-09-01, committed on the branch
+`chore/improve-worktree-config` on 2026-09-06 with the fixes listed at the end.
+Read `README.md` for the why; this file is only what is specific to bluecity-viz.
 
 ## Choices made
 
@@ -32,8 +33,9 @@ scripts/claude-worktree-settings.json   template for each worktree's settings.lo
 
 ## Files changed
 
-- `Makefile`: `BACKEND_PORT ?= 8000`, and the targets `dev-all`, `new`, `go`,
-  `wt-land`, `wt-done`, `wt-open`.
+- `Makefile`: `BACKEND_PORT ?= 8000`, and the targets `tmux-dev-all` (the tmux
+  session), `dev-all` (alias of `dev`, same name as in resslab-hub), `new`,
+  `go`, `wt-land`, `wt-done`, `wt-open`.
 - `backend/Makefile`: same `BACKEND_PORT ?= 8000`.
 - `frontend/vite.config.ts`: `port` from `FRONTEND_PORT`, a new `^/api/.*` proxy
   and the existing `/data` proxy both targeting `127.0.0.1:$BACKEND_PORT`.
@@ -72,48 +74,24 @@ git worktree prune
 git branch -D test/smoke
 ```
 
-### 2. Point `wtgo` at the repo-aware copy
+### 2. `wtgo` from one source line
 
-`~/.bashrc` line 162 currently reads:
+`~/.bashrc` sources `~/code/resslab-hub/scripts/wt-go.bash`. That copy is
+repo-aware since 2026-09-06 (branch `chore/improve-worktree-config` there): it
+resolves the repo from the directory you stand in and runs that repo's own
+`scripts/wt-*.sh`, so one source line serves both repos. Nothing to change
+once that branch is in resslab's `dev`. Until then, source that worktree's
+copy, or use `make go BRANCH=...` from `~/code/bluecity-viz`.
 
-```bash
-source ~/code/resslab-hub/scripts/wt-go.bash
-```
+Standing outside any repo with the tooling (your home directory), the commands
+fall back to `WTGO_DEFAULT_REPO` if set, else the repo the sourced file lives
+in, and say so on stderr.
 
-Replace it with (keep only one source line):
-
-```bash
-WTGO_DEFAULT_REPO=~/code/resslab-hub
-source ~/code/bluecity-viz/scripts/wt-go.bash
-```
-
-**resslab-hub keeps working.** This copy resolves the repo from the directory
-you are standing in, and runs that repo's own `scripts/wt-*.sh`. Checked in
-both: inside resslab-hub (and inside a resslab worktree) it runs
-`~/code/resslab-hub/scripts/wt-new.sh` and completes resslab branches; inside
-bluecity-viz it runs bluecity's. Nothing about resslab-hub changes.
-
-The only case that is not tied to a directory is when you stand somewhere else,
-your home directory for instance. `WTGO_DEFAULT_REPO` is what the commands use
-then, so the line above keeps today's behaviour (resslab-hub). Drop that line if
-you would rather the default be bluecity-viz. Either way the commands now print
-one line on stderr saying which repo they fell back to, instead of picking one
-silently.
-
-Then check both:
+Check both:
 
 ```bash
 cd ~/code/bluecity-viz && wtgo <TAB>   # bluecity branches
 cd ~/code/resslab-hub  && wtgo <TAB>   # resslab branches
-```
-
-If you would rather not depend on bluecity-viz being present, copy this file
-into resslab-hub as well and source that one instead. The two copies are the
-same file, and it is worth committing there anyway since it fixes the pinned
-`_WTGO_ROOT` for good:
-
-```bash
-cp ~/code/bluecity-viz/scripts/wt-go.bash ~/code/resslab-hub/scripts/wt-go.bash
 ```
 
 ### 3. Add the auto mode entry for this repo
@@ -128,7 +106,7 @@ hand, these five strings match the shape of the resslab-hub ones:
 "**Default / protected branches**: Default branch: main; work branches are cut from dev and land into dev. Protected branches: dev, main. A worktree session must never push to them; landing into dev happens from the main checkout via scripts/wt-land.sh (scripts/git-push-guard.sh enforces it in git)",
 "**CI/CD deploy targets**: GitHub Actions deploy.yml on push to dev and main and on v*.*.* tags (release-please from main); quality-check.yml runs lint, type-check, build and the backend checks on PRs to main. Public site data comes from https://enacit4r-cdn.epfl.ch/bluecity",
 "**Sensitive data locations & audiences**: frontend/public/geodata (103 MB of untracked PMTiles) and backend/data/*.csv are shared with worktrees by symlink (read them, never rewrite them in place); S3 upload targets (make upload-frontend-geodata) need BUCKET_NAME and are outward-facing",
-"routine under EPFL-ENAC/bluecity-viz prefix: make install/dev/dev-backend/dev-frontend/build/dev-all, npm run dev/lint/format/type-check/test:unit/build, uv run ruff check/format, uv run pytest, scripts/tmux-dev.sh, scripts/wt-*.sh"
+"routine under EPFL-ENAC/bluecity-viz prefix: make install/dev/dev-backend/dev-frontend/build/dev-all/tmux-dev-all, npm run dev/lint/format/type-check/test:unit/build, uv run ruff check/format, uv run pytest, scripts/tmux-dev.sh, scripts/wt-*.sh"
 ```
 
 ## Smoke test, once the three steps above are done
@@ -150,7 +128,11 @@ Then, from inside the worktree:
 ```bash
 git commit --allow-empty -m "test: smoke" && git push   # must work
 git push origin HEAD:dev                                # must be REFUSED
+git branch -vv                                          # upstream is origin/test/smoke, never origin/dev
 ```
+
+A second worktree must get a different port pair from the first one (the hash
+steps past pairs in use).
 
 Clean up:
 
@@ -178,3 +160,45 @@ outside), the real hook install (`.git/hooks` is read-only), `npm install` (the
 npm cache is read-only) and therefore `npm run type-check` and a running vite.
 Run `make install` then `npm run type-check` in `frontend/` once before trusting
 the frontend edits.
+
+## Fixes applied on 2026-09-06
+
+The port was taken on 2026-09-01. resslab-hub fixed several things after that
+(`HANDOFF-2026-09-06.md`, section 6); these are the ones that apply here.
+
+- `scripts/claude-worktree-settings.json`: the `python -`, `python3 -`,
+  `node -`, `perl -` ask rules are gone. Auto mode edits files through
+  `python3 - <<EOF` heredocs, and an ask rule prompted on every one of them.
+- `scripts/wt-setup.sh`: step 0 sets `branch.autoSetupMerge simple` and
+  `push.autoSetupRemote true`, and repairs the branch's upstream (a branch cut
+  from `origin/dev` used to track `origin/dev`, so `git pull` rebased it onto
+  dev). Step 2 keeps the ports a previous run wrote in `.env.worktree`
+  (delete the file to get a fresh pair). Step 4 reads the settings template
+  from the main checkout only, so a branch forked before a template fix cannot
+  write old rules back, and copies through a `.tmp` file.
+- `scripts/wt-lib.sh`: `branch_ports` hashes `<repo>/<branch>` (the same
+  branch name in resslab-hub and bluecity-viz got the same pair) and also
+  steps past ports something is listening on (`ss`), not only pairs other
+  worktrees of this repo hold. `ENV_WORKTREE_KEYS` lists the keys of
+  `.env.worktree`, and `load_env_worktree` unsets them when there is no file.
+  `set_env_var` removed (nothing here writes an env file).
+- `scripts/tmux-dev.sh`: scrubs `ENV_WORKTREE_KEYS` from the tmux server like
+  `ROOT`, the pane prefix unsets them in a checkout without `.env.worktree`
+  (a server started from a worktree shell used to hand its ports to the main
+  checkout's session), and `@wt_role` is set on all four panes.
+- `scripts/wt-new.sh`: default base `origin/$BASE_BRANCH`, prints
+  `==> <repo>: <branch>` so a `wtgo` typed in the wrong repo is visible.
+- `scripts/wt-land.sh --local`: ran `make lint && make test`, targets this
+  root Makefile does not have. Now runs `npm run lint`, `npm run type-check`
+  in `frontend/` and, in `backend/`, ruff with CI's blocking selection only
+  (`--select E9,F63,F7,F82`, `--no-fix`): a full `ruff check` reports 14 old
+  errors and would block every landing.
+- `Makefile`: `tmux-dev-all` is the tmux session, `dev-all` is an alias of
+  `dev`, same names as resslab-hub.
+- `docs/worktree-env/files/` (a snapshot of resslab-hub's scripts and guide)
+  is gone; the guide is `~/code/resslab-hub/docs/worktree-dev-environment.md`.
+
+Kept from bluecity's side, on purpose: `wt-done.sh` and the `prefix+X` binding
+in `tmux-dev.sh` resolve the script from the pane's own repo (both repos share
+one tmux server), `wt-go.bash` is the repo-aware copy, the push guard is a
+plain pre-push hook chained with the git-lfs one.

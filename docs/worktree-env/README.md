@@ -4,13 +4,16 @@ One branch, one git worktree, one tmux session, one Claude Code agent, its own
 servers and its own database. This folder is a snapshot of that setup in
 resslab-hub, packaged so you can port it to another FastAPI + Vue project.
 
-- Source repo: `resslab-hub`, commit `da02c61`, taken on 2026-09-01.
+- Source repo: `resslab-hub`, commit `da02c61`, taken on 2026-09-01. The port
+  landed here on 2026-09-06 with the fixes resslab-hub made in between, see
+  `PORTED.md`.
 - Originals live in `resslab-hub/scripts/`, `resslab-hub/.wt.toml` and
   `resslab-hub/docs/worktree-dev-environment.md`. If something here looks stale,
   that repo wins.
-- The full guide is copied at `files/worktree-dev-environment.md` (374 lines).
-  This README is the short version plus the porting work. Read the guide when
-  you need the why behind a detail.
+- The full guide is `~/code/resslab-hub/docs/worktree-dev-environment.md`
+  (this folder used to carry a copy under `files/`, dropped because it went
+  stale). This README is the short version plus the porting work. Read the
+  guide when you need the why behind a detail.
 
 You are probably a Claude Code session in the target repo. Read this file top to
 bottom before touching anything, then work through section 4.
@@ -57,7 +60,7 @@ make wt-land BRANCH=feat/x      # from the main checkout: rebase, PR, squash-mer
 | `.wt.toml` | repo | three hooks (post_create, post_checkout, pre_remove) pointing at the scripts |
 | `scripts/wt-lib.sh` | repo | shared helpers and all the repo constants. The one file you must edit |
 | `scripts/wt-setup.sh` | repo | everything a worktree needs to run, in one idempotent script |
-| `scripts/tmux-dev.sh` | repo | the 4-pane session, also `make dev-all` in the main checkout |
+| `scripts/tmux-dev.sh` | repo | the 4-pane session, also `make tmux-dev-all` in any checkout |
 | `scripts/wt-teardown.sh` | repo | mirror of setup, run by `wt remove` |
 | `scripts/wt-new.sh` | repo | `wtgo` / `make new`: branch + worktree + session + optional brief |
 | `scripts/wt-done.sh` | repo | `wtdone`: kill the session, remove the worktree, keep the branch |
@@ -72,12 +75,19 @@ make wt-land BRANCH=feat/x      # from the main checkout: rebase, PR, squash-mer
 Three ideas hold it together.
 
 **One file per worktree.** `.env.worktree` at the checkout root holds
-`WT_BRANCH`, `WT_SLUG`, `BACKEND_PORT`, `FRONTEND_PORT`, `DB_NAME`,
-`POSTGRES_TEST_DB`. Ports come from `cksum` of the branch name
+`WT_BRANCH`, `WT_SLUG`, `BACKEND_PORT`, `FRONTEND_PORT` (resslab-hub adds
+`DB_NAME` and `POSTGRES_TEST_DB`). Ports come from `cksum` of `<repo>/<branch>`
 (`18000 + h % 500` and `19000 + h % 500`, same remainder so the two ports read
-as one pair). Nothing reads the file directly. `tmux-dev.sh` exports it into
-every pane, and each tool reads plain env vars from there. See
-`files/env.worktree.example` for a real one.
+as one pair), stepping forward past a pair another worktree holds or something
+is listening on. Nothing reads the file directly. `tmux-dev.sh` exports it into
+every pane, and each tool reads plain env vars from there. A real one:
+
+```
+WT_BRANCH=feat/x
+WT_SLUG=feat_x
+BACKEND_PORT=18042
+FRONTEND_PORT=19042
+```
 
 **The agent is fenced in by three layers.** The generated
 `.claude/settings.local.json` denies pushes to protected branches and denies
@@ -122,14 +132,16 @@ Two things to change per repo:
 
 ## 4. Porting to a new repo
 
-Work in this order. Copy from `files/`, not from a memory of what the scripts do.
+Work in this order. Copy from a checkout of resslab-hub (or from this repo's
+`scripts/`, which is the same tooling without the database half), not from a
+memory of what the scripts do.
 
 ### 4.1 Copy the files
 
 ```bash
-cp -r <handoff>/files/scripts/*.sh <handoff>/files/scripts/wt-go.bash \
-      <handoff>/files/scripts/claude-worktree-settings.json scripts/
-cp <handoff>/files/wt.toml .wt.toml
+src=~/code/resslab-hub
+cp -r $src/scripts/*.sh $src/scripts/wt-go.bash $src/scripts/claude-worktree-settings.json scripts/
+cp $src/.wt.toml .wt.toml
 chmod +x scripts/*.sh
 ```
 
@@ -192,6 +204,9 @@ application bug, not a setup bug.
 - Add the lines from `snippets/gitignore-lines.txt` to `.gitignore`.
 
 ### 4.6 Make `wtgo` repo-aware
+
+Done since 2026-09-06 in both repos: `wt-go.bash` resolves the repo from the
+directory you stand in. Kept for the record.
 
 As shipped, `wt-go.bash` pins itself to the repo it was sourced from, so the
 second repo to use this setup cannot get `wtgo` by sourcing its own copy. Patch

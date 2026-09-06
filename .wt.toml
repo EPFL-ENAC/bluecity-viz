@@ -7,7 +7,7 @@
 # calls whichever worktree has the default branch checked out "main", which is
 # wrong the moment someone checks out `dev` in a worktree. wt-setup.sh is
 # idempotent because some wt builds run post_checkout on create as well.
-# Details: docs/worktree-env/files/worktree-dev-environment.md
+# Details: docs/worktree-env/README.md
 [hooks]
 post_create   = ['''"$(dirname "$(git -C "$WT_PATH" rev-parse --path-format=absolute --git-common-dir)")/scripts/wt-setup.sh"''']
 post_checkout = ['''"$(dirname "$(git -C "$WT_PATH" rev-parse --path-format=absolute --git-common-dir)")/scripts/wt-setup.sh"''']
