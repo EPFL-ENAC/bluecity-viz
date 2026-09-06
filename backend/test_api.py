@@ -1,8 +1,12 @@
 """Quick test script for the API."""
 
+import os
+
 import requests
 
-BASE_URL = "http://localhost:8000"
+# Git worktrees export their own BACKEND_PORT (see docs/worktree-env/), so the
+# tests hit the server of the checkout they run in.
+BASE_URL = f"http://localhost:{os.environ.get('BACKEND_PORT', '8000')}"
 
 
 def test_health():

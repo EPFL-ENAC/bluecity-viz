@@ -44,8 +44,9 @@ _wt_root_loud() {
 wtgo() { "$(_wt_root_loud)/scripts/wt-new.sh" "$@"; }
 wtdone() { "$(_wt_root_loud)/scripts/wt-done.sh" "$@"; }
 
-# The union of every repo's protected branches: a name filtered here is only
-# hidden from completion, and none of these is ever worked on in a worktree.
+# The union of every repo's protected branches (PROTECTED_BRANCHES in each
+# wt-lib.sh): a name filtered here is only hidden from completion, and none of
+# these is ever worked on in a worktree, whichever repo you stand in.
 _WT_NEVER='^(dev|stage|main)$'
 
 _wt_worktrees() {
@@ -64,7 +65,7 @@ _wtgo() {
     branches=$( { echo "$wts"
                   git -C "$root" for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin |
                     sed 's#^origin/##'; } 2>/dev/null |
-                grep -Ev "^(HEAD|origin)$" | grep -Ev "$_WT_NEVER" | sort -u )
+                grep -Ev '^(HEAD|origin)$' | grep -Ev "$_WT_NEVER" | sort -u )
     COMPREPLY=( $(compgen -W "$branches" -- "$cur") )
   fi
 }

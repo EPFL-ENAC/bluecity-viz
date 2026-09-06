@@ -107,9 +107,9 @@ so each checkout talks to its own backend.
 Every checkout (the main one and each git worktree under `.claude/worktrees/<branch>`)
 gets its own tmux session `bluecity-viz/<branch>` with one `dev` window of four titled
 panes: `claude` (the left half, focused on attach), `backend`, `frontend` and
-`shell` stacked on the right (`scripts/tmux-dev.sh`; `make new BRANCH=feat/x`
-creates the worktree and attaches, `wt create` alone starts it detached through
-`.wt.toml`). Full guide: `docs/worktree-env/`.
+`shell` stacked on the right (`scripts/tmux-dev.sh`, or `make tmux-dev-all`;
+`make go BRANCH=feat/x` creates the worktree and attaches, `wt create` alone
+starts it detached through `.wt.toml`). Full guide: `docs/worktree-env/`.
 
 - **Know where you are**: you are in a worktree exactly when `.env.worktree`
   exists at the repo root (same thing, your path contains `.claude/worktrees/`).
@@ -117,9 +117,10 @@ creates the worktree and attaches, `wt create` alone starts it detached through
   `echo $WT_BRANCH $BACKEND_PORT $FRONTEND_PORT` orients you instantly. In a
   shell without them, run `set -a; . .env.worktree; set +a` first.
 - **Ports**: a worktree's `.env.worktree` holds its `BACKEND_PORT` /
-  `FRONTEND_PORT` (hashed from the branch name, 18xxx/19xxx); the main checkout
-  uses 8000/5173. Read them from that file, never guess, and never start a
-  second server on a port that is already served.
+  `FRONTEND_PORT` (hashed from `<repo>/<branch>`, 18xxx/19xxx, stepping past a
+  pair another worktree holds); the main checkout uses 8000/5173. Read them
+  from that file, never guess, and never start a second server on a port that
+  is already served.
   `scripts/wt-open.sh [frontend|backend]` prints and opens the URL.
 - **Reuse before starting**: the tmux session already runs both servers in its
   `backend` and `frontend` panes. If you must start one yourself,
