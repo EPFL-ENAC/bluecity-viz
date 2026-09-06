@@ -2,7 +2,8 @@
 import MapLibreMap from '@/components/MapLibreMap.vue'
 import DeckGLOverlay from '@/components/DeckGLOverlay.vue'
 import LegendMap from '@/components/LegendMap.vue'
-import MapControlsPanel from '@/components/MapControlsPanel.vue'
+import TrafficDock from '@/components/dock/TrafficDock.vue'
+import CvrpDock from '@/components/dock/CvrpDock.vue'
 import EdgeTooltip from '@/components/EdgeTooltip.vue'
 import CVRPTooltip from '@/components/CVRPTooltip.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
@@ -30,7 +31,7 @@ const deckGLCVRP = useDeckGLCVRP(deckGLTraffic.edgeMap)
 // don't clutter the waste collection view. Keep the grey base network and modification
 // indicators so the user still sees which edges are modified.
 const combinedLayers = computed(() => {
-  const trafficLayers = (trafficStore.isOpen || cvrpStore.isOpen) ? deckGLTraffic.layers.value : []
+  const trafficLayers = trafficStore.isOpen || cvrpStore.isOpen ? deckGLTraffic.layers.value : []
   const filteredTrafficLayers = cvrpStore.hasResult
     ? trafficLayers.filter((l: any) => !l.id.startsWith('traffic-routes'))
     : trafficLayers
@@ -116,7 +117,7 @@ watch(
       trafficStore.originalEdgeUsage,
       trafficStore.newEdgeUsage,
       trafficStore.activeVisualization,
-      trafficStore.filterBusRoutes,
+      trafficStore.filterBusRoutes
     ] as const,
   ([originalUsage, newUsage, activeVis]) => {
     if (trafficStore.isRestoring) return // Skip during batch restore
@@ -176,7 +177,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="visualizations-panel position-relative fill-height">
+  <div class="visualizations-panel">
     <!-- MapLibre Map (always shown as base layer) -->
     <MapLibreMap
       ref="map"
@@ -186,7 +187,6 @@ onMounted(async () => {
       :max-zoom="20"
       :min-zoom="6"
       :callback-loaded="() => syncAllLayersVisibility(layersStore.selectedLayers)"
-      class="fill-height"
     >
       <template #legend>
         <legend-map :layers="layersStore.visibleLayers"></legend-map>
@@ -206,13 +206,29 @@ onMounted(async () => {
     <!-- CVRP Route Tooltip -->
     <CVRPTooltip :data="deckGLCVRP.cvrpTooltipData.value" />
 
-    <!-- Unified Map Controls (Layers + Traffic Analysis) -->
-    <MapControlsPanel />
+    <!-- Analysis dock, on the right edge of the map, only when a tool is open -->
+    <div v-if="trafficStore.isOpen || cvrpStore.isOpen" class="dock">
+      <TrafficDock v-if="trafficStore.isOpen" />
+      <CvrpDock v-else />
+    </div>
   </div>
 </template>
 
 <style scoped>
 .visualizations-panel {
-  position: relative;
+  position: absolute;
+  inset: 0;
+}
+
+.dock {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--bc-dock-w);
+  background: var(--bc-panel-translucent);
+  border-left: 1px solid var(--bc-line);
+  overflow-y: auto;
+  z-index: 2;
 }
 </style>

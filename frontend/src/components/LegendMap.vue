@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { mdiChevronUp, mdiChevronDown } from '@mdi/js'
+import { computed } from 'vue'
 import type { MapLayerConfig } from '@/config/layerTypes'
 import { type LayerSpecification } from 'maplibre-gl'
 import { useLayersStore } from '@/stores/layers'
@@ -114,7 +113,7 @@ const generateOneLayerWithColors = (layer: MapLayerConfig) => {
     isCategorical,
     variable: paintProperty[1][1],
     gradient: !isCategorical
-      ? `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`
+      ? `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`
       : undefined,
     showZero: false
   }
@@ -159,7 +158,7 @@ const trafficLegend = computed(() => {
       label: 'Traffic Change',
       unit: 'Vehicle Count Difference',
       colors,
-      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false,
       showZero: true
     }
@@ -180,7 +179,7 @@ const trafficLegend = computed(() => {
       label: 'CO₂ Emissions Change',
       unit: 'Δ g CO₂/km (freq-weighted)',
       colors,
-      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false,
       showZero: true
     }
@@ -200,7 +199,7 @@ const trafficLegend = computed(() => {
       label: 'CO₂ Emissions',
       unit: 'g CO₂/km per use',
       colors,
-      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false
     }
   } else if (mode === 'betweenness') {
@@ -219,7 +218,7 @@ const trafficLegend = computed(() => {
       label: 'Betweenness Centrality',
       unit: 'Norm. edge flow (veh/day)',
       colors,
-      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false
     }
   } else if (mode === 'betweenness_delta') {
@@ -240,7 +239,7 @@ const trafficLegend = computed(() => {
       label: 'Betweenness Change',
       unit: 'Δ norm. edge flow (veh/day)',
       colors,
-      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false,
       showZero: true
     }
@@ -255,7 +254,7 @@ const trafficLegend = computed(() => {
       // Invert the diverging-symlog transform to get the value at this visual position
       const value =
         t <= 0.5
-          ? C * (Math.exp((1 - 2 * t) * slMax) - 1)   // positive half: t=0 → max, t=0.5 → 0
+          ? C * (Math.exp((1 - 2 * t) * slMax) - 1) // positive half: t=0 → max, t=0.5 → 0
           : -(C * (Math.exp((2 * t - 1) * slMax) - 1)) // negative half: t=0.5 → 0, t=1 → -max
       const [r, g, b] = trafficStore.getColor(value)
       const sign = value >= 0 ? '+' : ''
@@ -277,7 +276,7 @@ const trafficLegend = computed(() => {
       label: 'Traffic Change (Relative)',
       unit: `symlog scale  |  linear ≤ ±${C}%`,
       colors,
-      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false,
       showZero: true
     }
@@ -297,7 +296,7 @@ const trafficLegend = computed(() => {
       label: 'Edge Usage Frequency',
       unit: 'Relative Usage',
       colors,
-      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false
     }
   }
@@ -315,15 +314,18 @@ const cvrpLegend = computed(() => {
       const t = i / (steps - 1)
       const value = max * (1 - t)
       const hex = interpolateViridis(1 - t)
-      colors.push({ color: hex, label: value >= 1000 ? `${(value / 1000).toFixed(1)}k` : Math.round(value).toString() })
+      colors.push({
+        color: hex,
+        label: value >= 1000 ? `${(value / 1000).toFixed(1)}k` : Math.round(value).toString()
+      })
     }
     return {
       label: 'Edge Load',
       unit: `Total load (${cvrpStore.lastResult.load_unit})`,
       colors,
-      gradient: `linear-gradient(to bottom, ${colors.map((c) => c.color).join(', ')})`,
+      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
       isCategorical: false,
-      showZero: false,
+      showZero: false
     }
   }
 
@@ -339,7 +341,7 @@ const cvrpLegend = computed(() => {
     colors,
     isSwatches: true,
     isCategorical: false,
-    gradient: undefined,
+    gradient: undefined
   }
 })
 
@@ -381,8 +383,6 @@ const toggleCategory = (
   }
 }
 
-const show = ref(true)
-
 const shouldShowLegend = computed(() => {
   return allLegends.value.length > 0 || trafficLegend.value !== null
 })
@@ -390,230 +390,149 @@ const shouldShowLegend = computed(() => {
 
 <template>
   <div v-if="shouldShowLegend" class="legend">
-    <div v-if="show" class="legend-content d-flex d-row ga-10">
-      <div
-        v-for="layer in allLegends"
-        :key="layer?.id || layer?.label"
-        class="layer-legend d-flex flex-column justify-space-between"
-      >
-        <div class="layer-legend-header">
-          <h5 class="layer-legend-title">
-            {{ layer.label.toUpperCase() }}
-          </h5>
-          <div v-if="layer.unit" class="layer-legend-unit">{{ layer.unit }}</div>
-        </div>
-        <!-- Categorical Color Display with Checkboxes (MapLibre layers) -->
-        <div v-if="layer?.isCategorical" class="categorical-legend">
-          <div v-for="item in layer.colors" :key="item.label" class="legend-item">
-            <v-checkbox
-              density="compact"
-              hide-details
-              :model-value="
-                !(
-                  store.filteredCategories[layer.layer.id] &&
-                  store.filteredCategories[layer.layer.id][layer.variable] &&
-                  store.filteredCategories[layer.layer.id][layer.variable]?.includes(item.label)
-                )
-              "
-              class="legend-checkbox"
-              @update:model-value="(selected:boolean|null) => toggleCategory(layer.layer.id,layer.variable, item.label,selected)"
-            >
-              <template #label>
-                <div class="d-flex align-center">
-                  <div class="color-box" :style="{ backgroundColor: item.color }"></div>
-                  <div class="label text-body-2">{{ item.label }}</div>
-                </div>
-              </template>
-            </v-checkbox>
-          </div>
-        </div>
-        <!-- Simple color swatches (no MapLibre filter, e.g. CVRP vehicles) -->
-        <div v-else-if="layer?.isSwatches" class="categorical-legend">
-          <div v-for="item in layer.colors" :key="item.label" class="legend-item swatch-item">
-            <div class="color-box" :style="{ backgroundColor: item.color }"></div>
-            <div class="label text-body-2">{{ item.label }}</div>
-          </div>
-        </div>
-        <!-- Continuous Color Ramp -->
-        <div v-else class="gradient-ramp">
-          <div class="color-ramp" :style="{ background: layer.gradient }"></div>
-          <div class="ramp-labels">
-            <span>{{ layer.colors[0].label }}</span>
-            <span v-if="layer.showZero">0</span>
-            <span v-else-if="layer.colors.length > 2">{{
-              layer.colors[~~((layer.colors.length - 1) / 2)].label
-            }}</span>
-            <span>{{ layer.colors[layer.colors.length - 1].label }}</span>
-          </div>
+    <div v-for="layer in allLegends" :key="layer?.id || layer?.label" class="block">
+      <div class="bc-micro block__title">
+        {{ layer.label }}<span v-if="layer.unit"> · {{ layer.unit }}</span>
+      </div>
+
+      <!-- Categorical: the square is the filter toggle -->
+      <div v-if="layer?.isCategorical" class="cats">
+        <div
+          v-for="item in layer.colors"
+          :key="item.label"
+          class="cat"
+          @click="
+            toggleCategory(
+              layer.layer.id,
+              layer.variable,
+              item.label,
+              !!(
+                store.filteredCategories[layer.layer.id] &&
+                store.filteredCategories[layer.layer.id][layer.variable] &&
+                store.filteredCategories[layer.layer.id][layer.variable]?.includes(item.label)
+              )
+            )
+          "
+        >
+          <span
+            class="cat__box"
+            :style="{
+              backgroundColor:
+                store.filteredCategories[layer.layer.id] &&
+                store.filteredCategories[layer.layer.id][layer.variable] &&
+                store.filteredCategories[layer.layer.id][layer.variable]?.includes(item.label)
+                  ? 'transparent'
+                  : item.color,
+              borderColor: item.color
+            }"
+          />
+          <span class="cat__label">{{ item.label }}</span>
         </div>
       </div>
-    </div>
 
-    <div class="legend-title" :class="{ 'with-divider': show }">
-      <span>LEGEND</span>
-      <v-btn
-        :icon="show ? mdiChevronDown : mdiChevronUp"
-        variant="text"
-        density="compact"
-        size="small"
-        @click="show = !show"
-      />
+      <!-- Vehicle routes: line chips, two columns -->
+      <div v-else-if="layer?.isSwatches" class="vehicles">
+        <span v-for="item in layer.colors" :key="item.label" class="vehicle">
+          <span class="vehicle__line" :style="{ backgroundColor: item.color }" />
+          {{ item.label }}
+        </span>
+      </div>
+
+      <!-- Continuous ramp -->
+      <div v-else>
+        <div class="ramp" :style="{ background: layer.gradient }"></div>
+        <div class="ramp__labels">
+          <span>{{ layer.colors[layer.colors.length - 1].label }}</span>
+          <span v-if="layer.showZero">0</span>
+          <span v-else-if="layer.colors.length > 2">{{
+            layer.colors[~~((layer.colors.length - 1) / 2)].label
+          }}</span>
+          <span>{{ layer.colors[0].label }}</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-:deep(.v-checkbox .v-selection-control) {
-  min-height: fit-content;
-  height: fit-content;
-}
-
 .legend {
   position: absolute;
-  bottom: 0.5em;
-  background-color: rgba(var(--v-theme-surface), 0.8);
-  padding: 16px;
-  z-index: 1000;
-  right: 0.5em;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  min-width: 200px;
-  transition: all 0.2s ease;
-}
-
-.legend:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-.legend-title {
-  display: flex;
-  align-items: center;
-  justify-content: end;
-  width: 100%;
-  font-size: 0.875rem;
-  font-weight: 400;
-  text-transform: uppercase;
-}
-
-.legend-title.with-divider {
-  padding-top: 12px;
-  border-top: 1px solid #e0e0e0;
-}
-
-.legend-content {
-  margin-bottom: 12px;
-}
-
-.layer-legend {
-  min-height: 200px;
-}
-
-.layer-legend-header {
-  margin-bottom: 0.5em;
-  width: 100%;
-  max-width: 200px;
-  text-align: left;
-}
-
-.layer-legend-title {
-  font-weight: normal;
-  margin-bottom: 0;
-  line-height: 1.2;
-  font-size: small;
-}
-
-.layer-legend-unit {
-  font-size: 0.75rem;
-  color: rgba(var(--v-theme-on-surface), 0.7);
-  font-weight: 400;
-  margin-top: 2px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  margin-bottom: 6px;
-  width: 100%;
-}
-
-.color-box {
-  width: 34px;
-  height: 24px;
-  margin-right: 8px;
-  margin-left: 8px;
-}
-
-.label {
-  margin-right: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.categorical-legend {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-height: 200px;
+  left: 24px;
+  bottom: 22px;
+  background: var(--bc-legend-bg);
+  padding: 10px 12px;
+  z-index: 1;
+  max-height: calc(100% - 60px);
   overflow-y: auto;
-  padding-right: 4px;
 }
 
-.categorical-legend::-webkit-scrollbar {
-  width: 4px;
+.block + .block {
+  margin-top: 10px;
 }
 
-.categorical-legend::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 2px;
+.block__title {
+  margin-bottom: 6px;
 }
 
-.categorical-legend::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 2px;
+.ramp {
+  width: 220px;
+  height: 6px;
 }
 
-.categorical-legend::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
-}
-
-.legend-controls {
+.ramp__labels {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-top: 4px;
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  color: var(--bc-ink);
 }
 
-.legend-checkbox {
-  width: 100%;
-}
-
-.swatch-item {
-  padding: 1px 0;
-}
-
-.gradient-ramp {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  margin-top: 8px;
-}
-
-.color-ramp {
-  width: 36px;
-  height: 100%;
-}
-
-.ramp-labels {
+.cats {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  height: 100%;
-  margin-left: 8px;
-  font-size: 0.85em;
+  gap: 4px;
+  max-width: 220px;
+}
+
+.cat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.cat__box {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border: 1px solid;
+}
+
+.cat__label {
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  color: var(--bc-ink);
+}
+
+.vehicles {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 4px 20px;
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  color: var(--bc-ink);
+}
+
+.vehicle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vehicle__line {
+  width: 16px;
+  height: 2px;
+  flex: none;
 }
 </style>

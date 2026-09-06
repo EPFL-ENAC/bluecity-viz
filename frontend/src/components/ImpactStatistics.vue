@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { mdiChevronDown, mdiChevronRight } from '@mdi/js'
+import { computed } from 'vue'
 
 export interface ImpactStats {
   total_routes: number
@@ -25,259 +24,142 @@ interface Props {
   elasticDemand?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), { elasticDemand: false })
 
-const isExpanded = ref(false)
-
-// Auto-expand when new statistics arrive
-watch(
-  () => props.statistics,
-  (val) => { if (val) isExpanded.value = true }
-)
-
-// Inelastic: per-route comparison, affected_routes > 0
-const hasImpact = computed(() => {
-  return !props.elasticDemand && props.statistics && props.statistics.affected_routes > 0
-})
-
-// Elastic: show system-level totals regardless of affected count
-const hasElasticTotals = computed(() => {
-  return props.elasticDemand && props.statistics && (
-    props.statistics.total_distance_increase_km !== 0 ||
-    props.statistics.total_time_increase_minutes !== 0
-  )
-})
-
-const affectedPercent = computed(() => {
-  if (!props.statistics || props.statistics.total_routes === 0) return 0
-  return ((props.statistics.affected_routes / props.statistics.total_routes) * 100).toFixed(1)
-})
-
-const hasFailedRoutes = computed(() => {
-  return props.statistics && props.statistics.failed_routes > 0
-})
-
-function formatWithSign(value: number, decimals: number = 2): string {
-  const formatted = value.toFixed(decimals)
-  return value > 0 ? `+${formatted}` : formatted
+function formatWithSign(value: number, decimals = 1): string {
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${value.toFixed(decimals)}`
 }
 
+function formatCo2(grams?: number): string {
+  if (grams == null) return '—'
+  // grams get big fast on the total column
+  if (Math.abs(grams) >= 1000) return `${formatWithSign(grams / 1000, 1)} kg`
+  return `${formatWithSign(grams, 0)} g`
+}
+
+const affectedPercent = computed(() => {
+  const s = props.statistics
+  if (!s || s.total_routes === 0) return '0.0'
+  return ((s.affected_routes / s.total_routes) * 100).toFixed(1)
+})
+
+const header = computed(() => {
+  const s = props.statistics
+  if (!s) return 'Impact'
+  if (props.elasticDemand) return 'Impact · system-level total'
+  return `Impact · ${s.total_routes} routes, ${s.affected_routes} affected (${affectedPercent.value}%)`
+})
+
+// One row per measure, with the three columns of the design.
+const rows = computed(() => {
+  const s = props.statistics
+  if (!s) return []
+  return [
+    {
+      key: 'Distance',
+      total: `${formatWithSign(s.total_distance_increase_km, 1)} km`,
+      avg: `${formatWithSign(s.avg_distance_increase_km, 2)} km`,
+      max: `${formatWithSign(s.max_distance_increase_km, 2)} km`
+    },
+    {
+      key: 'Time',
+      total: `${formatWithSign(s.total_time_increase_minutes, 0)} min`,
+      avg: `${formatWithSign(s.avg_time_increase_minutes, 1)} min`,
+      max: `${formatWithSign(s.max_time_increase_minutes, 1)} min`
+    },
+    {
+      key: 'CO₂',
+      total: formatCo2(s.total_co2_increase_grams),
+      avg: formatCo2(s.avg_co2_increase_grams),
+      max: formatCo2(s.max_co2_increase_grams)
+    }
+  ]
+})
 </script>
 
 <template>
-  <div v-if="statistics" class="impact-statistics">
-    <div class="section-header" @click="isExpanded = !isExpanded">
-      <div class="d-flex align-center">
-        <v-btn
-          :icon="isExpanded ? mdiChevronDown : mdiChevronRight"
-          variant="text"
-          density="compact"
-          size="small"
-        />
-        <span class="section-title">IMPACT STATISTICS</span>
-      </div>
+  <div v-if="statistics" class="impact">
+    <div class="bc-micro impact__head">{{ header }}</div>
+
+    <div class="impact__table" :class="{ 'impact__table--total-only': elasticDemand }">
+      <span />
+      <span class="impact__col">Total</span>
+      <template v-if="!elasticDemand">
+        <span class="impact__col">Avg</span>
+        <span class="impact__col">Max</span>
+      </template>
+
+      <template v-for="row in rows" :key="row.key">
+        <span class="impact__label">{{ row.key }}</span>
+        <span class="impact__value">{{ row.total }}</span>
+        <template v-if="!elasticDemand">
+          <span class="impact__value">{{ row.avg }}</span>
+          <span class="impact__value impact__value--max">{{ row.max }}</span>
+        </template>
+      </template>
+
+      <template v-if="statistics.failed_routes > 0">
+        <span class="impact__label impact__label--danger">Failed</span>
+        <span class="impact__value impact__value--danger">{{ statistics.failed_routes }}</span>
+        <template v-if="!elasticDemand">
+          <span class="impact__value" />
+          <span class="impact__value" />
+        </template>
+      </template>
     </div>
-    <v-expand-transition>
-      <div v-show="isExpanded" class="section-content">
-        <!-- Overview -->
-        <div class="stat-group">
-          <div class="stat-row">
-            <span class="stat-label">Total Routes:</span>
-            <span class="stat-value">{{ statistics.total_routes }}</span>
-          </div>
-          <div v-if="!elasticDemand" class="stat-row">
-            <span class="stat-label">Affected:</span>
-            <span class="stat-value">
-              {{ statistics.affected_routes }} ({{ affectedPercent }}%)
-            </span>
-          </div>
-          <div v-if="hasFailedRoutes" class="stat-row">
-            <span class="stat-label">Failed:</span>
-            <span class="stat-value">{{ statistics.failed_routes }}</span>
-          </div>
-        </div>
-
-        <!-- Total Impact (inelastic demand) -->
-        <div v-if="hasImpact" class="stat-group">
-          <div class="stat-group-label">Total Impact</div>
-          <div class="stat-row">
-            <span class="stat-label">Distance:</span>
-            <span class="stat-value"
-              >{{ formatWithSign(statistics.total_distance_increase_km, 2) }} km</span
-            >
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Time:</span>
-            <span class="stat-value"
-              >{{ formatWithSign(statistics.total_time_increase_minutes, 1) }} min</span
-            >
-          </div>
-          <div v-if="statistics.total_co2_increase_grams !== undefined" class="stat-row">
-            <span class="stat-label">CO₂:</span>
-            <span class="stat-value"
-              >{{ formatWithSign(statistics.total_co2_increase_grams / 1000, 2) }} kg</span
-            >
-          </div>
-        </div>
-
-        <!-- Average Impact (inelastic demand) -->
-        <div v-if="hasImpact" class="stat-group">
-          <div class="stat-group-label">Average (per affected)</div>
-          <div class="stat-row">
-            <span class="stat-label">Distance:</span>
-            <span class="stat-value">
-              {{ formatWithSign(statistics.avg_distance_increase_km, 2) }} km
-              <span class="stat-secondary"
-                >({{ formatWithSign(statistics.avg_distance_increase_percent, 1) }}%)</span
-              >
-            </span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Time:</span>
-            <span class="stat-value">
-              {{ formatWithSign(statistics.avg_time_increase_minutes, 1) }} min
-              <span class="stat-secondary"
-                >({{ formatWithSign(statistics.avg_time_increase_percent, 1) }}%)</span
-              >
-            </span>
-          </div>
-          <div v-if="statistics.avg_co2_increase_grams !== undefined" class="stat-row">
-            <span class="stat-label">CO₂:</span>
-            <span class="stat-value">
-              {{ formatWithSign(statistics.avg_co2_increase_grams, 0) }} g
-              <span class="stat-secondary"
-                >({{ formatWithSign(statistics.avg_co2_increase_percent ?? 0, 1) }}%)</span
-              >
-            </span>
-          </div>
-        </div>
-
-        <!-- Maximum Impact (inelastic demand) -->
-        <div v-if="hasImpact" class="stat-group">
-          <div class="stat-group-label">Maximum (worst case)</div>
-          <div class="stat-row">
-            <span class="stat-label">Distance:</span>
-            <span class="stat-value"
-              >{{ formatWithSign(statistics.max_distance_increase_km, 2) }} km</span
-            >
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Time:</span>
-            <span class="stat-value"
-              >{{ formatWithSign(statistics.max_time_increase_minutes, 1) }} min</span
-            >
-          </div>
-          <div v-if="statistics.max_co2_increase_grams !== undefined" class="stat-row">
-            <span class="stat-label">CO₂:</span>
-            <span class="stat-value"
-              >{{ formatWithSign(statistics.max_co2_increase_grams, 0) }} g</span
-            >
-          </div>
-        </div>
-
-        <!-- Total system impact (elastic demand) -->
-        <div v-if="hasElasticTotals" class="stat-group">
-          <div class="stat-group-label">System-level total</div>
-          <div class="stat-row">
-            <span class="stat-label">Distance:</span>
-            <span class="stat-value">{{ formatWithSign(statistics.total_distance_increase_km, 2) }} km</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Time:</span>
-            <span class="stat-value">{{ formatWithSign(statistics.total_time_increase_minutes, 1) }} min</span>
-          </div>
-          <div v-if="statistics.total_co2_increase_grams !== undefined" class="stat-row">
-            <span class="stat-label">CO₂:</span>
-            <span class="stat-value">{{ formatWithSign(statistics.total_co2_increase_grams / 1000, 2) }} kg</span>
-          </div>
-        </div>
-
-        <!-- No impact message (inelastic only) -->
-        <div v-if="!elasticDemand && !hasImpact && statistics.affected_routes === 0" class="text-center py-2">
-          <span class="text-caption text-medium-emphasis">No routes affected</span>
-        </div>
-      </div>
-    </v-expand-transition>
   </div>
 </template>
 
 <style scoped>
-.impact-statistics {
-  /* no border-bottom: now a standalone floating panel */
+.impact {
+  padding: 16px 22px 22px;
 }
 
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  cursor: pointer;
-  user-select: none;
+.impact__head {
+  margin-bottom: 10px;
 }
 
-.section-header:hover {
-  background-color: rgba(var(--v-theme-on-surface), 0.05);
-}
-
-.section-title {
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.section-content {
-  padding: 0 12px 8px 12px;
-}
-
-.stat-group {
-  margin-bottom: 6px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.stat-group:last-child {
-  margin-bottom: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-}
-
-
-.stat-group-label {
-  font-size: 0.625rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  color: rgba(var(--v-theme-on-surface), 0.6);
-  margin-bottom: 2px;
-  letter-spacing: 0.5px;
-}
-
-.stat-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1px 0;
-  font-size: 0.75rem;
-}
-
-.stat-label {
-  color: rgba(var(--v-theme-on-surface), 0.7);
-  font-weight: 400;
-}
-
-.stat-value {
-  font-weight: 500;
-  font-size: 0.8rem;
-  color: rgb(var(--v-theme-on-surface));
-  text-align: right;
+.impact__table {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 4px 14px;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 
+.impact__table--total-only {
+  grid-template-columns: 1fr auto;
+}
 
-.stat-secondary {
-  font-size: 0.688rem;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  margin-left: 4px;
-  font-weight: 400;
+.impact__col {
+  font-family: var(--bc-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bc-grey);
+  text-align: right;
+}
+
+.impact__label {
+  color: var(--bc-grey);
+  border-top: 1px solid var(--bc-line);
+  padding-top: 4px;
+}
+
+.impact__value {
+  text-align: right;
+  border-top: 1px solid var(--bc-line);
+  padding-top: 4px;
+}
+
+/* the one value the eye should land on */
+.impact__value--max {
+  color: var(--bc-accent);
+}
+
+.impact__label--danger,
+.impact__value--danger {
+  color: var(--bc-danger);
 }
 </style>

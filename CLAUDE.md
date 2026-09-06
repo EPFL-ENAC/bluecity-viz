@@ -54,11 +54,34 @@ uv run ruff format app             # format
 
 **Config** (`config/`) — layer definitions for different SP0x sustainability indicator datasets (SP2 mobility, SP3 nature, SP4 waste, SP6 materials, etc.) served as PMTiles from S3.
 
+**Design system** — the UI follows the "Workbench" design (EPFL design system,
+Architecture sub-brand): Suisse Int'l, 1px hairlines, square corners, no shadow,
+mono micro-labels, Blue City blue `#0500E1` as the only accent, red only for
+delete. `assets/tokens.css` holds the `--bc-*` tokens plus the shared classes
+(`.bc-micro`, `.bc-row`, `.bc-check`, `.bc-btn`, `.bc-seg`) and the dark block,
+applied through `data-theme="dark"` on `<html>`. `plugins/vuetify.ts` re-themes
+the few Vuetify components still used (`workbench` / `workbench-dark`). Build new
+UI from `components/ui/` (`BcIcon`, `BcRow`, `BcSeg`, `BcSlider`, `BcDialogCard`),
+not from raw `v-card` / `v-checkbox`.
+
+**Layout**: one page, 360px sidebar on the left, map full-bleed, 340px analysis
+dock on the right when a tool is open. There is no app bar and no drawer.
+
 **Components** worth knowing:
+- `views/HomeView.vue` — the shell: sidebar (header + four sections) and the map stage
+- `components/sidebar/` — `InvestigationSection` (project tree, rename, share, delete),
+  `DatasetsSection`, `LayersSection`, `ToolsSection`
+- `components/panels/VisualizationsPanel.vue` — the map stage; mounts the map, the
+  Deck.gl overlay, the tooltips and the dock
+- `components/dock/` — `TrafficDock.vue` and `CvrpDock.vue`, one per analytics tool
 - `MapLibreMap.vue` + `DeckGLOverlay.vue` — the main map canvas, Deck.gl renders on top of MapLibre
-- `components/panels/` — sidebar panels (Collections, Visualizations, Resources)
-- `MapControlsPanel.vue` — traffic analysis interaction panel (edge click-to-modify, recalculate button)
 - `LegendMap.vue`, `ImpactStatistics.vue` — result display
+- `components/dialogs/` — add sources, share, delete
+
+**Basemap**: `utils/epflBasemap.ts` builds the EPFL "Trait" ink-on-paper style
+(OpenFreeMap vector tiles, canvas textures). `stores/theme.ts` offers `trait`,
+`trait-dark`, `style/light.json` and `style/none.json`; `isDark` drives both the
+UI theme and the map ink. The UI follows the basemap.
 
 ### Backend (`backend/app/`)
 

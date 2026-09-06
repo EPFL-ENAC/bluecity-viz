@@ -1,0 +1,335 @@
+/* BlueCity Viz — design tokens (Workbench redesign, direction 1a)
+   Base: EPFL Design System, Architecture Hub sub-brand. Accent: Blue City blue.
+   Import once in frontend/src/main.ts (after vuetify/styles). */
+
+@font-face {
+  font-family: "Suisse Int'l";
+  src: url('./fonts/SuisseIntl-Light.ttf') format('truetype');
+  font-weight: 300;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Suisse Int'l";
+  src: url('./fonts/SuisseIntl-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Suisse Int'l";
+  src: url('./fonts/SuisseIntl-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Suisse Int'l";
+  src: url('./fonts/SuisseIntl-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  /* colour */
+  --bc-ground: #fdfdfd; /* page / map paper */
+  --bc-panel: #ffffff; /* sidebar, dock, dialogs */
+  --bc-panel-translucent: rgba(255, 255, 255, 0.96); /* analysis dock over the map */
+  --bc-legend-bg: rgba(255, 255, 255, 0.9); /* legend over the map */
+  --bc-ink: #141414; /* primary text, filled checkboxes, primary buttons */
+  --bc-grey: #8e8e8e; /* secondary text, micro-labels, inactive rows */
+  --bc-grey-2: #b6b6b6; /* tertiary text, separators in breadcrumbs */
+  --bc-line: #ececec; /* every hairline */
+  --bc-hover: #f6f6f6; /* row hover */
+  --bc-accent: #0500e1; /* Blue City blue — active markers, "+ Add" links, one highlighted value */
+  --bc-accent-hover: #0400b8;
+  --bc-danger: #ff0000; /* destructive buttons only */
+  --bc-scrim: rgba(33, 33, 33, 0.5);
+
+  /* type */
+  --bc-font-sans: "Suisse Int'l", Arial, 'Helvetica Neue', Helvetica, sans-serif;
+  --bc-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  --bc-fs-display: 26px; /* investigation title, weight 300, letter-spacing -.02em, lh 1.1 */
+  --bc-fs-title: 20px; /* dock title, weight 300, letter-spacing -.01em */
+  --bc-fs-body: 13px; /* rows, labels */
+  --bc-fs-small: 11px; /* group captions, helper text */
+  --bc-fs-micro: 10px; /* mono micro-labels: uppercase, letter-spacing .06em */
+
+  /* layout */
+  --bc-sidebar-w: 360px;
+  --bc-dock-w: 340px;
+  --bc-pad-x: 24px; /* sidebar section horizontal padding (dock: 22px) */
+  --bc-row-y: 7px; /* list row vertical padding (dock rows: 6px) */
+  --bc-check: 11px; /* square checkbox size */
+  --bc-marker: 3px; /* active-row left bar */
+  --bc-radius: 0; /* square corners everywhere */
+  --bc-shadow: none; /* borders, never shadows */
+  --bc-t: 0.15s ease-in-out;
+}
+
+/* Dark mode — applied when the basemap is "Dark" (stores/theme.ts). Set data-theme="dark"
+   on <html>; every component reads the same --bc-* names, so nothing else changes. */
+[data-theme='dark'] {
+  --bc-ground: #141414;
+  --bc-panel: #1b1b1b;
+  --bc-panel-translucent: rgba(27, 27, 27, 0.96);
+  --bc-legend-bg: rgba(27, 27, 27, 0.9);
+  --bc-ink: #f2f2f2;
+  --bc-grey: #8e8e8e;
+  --bc-grey-2: #5c5c5c;
+  --bc-line: #2a2a2a;
+  --bc-hover: #222222;
+  --bc-accent: #8583ff; /* Blue City blue lifted for contrast on ink (#0500E1 is 1.6:1 on #141414) */
+  --bc-accent-hover: #a3a1ff;
+  --bc-scrim: rgba(0, 0, 0, 0.6);
+}
+[data-theme='dark'] .bc-btn--primary {
+  color: #141414;
+}
+[data-theme='dark'] .bc-btn--primary:hover {
+  background: #ffffff;
+}
+[data-theme='dark'] .maplibregl-ctrl-group {
+  border-color: #f2f2f2 !important;
+  background: #1b1b1b;
+}
+[data-theme='dark'] .maplibregl-ctrl-scale {
+  background: rgba(20, 20, 20, 0.6) !important;
+  color: #b6b6b6 !important;
+}
+
+/* element defaults */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+#app {
+  height: 100vh;
+  overflow: hidden;
+}
+body {
+  font-family: var(--bc-font-sans);
+  font-size: var(--bc-fs-body);
+  line-height: 1.5;
+  color: var(--bc-ink);
+  background: var(--bc-ground);
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: var(--bc-ink);
+  text-decoration: none;
+  transition: color var(--bc-t);
+}
+a:hover {
+  color: var(--bc-accent);
+}
+
+/* micro-label utility (column heads, section titles, legend titles) */
+.bc-micro {
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bc-grey);
+}
+
+/* list row: hairline top, optional left marker when active */
+.bc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--bc-row-y) 0;
+  border-top: 1px solid var(--bc-line);
+  font-size: var(--bc-fs-body);
+  position: relative;
+  cursor: pointer;
+}
+.bc-row:hover {
+  background: var(--bc-hover);
+}
+.bc-row[data-active='true'] {
+  padding-left: 20px;
+}
+.bc-row[data-active='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: var(--bc-marker);
+  background: var(--bc-accent);
+}
+.bc-row[data-active='false'] {
+  color: var(--bc-grey);
+}
+
+/* square checkbox glyph */
+.bc-check {
+  width: var(--bc-check);
+  height: var(--bc-check);
+  border: 1px solid var(--bc-ink);
+  flex: none;
+  background: transparent;
+}
+.bc-check[data-on='true'] {
+  background: var(--bc-ink);
+}
+
+/* buttons */
+.bc-btn {
+  font-family: var(--bc-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 9px 12px;
+  border: 1px solid var(--bc-ink);
+  background: transparent;
+  color: var(--bc-ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--bc-t), color var(--bc-t);
+}
+.bc-btn:hover {
+  background: var(--bc-hover);
+}
+.bc-btn--primary {
+  background: var(--bc-ink);
+  color: var(--bc-ground);
+}
+.bc-btn--primary:hover {
+  background: #000;
+}
+.bc-btn--danger {
+  background: var(--bc-danger);
+  border-color: var(--bc-danger);
+  color: #fff;
+}
+.bc-btn--danger:hover {
+  background: #b51f1f;
+  border-color: #b51f1f;
+}
+.bc-btn:focus-visible {
+  outline: 2px solid var(--bc-accent);
+  outline-offset: 2px;
+}
+
+/* segmented toggle (load unit, display mode, waste type) */
+.bc-seg {
+  display: flex;
+  border: 1px solid var(--bc-ink);
+  font-family: var(--bc-font-mono);
+  font-size: 10px;
+}
+.bc-seg > * {
+  padding: 3px 10px;
+  border-left: 1px solid var(--bc-ink);
+  cursor: pointer;
+}
+.bc-seg > :first-child {
+  border-left: 0;
+}
+.bc-seg > [data-on='true'] {
+  background: var(--bc-ink);
+  color: #fff;
+}
+
+/* MapLibre chrome — square, hairline, mono */
+.maplibregl-ctrl-group {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: 1px solid var(--bc-ink) !important;
+}
+.maplibregl-ctrl-group button {
+  border-radius: 0 !important;
+}
+.maplibregl-ctrl-scale {
+  border-radius: 0 !important;
+  border: 1px solid var(--bc-grey) !important;
+  border-top: 0 !important;
+  font-family: var(--bc-font-mono) !important;
+  font-size: 9px !important;
+  color: #6f6f6f !important;
+  background: rgba(255, 255, 255, 0.6) !important;
+}
+.maplibregl-ctrl-attrib {
+  font-family: var(--bc-font-mono) !important;
+  font-size: 9px !important;
+  border-radius: 0 !important;
+}
+.feature-popup .maplibregl-popup-content {
+  border-radius: 0;
+  border: 1px solid var(--bc-line);
+  box-shadow: none;
+  font-family: var(--bc-font-sans);
+}
+
+/* Vuetify bridge — keep the few v-* components we still use on the same vocabulary */
+.v-application {
+  font-family: var(--bc-font-sans) !important;
+}
+.v-application__wrap {
+  min-height: 100vh;
+}
+.bc-vbtn {
+  font-family: var(--bc-font-mono) !important;
+  font-size: 10.5px !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+}
+.v-field--variant-outlined .v-field__outline__start,
+.v-field--variant-outlined .v-field__outline__end {
+  border-radius: 0 !important;
+}
+.v-overlay__content > .v-card,
+.v-menu > .v-overlay__content {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.v-menu > .v-overlay__content {
+  border: 1px solid var(--bc-line);
+  background: var(--bc-panel);
+}
+.v-tooltip > .v-overlay__content {
+  border-radius: 0 !important;
+  font-family: var(--bc-font-sans);
+  font-size: 12px;
+}
+
+/* shared bits used by several components */
+.bc-empty {
+  font-size: var(--bc-fs-small);
+  color: var(--bc-grey);
+  line-height: 1.5;
+}
+.bc-section {
+  padding: 18px var(--bc-pad-x) 14px;
+  border-bottom: 1px solid var(--bc-line);
+}
+.bc-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.bc-meta {
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  color: var(--bc-grey);
+}
+.bc-link {
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bc-accent);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.bc-link:hover {
+  color: var(--bc-accent-hover);
+}
+.bc-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
