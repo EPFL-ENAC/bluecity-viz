@@ -1,5 +1,9 @@
 .PHONY: help install dev test clean lint format
 
+# Per-checkout override: git worktrees export BACKEND_PORT from .env.worktree
+# (see docs/worktree-env/), the main checkout keeps 8000.
+BACKEND_PORT ?= 8000
+
 help:
 	@echo "BlueCity Backend Makefile"
 	@echo ""
@@ -16,10 +20,10 @@ install:
 	uv sync
 
 dev:
-	uv run --directory . python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+	uv run --directory . python -m uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) --reload
 
 run:
-	uv run --directory . python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+	uv run --directory . python -m uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT)
 
 test:
 	uv run --directory . python test_with_data.py

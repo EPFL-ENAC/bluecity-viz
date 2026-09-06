@@ -1,8 +1,9 @@
 import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
 import type { LayerSpecification } from 'maplibre-gl'
 
-const isDev = import.meta.env.DEV
-const API_BASE_URL = isDev ? 'http://localhost:8000/api/v1/routes' : '/api/v1/routes'
+// Relative in dev too: vite proxies /api to this checkout's own backend, whose
+// port changes per git worktree (see vite.config.ts and docs/worktree-env/).
+const API_BASE_URL = '/api/v1/routes'
 
 const HABITAT_MAX = 100
 
