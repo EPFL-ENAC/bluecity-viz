@@ -7,8 +7,6 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
-
 from app.models.route import (
     GraphData,
     NodePair,
@@ -19,6 +17,8 @@ from app.models.route import (
     RouteResponse,
 )
 from app.services.graph_service import GraphService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/routes", tags=["routes"])
 

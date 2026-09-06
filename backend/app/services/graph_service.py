@@ -121,10 +121,10 @@ class GraphService:
                 data["elevation_gain"] = elevation_gain
 
             t = data.get("travel_time", 0)
-            l = data.get("length", 0)
-            s = data.get("speed_kph") or ((l / 1000) / (t / 3600) if t > 0 else None)
+            length_m = data.get("length", 0)
+            s = data.get("speed_kph") or ((length_m / 1000) / (t / 3600) if t > 0 else None)
             data["co2_g"] = CO2Calculator.calculate_edge_co2(
-                length=l, speed_kph=s, elevation_gain=elevation_gain
+                length=length_m, speed_kph=s, elevation_gain=elevation_gain
             )
 
         self._edge_co2_cache = {}

@@ -161,8 +161,6 @@ def build_edge_usage_stats(
     label = "new" if original_counts is not None else "original"
     t0 = time.perf_counter()
 
-    t_count_ms = 0.0  # counting is now done externally
-
     t1 = time.perf_counter()
     stats = []
     for (u, v), count in counts.items():

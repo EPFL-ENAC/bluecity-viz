@@ -90,7 +90,9 @@ class RecalculateRequest(BaseModel):
     )
     resample_destinations: bool = Field(
         default=False,
-        description="Resample trip destinations using travel times on the modified graph (elastic demand)",
+        description=(
+            "Resample trip destinations using travel times on the modified graph (elastic demand)"
+        ),
     )
 
 
