@@ -42,7 +42,7 @@ def copy_weight_to_igraph(graph, h, idx_maps: dict, weight: str) -> None:
     h.es[weight] = edge_weights
 
 
-async def calculate_routes_igraph(
+def calculate_routes_igraph(
     graph,
     edge_metrics_cache: dict,
     origin_groups: dict,

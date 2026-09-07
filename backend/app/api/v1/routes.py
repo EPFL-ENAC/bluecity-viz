@@ -35,7 +35,7 @@ class GraphInfoResponse(BaseModel):
 
 
 @router.get("/graph-info", response_model=GraphInfoResponse)
-async def get_graph_info():
+def get_graph_info():
     """
     Get information about the loaded graph including sample node IDs.
 
@@ -50,7 +50,7 @@ async def get_graph_info():
 
 
 @router.post("/calculate", response_model=RouteResponse)
-async def calculate_routes(request: RouteRequest):
+def calculate_routes(request: RouteRequest):
     """
     Calculate shortest paths between origin-destination pairs.
 
@@ -61,17 +61,18 @@ async def calculate_routes(request: RouteRequest):
         Calculated routes with paths and metadata
     """
     try:
-        routes = await graph_service.calculate_routes(
-            pairs=request.pairs,
-            weight=request.weight,
-        )
+        with graph_service.lock:
+            routes = graph_service.calculate_routes(
+                pairs=request.pairs,
+                weight=request.weight,
+            )
         return RouteResponse(routes=routes)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/recalculate", response_model=RecalculateResponse)
-async def recalculate_routes(request: RecalculateRequest):
+def recalculate_routes(request: RecalculateRequest):
     """
     Recalculate shortest paths after applying edge modifications.
     Modifications can remove edges or change their speed.
@@ -84,7 +85,7 @@ async def recalculate_routes(request: RecalculateRequest):
         Original and recalculated routes with comparison data
     """
     try:
-        result = await graph_service.recalculate_with_modifications(
+        result = graph_service.recalculate_with_modifications(
             pairs=request.pairs,
             edge_modifications=request.edge_modifications,
             weight=request.weight,
@@ -99,7 +100,7 @@ async def recalculate_routes(request: RecalculateRequest):
 
 
 @router.get("/graph", response_model=GraphData)
-async def get_graph():
+def get_graph():
     """
     Get complete graph data for visualization.
 
@@ -114,7 +115,7 @@ async def get_graph():
 
 
 @router.post("/random-pairs", response_model=List[NodePair])
-async def generate_random_pairs(request: RandomPairsRequest):
+def generate_random_pairs(request: RandomPairsRequest):
     """
     Generate random origin-destination node pairs.
 
@@ -140,25 +141,27 @@ async def generate_random_pairs(request: RandomPairsRequest):
             )
 
             config = request.sampling_config or SamplingConfig()
-            pairs = generate_research_based_pairs(
-                graph_service.graph,
-                n_pairs=request.count,
-                config=config,
-                seed=request.seed or 42,
-            )
+            with graph_service.lock:
+                pairs = generate_research_based_pairs(
+                    graph_service.graph,
+                    n_pairs=request.count,
+                    config=config,
+                    seed=request.seed or 42,
+                )
         else:
-            pairs = graph_service.generate_random_pairs(
-                count=request.count,
-                seed=request.seed,
-                radius_km=request.radius_km,
-            )
+            with graph_service.lock:
+                pairs = graph_service.generate_random_pairs(
+                    count=request.count,
+                    seed=request.seed,
+                    radius_km=request.radius_km,
+                )
         return pairs
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/clear-cache")
-async def clear_cache():
+def clear_cache():
     """
     Clear the route calculation cache.
 
@@ -185,7 +188,7 @@ class EdgeGeometry(BaseModel):
 
 
 @router.get("/edge-geometries")
-async def get_edge_geometries(response: Response, limit: Optional[int] = None):
+def get_edge_geometries(response: Response, limit: Optional[int] = None):
     """
     Get all edge geometries from the graph for Deck.gl visualization.
 
@@ -231,14 +234,16 @@ async def get_edge_geometries(response: Response, limit: Optional[int] = None):
 
 
 @router.get("/habitat-geojson")
-async def get_habitat_geojson():
+def get_habitat_geojson():
     """
     Get habitat density as a GeoJSON FeatureCollection for MapLibre visualization.
     """
     try:
         graph = graph_service.graph
         features = []
-        for u, v, data in graph.edges(data=True):
+        with graph_service.lock:
+            edges = list(graph.edges(data=True))
+        for u, v, data in edges:
             coords = (
                 [[lon, lat] for lon, lat in data["geometry"].coords]
                 if "geometry" in data

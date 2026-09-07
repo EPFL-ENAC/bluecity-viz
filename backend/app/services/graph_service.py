@@ -7,13 +7,15 @@ Delegates to specialised modules:
   sampling/       — research-based OD pair generation
 """
 
-import asyncio
+import functools
 import logging
 import random
+import threading
 import time
 from pathlib import Path
 from typing import List, Optional
 
+import anyio.to_thread
 import osmnx as ox
 
 from app.models.route import (
@@ -69,11 +71,12 @@ class GraphService:
         self._bc_sample_nodes: list = []
         self.od_nodes = None  # pd.Series {NX node ID → weight} — candidate pool for resampling
         self.sampling_config = None
-        # Serialises recalculate_with_modifications: it mutates self.graph and the
-        # edge caches in place and rolls them back, with awaits in between. Without
-        # this lock, concurrent requests interleave on the single event loop and
-        # corrupt the shared NetworkX adjacency structure (parallel-edge data races).
-        self._recalc_lock = asyncio.Lock()
+        # Serialises every operation that reads or mutates the shared graph.
+        # Handlers now run in the FastAPI threadpool (plain `def`), so several
+        # requests can be in flight at once; this lock keeps them off each
+        # other. It is re-entrant so a locked method can call another one.
+        # cvrp_service also takes it before copying the graph.
+        self.lock = threading.RLock()
 
         if graph_path:
             self.load_graph(graph_path)
@@ -151,6 +154,30 @@ class GraphService:
         sampling_method: str = "research",
         sampling_config=None,
     ):
+        """Await-able wrapper: runs the sync startup work in a worker thread.
+
+        main.py calls this with `await` during the FastAPI lifespan. The work
+        itself is pure CPU, so it runs off the event loop.
+        """
+        await anyio.to_thread.run_sync(
+            functools.partial(
+                self.initialize_default_routes_sync,
+                count=count,
+                radius_km=radius_km,
+                seed=seed,
+                sampling_method=sampling_method,
+                sampling_config=sampling_config,
+            )
+        )
+
+    def initialize_default_routes_sync(
+        self,
+        count: int = 500,
+        radius_km: float = 2.0,
+        seed: int = 42,
+        sampling_method: str = "research",
+        sampling_config=None,
+    ):
         """Generate default OD pairs and pre-calculate baseline routes.
 
         Research-based sampling uses betweenness centrality and lognormal
@@ -178,7 +205,7 @@ class GraphService:
                 count=count, seed=seed, radius_km=radius_km
             )
 
-        self.default_routes = await self.calculate_routes(self.default_pairs, weight="travel_time")
+        self.default_routes = self.calculate_routes(self.default_pairs, weight="travel_time")
 
         pairs_key = tuple((p.origin, p.destination) for p in self.default_pairs)
         self.pairs_cache = pairs_key
@@ -251,7 +278,7 @@ class GraphService:
 
     # ── Routing ───────────────────────────────────────────────────────────────
 
-    async def calculate_routes(
+    def calculate_routes(
         self,
         pairs: List[NodePair],
         weight: str = "travel_time",
@@ -265,7 +292,7 @@ class GraphService:
             f"[ROUTING] {len(pairs)} pairs → {len(origin_groups)} origins "
             f"(avg {len(pairs) / len(origin_groups):.1f} dest/origin)"
         )
-        routes = await routing_engine.calculate_routes_igraph(
+        routes = routing_engine.calculate_routes_igraph(
             self.graph, self._edge_metrics_cache, origin_groups, weight
         )
         logger.info(f"[ROUTING] Calculated {len(routes)} routes")
@@ -273,7 +300,7 @@ class GraphService:
 
     # ── Edge Modifications & Recalculation ────────────────────────────────────
 
-    async def _strategy_volume_model(
+    def _strategy_volume_model(
         self,
         pairs: List[NodePair],
         congestion_iterations: int,
@@ -297,7 +324,7 @@ class GraphService:
                 }
 
         with timed("route_calculation", timing):
-            new_routes = await bpr.run_congestion_routing(
+            new_routes = bpr.run_congestion_routing(
                 self.graph, self._edge_metrics_cache, pairs, congestion_iterations
             )
 
@@ -305,7 +332,7 @@ class GraphService:
         affected_indices = list(range(len(new_routes)))
         return new_routes_by_index, delta_bc, affected_indices
 
-    async def _strategy_targeted_bc(
+    def _strategy_targeted_bc(
         self,
         pairs: List[NodePair],
         pairs_key: tuple,
@@ -343,7 +370,7 @@ class GraphService:
         with timed("route_calculation", timing):
             new_routes_by_index = {}
             if affected_indices:
-                new_routes = await self.calculate_routes(
+                new_routes = self.calculate_routes(
                     [pairs[i] for i in affected_indices], "duration_bc"
                 )
                 for i, idx in enumerate(affected_indices):
@@ -352,7 +379,7 @@ class GraphService:
 
         return new_routes_by_index, delta_bc, affected_indices
 
-    async def recalculate_with_modifications(
+    def recalculate_with_modifications(
         self,
         pairs: Optional[List[NodePair]] = None,
         edge_modifications: List[EdgeModification] = None,
@@ -363,14 +390,13 @@ class GraphService:
     ) -> RecalculateResponse:
         """Serialise recalculation to protect the shared in-place-mutated graph.
 
-        The actual work mutates self.graph and the edge caches and rolls them back,
-        with awaits in between. Holding _recalc_lock for the whole operation prevents
-        concurrent requests from interleaving on the single event loop and corrupting
-        the shared NetworkX adjacency structure. The critical section is ~75 ms, so
-        serialisation is imperceptible to users.
+        The work mutates self.graph and the edge caches and rolls them back.
+        Handlers run in the threadpool, so two requests really can overlap;
+        holding the lock for the whole operation stops them from corrupting
+        the shared NetworkX adjacency structure (parallel-edge data races).
         """
-        async with self._recalc_lock:
-            return await self._recalculate_with_modifications_locked(
+        with self.lock:
+            return self._recalculate_with_modifications_locked(
                 pairs=pairs,
                 edge_modifications=edge_modifications,
                 weight=weight,
@@ -379,7 +405,7 @@ class GraphService:
                 resample_destinations=resample_destinations,
             )
 
-    async def _recalculate_with_modifications_locked(
+    def _recalculate_with_modifications_locked(
         self,
         pairs: Optional[List[NodePair]] = None,
         edge_modifications: List[EdgeModification] = None,
@@ -410,7 +436,7 @@ class GraphService:
 
         with timed("cache_lookup", timing):
             if self.pairs_cache != pairs_key or pairs_key not in self.route_cache:
-                original_routes = await self.calculate_routes(pairs, weight)
+                original_routes = self.calculate_routes(pairs, weight)
                 self.pairs_cache = pairs_key
                 self.route_cache[pairs_key] = original_routes
                 self._route_edge_index[pairs_key] = routing_engine.build_route_edge_index(
@@ -445,16 +471,16 @@ class GraphService:
                     )
 
                 with timed("route_calculation", timing):
-                    all_new_routes = await self.calculate_routes(resampled_pairs, weight)
+                    all_new_routes = self.calculate_routes(resampled_pairs, weight)
                 new_routes_by_index = {i: r for i, r in enumerate(all_new_routes)}
                 delta_bc = None
                 affected_indices = list(range(len(all_new_routes)))
             elif use_congestion:
-                new_routes_by_index, delta_bc, affected_indices = await self._strategy_volume_model(
+                new_routes_by_index, delta_bc, affected_indices = self._strategy_volume_model(
                     pairs, congestion_iterations, effective_modified_set, timing
                 )
             else:
-                new_routes_by_index, delta_bc, affected_indices = await self._strategy_targeted_bc(
+                new_routes_by_index, delta_bc, affected_indices = self._strategy_targeted_bc(
                     pairs, pairs_key, effective_modified_set, timing
                 )
         finally:
@@ -580,21 +606,24 @@ class GraphService:
     def get_graph_info(self) -> dict:
         if not self.graph:
             raise RuntimeError("Graph not loaded")
-        return {
-            "node_count": len(self.graph.nodes),
-            "edge_count": len(self.graph.edges),
-            "sample_nodes": list(self.graph.nodes())[:20],
-        }
+        with self.lock:
+            return {
+                "node_count": len(self.graph.nodes),
+                "edge_count": len(self.graph.edges),
+                "sample_nodes": list(self.graph.nodes())[:20],
+            }
 
     def get_edge_geometries(self, limit: Optional[int] = None) -> List[dict]:
         if not self.graph:
             raise RuntimeError("Graph not loaded")
-        return get_edge_geometries(self.graph, limit)
+        with self.lock:
+            return get_edge_geometries(self.graph, limit)
 
     def get_graph_data(self):
         if not self.graph:
             raise RuntimeError("Graph not loaded")
-        return get_graph_data(self.graph)
+        with self.lock:
+            return get_graph_data(self.graph)
 
     def clear_route_cache(self):
         self.route_cache.clear()

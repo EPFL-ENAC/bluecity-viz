@@ -180,7 +180,7 @@ def apply_congestion_weights(graph, routes) -> None:
         )
 
 
-async def run_congestion_routing(graph, edge_metrics_cache: dict, pairs, n_iterations: int) -> List:
+def run_congestion_routing(graph, edge_metrics_cache: dict, pairs, n_iterations: int) -> List:
     """Route pairs iteratively, converging toward Wardrop user equilibrium.
 
     At equilibrium, no driver can reduce their travel time by switching routes.
@@ -202,7 +202,7 @@ async def run_congestion_routing(graph, edge_metrics_cache: dict, pairs, n_itera
 
     # Iteration 0: free-flow routing (path only, no metrics yet)
     copy_weight_to_igraph(graph, h, idx_maps, "travel_time")
-    routes = await calculate_routes_igraph(
+    routes = calculate_routes_igraph(
         graph,
         edge_metrics_cache,
         origin_groups,
@@ -215,7 +215,7 @@ async def run_congestion_routing(graph, edge_metrics_cache: dict, pairs, n_itera
         apply_congestion_weights(graph, routes)
         copy_weight_to_igraph(graph, h, idx_maps, "duration_bc")
         is_final = i == n_iterations - 1
-        routes = await calculate_routes_igraph(
+        routes = calculate_routes_igraph(
             graph,
             edge_metrics_cache,
             origin_groups,
