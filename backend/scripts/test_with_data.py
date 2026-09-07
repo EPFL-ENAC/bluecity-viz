@@ -1,4 +1,10 @@
-"""Test with actual graph data."""
+"""Manual check of the routing API against a running server.
+
+Not a unit test: it needs a backend with the real graph loaded.
+Run it with the port of the checkout you want to hit:
+
+    BACKEND_PORT=8000 uv run python scripts/test_with_data.py
+"""
 
 import json
 import os
@@ -40,7 +46,6 @@ def test_calculate_routes():
     request_data = {
         "pairs": [{"origin": pair[0], "destination": pair[1]} for pair in pairs],
         "weight": "travel_time",
-        "include_geometry": True,
     }
 
     print("Request:", json.dumps(request_data, indent=2))
@@ -67,69 +72,100 @@ def test_calculate_routes():
 
 
 def test_recalculate_routes():
-    """Test route recalculation with edge removal."""
-    # First calculate original routes
+    """Recalculate with one edge removed, on the caller's own OD pairs."""
     pairs = get_sample_nodes()
-
-    # Get a route first to find an edge to remove
-    request_data = {
-        "pairs": [{"origin": pairs[0][0], "destination": pairs[0][1]}],
-        "weight": "travel_time",
-        "include_geometry": True,
-    }
 
     response = requests.post(
         f"{BASE_URL}/api/v1/routes/calculate",
-        json=request_data,
+        json={"pairs": [{"origin": pairs[0][0], "destination": pairs[0][1]}]},
     )
 
     if response.status_code != 200:
         print("Failed to calculate initial route")
         return
 
-    route = response.json()["routes"][0]
-    path = route["path"]
-
+    path = response.json()["routes"][0]["path"]
     if len(path) < 3:
         print("Path too short to remove an edge")
         return
 
-    # Remove an edge from the middle
     mid_idx = len(path) // 2
-    edge_to_remove = {"u": path[mid_idx], "v": path[mid_idx + 1]}
-
-    print(f"\nRemoving edge: {edge_to_remove['u']} -> {edge_to_remove['v']}")
-
-    recalc_request = {
-        "pairs": [{"origin": pairs[0][0], "destination": pairs[0][1]}],
-        "edges_to_remove": [edge_to_remove],
-        "weight": "travel_time",
-        "include_geometry": True,
-    }
+    u, v = path[mid_idx], path[mid_idx + 1]
+    print(f"\nRemoving edge: {u} -> {v}")
 
     response = requests.post(
         f"{BASE_URL}/api/v1/routes/recalculate",
-        json=recalc_request,
+        json={
+            "pairs": [{"origin": pairs[0][0], "destination": pairs[0][1]}],
+            "edge_modifications": [{"u": u, "v": v, "action": "remove"}],
+        },
     )
 
-    print(f"\nRecalculate status: {response.status_code}")
-
-    if response.status_code == 200:
-        data = response.json()
-        comparison = data["comparisons"][0]
-
-        print("\nOriginal route:")
-        print(f"  Path length: {len(comparison['original_route']['path'])} nodes")
-        print(f"  Travel time: {comparison['original_route'].get('travel_time', 'N/A')} seconds")
-
-        print("\nNew route (with edge removed):")
-        print(f"  Path length: {len(comparison['new_route']['path'])} nodes")
-        print(f"  Travel time: {comparison['new_route'].get('travel_time', 'N/A')} seconds")
-
-        if comparison["removed_edge_on_path"]:
-            print("\n✓ Removed edge was on the original path")
-    else:
+    print(f"Recalculate status: {response.status_code}")
+    if response.status_code != 200:
         print("Error:", response.json())
+        return
+
+    data = response.json()
+    stats = data["impact_statistics"]
+    print(f"  OD pairs used:   {data['od_pairs']}")
+    print(f"  applied:         {len(data['applied_modifications'])} modification(s)")
+    print(
+        f"  routes:          {stats['total_routes']} total, "
+        f"{stats['affected_routes']} affected, {stats['failed_routes']} failed"
+    )
+    print(f"  extra time:      {stats['total_time_increase_minutes']:.2f} min")
+    print(f"  extra distance:  {stats['total_distance_increase_km']:.3f} km")
+    print(
+        f"  edge usage rows: {len(data['original_edge_usage'])} before, "
+        f"{len(data['new_edge_usage'])} after"
+    )
+
+    still_used = [r for r in data["new_edge_usage"] if r["u"] == u and r["v"] == v]
+    print(f"  removed edge is gone from the new usage: {not still_used}")
+
+    timing = data["timing"]
+    print(f"  server time:     {timing['total_ms']} ms")
+
+
+def test_baseline_and_od_pairs():
+    """The baseline endpoint, its ETag, and the per-request OD pair count."""
+    info = requests.get(f"{BASE_URL}/api/v1/routes/graph-info").json()
+    print(
+        f"OD pairs: {info['od_pairs']} sampled, {info['od_pairs_default']} by default, "
+        f"{info['od_pairs_max']} max"
+    )
+
+    response = requests.get(f"{BASE_URL}/api/v1/routes/baseline")
+    etag = response.headers.get("ETag")
+    print(
+        f"  GET /baseline:   {response.status_code}, {len(response.content) / 1e6:.2f} MB, "
+        f"{len(response.json()['edge_usage'])} rows"
+    )
+
+    again = requests.get(f"{BASE_URL}/api/v1/routes/baseline", headers={"If-None-Match": etag})
+    print(f"  same ETag again: {again.status_code} (304 means the client keeps its copy)")
+
+    small = requests.get(f"{BASE_URL}/api/v1/routes/baseline?od_pairs=5000").json()
+    full = requests.get(f"{BASE_URL}/api/v1/routes/baseline?od_pairs={info['od_pairs_max']}").json()
+    print(f"  5,000 pairs:     {small['total_routes']} routes, {len(small['edge_usage'])} edges")
+    print(f"  full set:        {full['total_routes']} routes, {len(full['edge_usage'])} edges")
+
+    response = requests.post(
+        f"{BASE_URL}/api/v1/routes/recalculate",
+        json={"edge_modifications": [], "od_pairs": 5000, "include_baseline": False},
+    )
+    data = response.json()
+    print(
+        f"  recalculate at 5,000 pairs: od_pairs={data['od_pairs']}, "
+        f"{len(response.content) / 1e6:.2f} MB without the baseline"
+    )
+
+    too_many = requests.post(
+        f"{BASE_URL}/api/v1/routes/recalculate",
+        json={"edge_modifications": [], "od_pairs": info["od_pairs_max"] + 1},
+    )
+    print(f"  asking for more than the max: {too_many.status_code} (422 expected)")
 
 
 if __name__ == "__main__":
@@ -144,6 +180,10 @@ if __name__ == "__main__":
     print("\n\n2. Testing route recalculation with edge removal...")
     print("-" * 60)
     test_recalculate_routes()
+
+    print("\n\n3. Testing the baseline and the OD pair count...")
+    print("-" * 60)
+    test_baseline_and_od_pairs()
 
     print("\n" + "=" * 60)
     print("Tests complete!")
