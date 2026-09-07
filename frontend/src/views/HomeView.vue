@@ -6,6 +6,7 @@ import LayersSection from '@/components/sidebar/LayersSection.vue'
 import ToolsSection from '@/components/sidebar/ToolsSection.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import { ref, watch, provide } from 'vue'
+import { useLayersStore } from '@/stores/layers'
 import { useThemeStore } from '@/stores/theme'
 import { useTheme } from 'vuetify'
 
@@ -17,6 +18,9 @@ provide('mapRef', mapComponentRef)
 
 // Use theme store for the basemap selector
 const themeStore = useThemeStore()
+
+// Restore the saved investigation once, before the sidebar and the map mount.
+useLayersStore().initializeInvestigations()
 
 // Vuetify theme management
 const vuetifyTheme = useTheme()

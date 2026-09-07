@@ -501,20 +501,72 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
   /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
-// ---------- tilejson fetch (memoised) ----------
+// ---------- tilejson fetch (memoised, cached for a day) ----------
 let tilesPromise: Promise<void> | null = null
 
-/** Resolve the OpenFreeMap tile URLs once, before the first buildStyle(). */
-export function loadTiles(): Promise<void> {
-  if (tilesPromise) return tilesPromise
-  tilesPromise = fetch('https://tiles.openfreemap.org/planet')
+const TILEJSON_KEY = 'bc-openfreemap-tilejson'
+const TILEJSON_TTL = 24 * 60 * 60 * 1000
+
+interface CachedTileJson {
+  tiles: string[]
+  maxzoom: number
+  ts: number
+}
+
+/** localStorage can be missing or refused (private mode), never throw for it. */
+function readTileCache(): CachedTileJson | null {
+  try {
+    const raw = localStorage.getItem(TILEJSON_KEY)
+    if (!raw) return null
+    const cached = JSON.parse(raw) as CachedTileJson
+    if (!Array.isArray(cached.tiles) || cached.tiles.length === 0) return null
+    if (!cached.ts || Date.now() - cached.ts > TILEJSON_TTL) return null
+    return cached
+  } catch {
+    return null
+  }
+}
+
+function writeTileCache(tiles: string[], maxzoom: number): void {
+  try {
+    localStorage.setItem(TILEJSON_KEY, JSON.stringify({ tiles, maxzoom, ts: Date.now() }))
+  } catch {
+    // no storage, we just fetch again next time
+  }
+}
+
+function fetchTileJson(): Promise<void> {
+  return fetch('https://tiles.openfreemap.org/planet')
     .then((r) => r.json())
     .then((j) => {
       SRC.tiles = j.tiles
       SRC.maxzoom = j.maxzoom || 14
+      writeTileCache(SRC.tiles, SRC.maxzoom)
     })
-    .catch(() => {
-      SRC.tiles = ['https://tiles.openfreemap.org/planet/{z}/{x}/{y}.pbf']
+}
+
+/**
+ * Resolve the OpenFreeMap tile URLs once, before the first buildStyle().
+ * The map cannot be built before this answers, so the URLs are kept in
+ * localStorage for a day. A cached start refreshes them in the background.
+ */
+export function loadTiles(): Promise<void> {
+  if (tilesPromise) return tilesPromise
+
+  const cached = readTileCache()
+  if (cached) {
+    SRC.tiles = cached.tiles
+    SRC.maxzoom = cached.maxzoom
+    tilesPromise = Promise.resolve()
+    // Refresh for the next load, the current map keeps the cached URLs.
+    fetchTileJson().catch(() => {
+      // keep what the cache gave us
     })
+    return tilesPromise
+  }
+
+  tilesPromise = fetchTileJson().catch(() => {
+    SRC.tiles = ['https://tiles.openfreemap.org/planet/{z}/{x}/{y}.pbf']
+  })
   return tilesPromise
 }

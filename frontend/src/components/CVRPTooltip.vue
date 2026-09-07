@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { CVRPTooltipData } from '@/composables/useDeckGLCVRP'
 import { getVehicleColor } from '@/stores/cvrp'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps<{
   data: CVRPTooltipData | null
@@ -17,14 +17,20 @@ function formatLoad(kg: number): string {
   if (kg >= 1000) return `${(kg / 1000).toFixed(1)} t`
   return `${Math.round(kg)} kg`
 }
+
+const root = ref<HTMLElement | null>(null)
+
+// same as the edge tooltip: the position never goes through a prop
+function move(x: number, y: number): void {
+  if (root.value) root.value.style.transform = `translate3d(${x + 15}px, ${y + 15}px, 0)`
+}
+
+defineExpose({ move })
 </script>
 
 <template>
-  <div
-    v-if="data"
-    class="cvrp-tooltip"
-    :style="{ left: `${data.x + 15}px`, top: `${data.y + 15}px` }"
-  >
+  <div v-show="data" ref="root" class="cvrp-tooltip">
+    <template v-if="data">
     <div class="tooltip-header">
       <span class="vehicle-dot" :style="{ background: dotColor }" />
       Vehicle {{ data.routeId + 1 }}
@@ -44,12 +50,15 @@ function formatLoad(kg: number): string {
         <span class="value">{{ data.nTrips }}</span>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .cvrp-tooltip {
-  position: fixed;
+  position: absolute;
+  left: 0;
+  top: 0;
   background: var(--bc-panel);
   color: var(--bc-ink);
   border: 1px solid var(--bc-line);

@@ -32,10 +32,10 @@ pnpm run schema     # Regenerate frontend/schema/parameters.schema.json from Typ
 ### Backend (from `backend/`)
 ```bash
 uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload  # dev server
-uv run python test_with_data.py    # integration test (requires lausanne.graphml)
-uv run python test_api.py          # API tests
-uv run ruff check app              # lint
-uv run ruff format app             # format
+uv run pytest                      # unit tests (synthetic graph, no data needed)
+uv run ruff check --no-fix app tests scripts   # lint
+uv run ruff format app tests scripts           # format
+uv run python scripts/test_with_data.py        # manual check against a running server
 ```
 
 ## Architecture
@@ -119,7 +119,8 @@ Python notebooks and scripts using GeoPandas/uv for converting raw datasets (sha
 
 Backend settings are in `backend/app/config.py` (pydantic-settings, reads `.env`):
 - `GRAPH_PATH` — path to GraphML file (default: `data/lausanne.graphml`)
-- `GEOJSON_PATH` — path to GeoJSON (default: `data/lausanne.geojson`)
+- `CORS_ORIGINS` — JSON list of allowed browser origins (default: the local dev ones)
+- `API_KEY` — shared key checked on `/api/v1/*` via `X-API-Key` (empty = no auth)
 
 The frontend always calls the backend on a relative `/api/v1/...` path. In dev,
 `frontend/vite.config.ts` proxies `/api` and `/data` to `127.0.0.1:$BACKEND_PORT`,

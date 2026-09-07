@@ -4,7 +4,7 @@ import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { scaleSequential } from 'd3-scale'
 import { interpolateViridis } from 'd3-scale-chromatic'
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, markRaw, ref, shallowRef } from 'vue'
 
 // Okabe-Ito palette: colour-blind safe, and the data-viz palette of the
 // EPFL design system. 8 colours, reused past the 8th vehicle.
@@ -39,9 +39,10 @@ export const useCVRPStore = defineStore('cvrp', () => {
   // Visualization mode
   const visualizationMode = ref<'routes' | 'heatmap'>('routes')
 
-  // Results
-  const lastResult = ref<CVRPSolveResponse | null>(null)
-  const centroids = ref<GeoJSON.FeatureCollection | null>(null)
+  // Results. Shallow: deck.gl walks these arrays on every render and a deep
+  // reactive proxy on thousands of coordinates costs more than the render.
+  const lastResult = shallowRef<CVRPSolveResponse | null>(null)
+  const centroids = shallowRef<GeoJSON.FeatureCollection | null>(null)
 
   // Edge load color scale (Viridis, domain set from 98th percentile of loads)
   const edgeLoadColorScale = ref<((v: number) => string) | null>(null)
@@ -59,7 +60,7 @@ export const useCVRPStore = defineStore('cvrp', () => {
   }
 
   function setResult(result: CVRPSolveResponse) {
-    lastResult.value = result
+    lastResult.value = markRaw(result)
 
     // Build edge load color scale
     if (result.edge_loads.length > 0) {
@@ -97,7 +98,7 @@ export const useCVRPStore = defineStore('cvrp', () => {
   }
 
   async function loadCentroids() {
-    centroids.value = await fetchCVRPCentroids(wasteType.value)
+    centroids.value = markRaw(await fetchCVRPCentroids(wasteType.value))
     showCentroids.value = true
   }
 

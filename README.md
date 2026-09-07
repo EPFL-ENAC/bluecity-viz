@@ -14,10 +14,11 @@ A Vue.js application designed to visualize geospatial data using MapLibre, with 
 
 ### Prerequisites
 
-- **Node.js** (v20 or later)
-- **Python** (3.11 or later)
+- **Node.js** 22 (see `frontend/.nvmrc`)
+- **pnpm** (pinned by the `packageManager` field)
+- **Python** 3.12 or later
 - **uv** (Python package manager)
-- **npm**
+- **GNU Make**
 
 ### Quick Start
 
@@ -45,30 +46,38 @@ A Vue.js application designed to visualize geospatial data using MapLibre, with 
 ### Available Commands
 
 - `make help` - Show all available commands
-- `make dev` - Start development server
-- `make build` - Build for production
-- `make install` - Install all dependencies
-- `make clean` - Clean temporary files
-- `make notebook` - Start Jupyter notebook for data processing
+- `make install` - Install all dependencies (frontend, backend, processing)
+- `make dev` - Start backend and frontend together
+- `make dev-frontend` - Frontend only
+- `make dev-backend` - Backend only
+- `make build` - Build the frontend for production
+- `make upload-frontend-geodata` - Push the geodata to S3 (needs `BUCKET_NAME`)
+
+To work on several branches at once, the repo has a git worktree setup
+(`make go BRANCH=feat/x`). See [docs/worktree-env/](docs/worktree-env/).
 
 ## Project Structure
 
 ```
 bluecity-viz/
-├── frontend/          # Vue.js application
-│   ├── src/           # Source code
-│   │   ├── components/  # Vue components
-│   │   ├── views/       # Application views
-│   │   ├── stores/      # Pinia state management
-│   │   └── utils/       # Utility functions
-│   ├── public/        # Static assets
-│   │   └── geodata/     # Geospatial data files
-│   └── schema/        # JSON schemas
-├── processing/        # Python data processing tools
-│   ├── Correlation/   # Correlation analysis
-│   ├── SP0*/          # Statistical processing modules
-│   └── pyproject.toml # Python dependencies
-└── Makefile          # Build automation
+├── frontend/          # Vue 3 application
+│   ├── src/
+│   │   ├── components/  # sidebar, dock, panels, dialogs, ui
+│   │   ├── composables/ # map and Deck.gl logic
+│   │   ├── views/       # HomeView, the shell
+│   │   ├── stores/      # Pinia state
+│   │   ├── services/    # backend HTTP clients
+│   │   ├── config/      # layer definitions per dataset
+│   │   └── utils/       # basemap style, colours, helpers
+│   └── public/
+│       └── geodata/     # local PMTiles (production reads the CDN)
+├── backend/           # FastAPI: routing, CO2, betweenness centrality
+│   └── app/services/  # graph, routing engine, BPR, sampling
+├── processing/        # Python tools, raw datasets to PMTiles
+│   ├── Correlation/   # correlation analysis
+│   └── SP0*/          # sustainability indicator modules
+├── docs/              # worktree setup, traffic analysis
+└── Makefile           # build automation
 ```
 
 ### Key Directories
@@ -87,15 +96,23 @@ The frontend is built with:
 
 - **Vue 3** with Composition API
 - **TypeScript** for type safety
-- **Vuetify** for UI components
-- **MapLibre GL** for map rendering
+- **MapLibre GL** for map rendering, **Deck.gl** for the analytics overlays
+- **Pinia** for state, **Vuetify** for a few remaining widgets
 - **PMTiles** for efficient geospatial data loading
+
+See [frontend/README.md](frontend/README.md) for the scripts and the layout.
+
+### Backend Development
+
+FastAPI over a GraphML road network loaded with osmnx. It pre-generates
+research-sampled OD pairs at startup and serves routing and impact analysis
+on `/api/v1/routes/`. Interactive docs at `http://127.0.0.1:8000/docs`.
 
 ### Data Processing
 
 The processing module uses:
 
-- **Python 3.11+** with modern tooling
+- **Python 3.12+** with modern tooling
 - **uv** for fast dependency management
 - **GeoPandas** for geospatial data manipulation
 - **Jupyter** for interactive analysis
@@ -108,13 +125,11 @@ The processing module uses:
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/your-feature`
-3. Make your changes and commit: `git commit -m "feat: add your feature"`
-4. Push to your fork: `git push origin feat/your-feature`
-5. Create a Pull Request
+Branch from `dev`, open the pull request against `dev`, and follow the
+[conventional commits](https://conventionalcommits.org/) format. CI checks the
+commit messages, the lint, the types, the tests and the build.
 
-Please follow the [conventional commits](https://conventionalcommits.org/) format.
+The full guide is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

@@ -17,7 +17,7 @@ COPY index.html ./
 COPY vite.config.ts tsconfig*.json env.d.ts ./
 
 # Build the app
-RUN pnpm run build
+RUN pnpm run build-only
 
 FROM nginx:stable-alpine AS production-stage
 

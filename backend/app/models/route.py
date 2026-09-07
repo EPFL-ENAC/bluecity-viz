@@ -1,8 +1,10 @@
 """Route models for API requests and responses."""
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.config import settings
 
 # Re-export SamplingConfig from node_sampling_service for API use
 try:
@@ -27,12 +29,23 @@ class Edge(BaseModel):
 
 
 class EdgeModification(BaseModel):
-    """Edge modification: remove or change properties."""
+    """Edge modification: remove the edge or change its speed."""
 
     u: int = Field(..., description="Start node ID")
     v: int = Field(..., description="End node ID")
-    action: str = Field(default="remove", description="Action: 'remove' or 'modify'")
-    speed_kph: Optional[float] = Field(None, description="New speed in km/h (for 'modify' action)")
+    action: Literal["remove", "modify"] = Field(
+        default="remove", description="Action: 'remove' or 'modify'"
+    )
+    speed_kph: Optional[float] = Field(
+        None, gt=0, le=130, description="New speed in km/h, required when action is 'modify'"
+    )
+
+    @model_validator(mode="after")
+    def check_speed_kph(self):
+        """A modify without a speed used to be accepted and then ignored."""
+        if self.action == "modify" and self.speed_kph is None:
+            raise ValueError("speed_kph is required when action is 'modify'")
+        return self
 
 
 class PathGeometry(BaseModel):
@@ -75,7 +88,9 @@ class RecalculateRequest(BaseModel):
         description="List of origin-destination pairs (uses default if not provided)",
     )
     edge_modifications: List[EdgeModification] = Field(
-        default_factory=list, description="Edge modifications (remove or change speed)"
+        default_factory=list,
+        max_length=500,
+        description="Edge modifications (remove or change speed)",
     )
     weight: str = Field(default="travel_time", description="Edge weight attribute")
     include_geometry: bool = Field(default=False, description="Include path geometry")
@@ -85,8 +100,27 @@ class RecalculateRequest(BaseModel):
     congestion_iterations: int = Field(
         default=1,
         ge=1,
-        le=5,
-        description="Number of volume→speed→reroute iterations (ignored if use_congestion=False)",
+        le=3,
+        description=(
+            "Number of volume→speed→reroute iterations (ignored if use_congestion=False). "
+            "Volumes are averaged (MSA), so 2 iterations already converge."
+        ),
+    )
+    od_pairs: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "How many OD pairs to use. The sets are nested: N pairs are the first N "
+            "of the set sampled at startup, so a result at 20,000 is a subset of the "
+            "one at 76,400. Defaults to the OD_PAIRS setting."
+        ),
+    )
+    include_baseline: bool = Field(
+        default=True,
+        description=(
+            "Include the unmodified edge usage in the response. It never changes, "
+            "so a client can fetch it once from GET /routes/baseline and pass false here."
+        ),
     )
     resample_destinations: bool = Field(
         default=False,
@@ -94,6 +128,17 @@ class RecalculateRequest(BaseModel):
             "Resample trip destinations using travel times on the modified graph (elastic demand)"
         ),
     )
+
+    @field_validator("od_pairs")
+    @classmethod
+    def check_od_pairs(cls, value):
+        """Only the pairs sampled at startup exist, asking for more is an error."""
+        if value is not None and value > settings.od_pairs_max:
+            raise ValueError(
+                f"od_pairs must be at most {settings.od_pairs_max} "
+                f"(OD_PAIRS_MAX, the set sampled at startup)"
+            )
+        return value
 
 
 class RouteComparison(BaseModel):
@@ -198,6 +243,9 @@ class TimingStats(BaseModel):
     affected_routes_ms: Optional[float] = Field(
         None, description="Affected-route detection (targeted BC mode only)"
     )
+    delta_bc_ms: Optional[float] = Field(
+        None, description="Betweenness centrality of the modified network"
+    )
     route_calculation_ms: float = Field(..., description="New route computation on modified graph")
     impact_stats_ms: float = Field(..., description="Impact statistics computation")
     edge_usage_stats_ms: float = Field(..., description="Edge usage stats build")
@@ -218,6 +266,14 @@ class RecalculateResponse(BaseModel):
         ..., description="Aggregate statistics about the impact of edge modifications"
     )
     timing: TimingStats = Field(..., description="Per-phase timing breakdown")
+
+
+class BaselineResponse(BaseModel):
+    """Edge usage of the unmodified network, for a given number of OD pairs."""
+
+    total_routes: int = Field(..., description="Number of routed OD pairs")
+    od_pairs: int = Field(..., description="Number of OD pairs used")
+    edge_usage: List[EdgeUsageStats] = Field(..., description="Edge usage without modifications")
 
 
 class GraphEdge(BaseModel):

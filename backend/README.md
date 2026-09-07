@@ -37,7 +37,7 @@ See [RESEARCH_SAMPLING.md](./RESEARCH_SAMPLING.md) for detailed documentation on
 
 ```bash
 # Test the research-based sampling
-uv run python test_node_sampling.py
+uv run python scripts/test_node_sampling.py
 ```
 
 ## API Endpoints
@@ -121,7 +121,7 @@ print(f"Affected routes: {result['impact_statistics']['affected_routes']}")
 uv run pytest
 
 # Test node sampling integration
-uv run python test_node_sampling.py
+uv run python scripts/test_node_sampling.py
 
 # Format code
 make format

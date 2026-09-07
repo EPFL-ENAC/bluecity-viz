@@ -1,9 +1,21 @@
 <script setup lang="ts">
 import type { EdgeTooltipData } from '@/composables/useDeckGLTrafficAnalysis'
+import { ref } from 'vue'
 
 defineProps<{
   data: EdgeTooltipData | null
 }>()
+
+const root = ref<HTMLElement | null>(null)
+
+// The cursor moves at 60 Hz. Writing x and y into a prop would re-render this
+// whole component every frame, so the parent calls move() instead and we go
+// straight to the style.
+function move(x: number, y: number): void {
+  if (root.value) root.value.style.transform = `translate3d(${x + 15}px, ${y + 15}px, 0)`
+}
+
+defineExpose({ move })
 
 // Format highway type for display
 function formatHighway(highway?: string): string {
@@ -70,14 +82,9 @@ function formatBCDelta(bc?: number): string {
 </script>
 
 <template>
-  <div
-    v-if="data"
-    class="edge-tooltip"
-    :style="{
-      left: `${data.x + 15}px`,
-      top: `${data.y + 15}px`
-    }"
-  >
+  <!-- always in the dom, so move() can position it before the content shows -->
+  <div v-show="data" ref="root" class="edge-tooltip">
+    <template v-if="data">
     <!-- Edge Name -->
     <div class="tooltip-header">
       {{ data.name }}
@@ -165,12 +172,16 @@ function formatBCDelta(bc?: number): string {
         </span>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .edge-tooltip {
-  position: fixed;
+  /* absolute inside the map stage, so deck's canvas coordinates land right */
+  position: absolute;
+  left: 0;
+  top: 0;
   background: var(--bc-panel);
   color: var(--bc-ink);
   border: 1px solid var(--bc-line);

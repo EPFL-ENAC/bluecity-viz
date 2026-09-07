@@ -3,7 +3,7 @@ name = "bluecity-backend"
 version = "0.1.0"
 description = "FastAPI backend for traffic analysis and route optimization"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -21,12 +21,7 @@ dependencies = [
     "igraph>=1.0.0",
     "pyvrp>=0.13.3",
     "scikit-learn>=1.8.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.3.0",
-    "httpx>=0.27.0",
+    "orjson>=3.12.0",
 ]
 
 [build-system]
@@ -53,4 +48,14 @@ docstring-code-format = true
 [dependency-groups]
 dev = [
     "ruff>=0.15.5",
+    "pytest>=8.3.0",
+    "httpx>=0.27.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::FutureWarning",
 ]

@@ -1,73 +1,52 @@
+import { biodiversityGroup } from '@/config/biodiversity'
+import { correlationLayerGroups } from '@/config/correlation'
 import {
-  allCorrelationLayers,
-  correlationLayerGroups,
-  correlationSources
-} from '@/config/correlation'
-import type { CustomSourceSpecification } from '@/config/layerTypes'
-import { baseUrlOptions, type MapLayerConfig } from '@/config/layerTypes'
-import { biodiversityLayers, biodiversitySources } from '@/config/biodiversity'
-import { sp0MigrationLayers, sp0MigrationSources } from '@/config/sp0_migration'
-import { sp2MobilityLayers, sp2MobilitySources } from '@/config/sp2_mobility'
-import { sp3NatureLayers, sp3NatureSources } from '@/config/sp3_nature'
-import { sp4WasteLayers, sp4WasteSources } from '@/config/sp4_waste'
-import { sp6MaterialsLayers, sp6MaterialsSources } from '@/config/sp6_materials'
-import { sp7VehicleLayers, sp7VehicleSources } from '@/config/sp7'
+  baseUrlOptions,
+  type CustomSourceSpecification,
+  type LayerGroup,
+  type MapLayerConfig
+} from '@/config/layerTypes'
+import { sp0MigrationGroup } from '@/config/sp0_migration'
+import { sp2MobilityGroup } from '@/config/sp2_mobility'
+import { sp3NatureGroup } from '@/config/sp3_nature'
+import { sp4WasteGroup } from '@/config/sp4_waste'
+import { sp6MaterialsGroup } from '@/config/sp6_materials'
+import { sp7VehicleGroup } from '@/config/sp7'
+
+/**
+ * The whole registry, in one place. The order is the order the layers are
+ * drawn in and the order of the datasets panel, so it is not free to change.
+ * To add a dataset, add its group here.
+ */
+const datasets: LayerGroup[] = [
+  sp2MobilityGroup,
+  sp3NatureGroup,
+  sp4WasteGroup,
+  sp6MaterialsGroup,
+  sp7VehicleGroup,
+  ...correlationLayerGroups,
+  sp0MigrationGroup,
+  biodiversityGroup
+]
+
+const layers: MapLayerConfig[] = datasets.flatMap((group) => group.layers)
+
+/** Several layers can read the same file, the source is listed once. */
+function uniqueSources(entries: MapLayerConfig[]): CustomSourceSpecification[] {
+  const seen = new Set<string>()
+  return entries
+    .map((entry) => entry.source)
+    .filter((source) => {
+      if (seen.has(source.id)) return false
+      seen.add(source.id)
+      return true
+    })
+}
 
 export const mapConfig = {
   baseUrl: baseUrlOptions,
-  layers: [
-    ...sp2MobilityLayers,
-    ...sp3NatureLayers,
-    ...sp4WasteLayers,
-    ...sp6MaterialsLayers,
-    ...sp7VehicleLayers,
-    ...allCorrelationLayers,
-    ...sp0MigrationLayers,
-    ...biodiversityLayers,
-  ] as MapLayerConfig[],
-  sources: [
-    ...sp2MobilitySources,
-    ...sp3NatureSources,
-    ...sp4WasteSources,
-    ...sp6MaterialsSources,
-    ...sp7VehicleSources,
-    ...sp0MigrationSources,
-    ...correlationSources,
-    ...biodiversitySources,
-  ] as CustomSourceSpecification[]
+  layers,
+  sources: uniqueSources(layers)
 }
 
-export const layerGroups = [
-  {
-    id: 'sp0_migration',
-    label: 'SP0 Migration',
-    expanded: false,
-    multiple: false,
-    layers: sp0MigrationLayers
-  },
-  {
-    id: 'sp2_mobility',
-    label: 'SP2 Mobility',
-    expanded: false,
-    multiple: false,
-    layers: sp2MobilityLayers
-  },
-  {
-    id: 'sp3_nature',
-    label: 'SP3 Nature',
-    expanded: false,
-    multiple: false,
-    layers: sp3NatureLayers
-  },
-  { id: 'sp4_waste', label: 'SP4 Waste', expanded: false, multiple: true, layers: sp4WasteLayers },
-  {
-    id: 'sp6_materials',
-    label: 'SP6 Materials',
-    expanded: false,
-    multiple: false,
-    layers: sp6MaterialsLayers
-  },
-  { id: 'sp7', label: 'SP7 Goods', expanded: false, multiple: false, layers: sp7VehicleLayers },
-  ...correlationLayerGroups,
-  { id: 'biodiversity', label: 'Biodiversity', expanded: false, multiple: false, layers: biodiversityLayers },
-]
+export const layerGroups = datasets
