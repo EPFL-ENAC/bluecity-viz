@@ -6,11 +6,13 @@ import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
 import { recalculateRoutes } from '@/services/trafficAnalysis'
 import { useLayersStore } from '@/stores/layers'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { computed, onMounted, ref } from 'vue'
 
 const layersStore = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
+const scenarioStore = useScenarioStore()
 
 const loadingMessage = ref('')
 
@@ -75,11 +77,11 @@ function visLabel(mode: string, fallback: string) {
 
 // The badge in front of each modified edge: x to remove, else the speed limit.
 function edgeBadge(action: string) {
-  if (action === 'remove') return '×'
-  if (action === 'speed10') return '10'
-  if (action === 'speed30') return '30'
-  return '50'
+  return action === 'remove' ? '×' : action
 }
+
+// ↔ both directions, → or ← one lane of the street.
+const DIR_GLYPH: Record<string, string> = { both: '↔', fwd: '→', bwd: '←' }
 
 async function calculateRoutes() {
   const odPairs = chosenOdPairs()
@@ -96,7 +98,7 @@ async function calculateRoutes() {
     // the store cache after the first time.
     const [baseline, result] = await Promise.all([
       trafficStore.getBaseline(odPairs),
-      recalculateRoutes(trafficStore.edgeModificationsArray, {
+      recalculateRoutes(scenarioStore.wire, {
         useCongestionModel: trafficStore.useCongestionModel,
         congestionIterations: trafficStore.congestionIterations,
         elasticDemand: trafficStore.elasticDemand,
@@ -135,34 +137,30 @@ async function calculateRoutes() {
     <!-- Modified edges -->
     <div class="dock-section">
       <div class="dock-section__head">
-        <span class="bc-micro">Modified edges · {{ trafficStore.edgeModificationsCount }}</span>
+        <span class="bc-micro">Modified edges · {{ scenarioStore.count }}</span>
         <button
-          v-if="trafficStore.edgeModificationsCount > 0"
+          v-if="scenarioStore.count > 0"
           class="bc-micro clear-btn"
-          @click="trafficStore.clearEdgeModifications()"
+          @click="scenarioStore.clear()"
         >
           Clear
         </button>
       </div>
 
-      <div
-        v-for="edge in trafficStore.edgeModificationsForDisplay"
-        :key="`${edge.u}-${edge.v}`"
-        class="edge-row"
-      >
+      <div v-for="edge in scenarioStore.list" :key="edge.key" class="edge-row">
         <span class="edge-row__badge">{{ edgeBadge(edge.action) }}</span>
         <span class="edge-row__name">{{ edge.name }}</span>
-        <span class="edge-row__dir">{{ edge.isBidirectional ? '↔' : '→' }}</span>
+        <span class="edge-row__dir">{{ DIR_GLYPH[edge.dir] }}</span>
         <button
           class="edge-row__remove"
           title="Remove this modification"
-          @click="trafficStore.removeEdgeModification(edge.u, edge.v)"
+          @click="scenarioStore.remove(edge.key)"
         >
           <BcIcon name="x" />
         </button>
       </div>
 
-      <p v-if="trafficStore.edgeModificationsCount === 0" class="bc-empty edge-empty">
+      <p v-if="scenarioStore.count === 0" class="bc-empty edge-empty">
         Click an edge on the map to cycle: remove → 50 → 30 → 10 km/h.
       </p>
     </div>

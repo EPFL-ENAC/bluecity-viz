@@ -5,6 +5,7 @@ import EdgeTooltip from '@/components/EdgeTooltip.vue'
 import { useDeckGLCVRP } from '@/composables/useDeckGLCVRP'
 import { useDeckGLTrafficAnalysis } from '@/composables/useDeckGLTrafficAnalysis'
 import { useCVRPStore } from '@/stores/cvrp'
+import { streetKey, useScenarioStore, type ScenarioAction } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
@@ -14,6 +15,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
+const scenarioStore = useScenarioStore()
 
 const deckGLTraffic = useDeckGLTrafficAnalysis()
 const deckGLCVRP = useDeckGLCVRP(deckGLTraffic.edgeMap)
@@ -66,13 +68,31 @@ watch(anyToolOpen, (open) => {
   }
 })
 
+// Click cycling, kept until the on-map edit popover replaces it. It always
+// covers both directions of the street, which is what the old click did.
+const CYCLE: Array<ScenarioAction | null> = ['remove', '50', '30', '10', null]
+
+function cycleStreet(u: number, v: number, name?: string) {
+  const key = streetKey(u, v)
+  const current = scenarioStore.get(key)
+  const next = CYCLE[(CYCLE.indexOf(current?.action ?? null) + 1) % CYCLE.length]
+
+  if (next === null) {
+    scenarioStore.remove(key)
+    return
+  }
+  scenarioStore.set(key, {
+    action: next,
+    dir: 'both',
+    name: name || current?.name || `Edge ${u}→${v}`
+  })
+}
+
 onMounted(async () => {
   deckGLTraffic.setTooltipMover((x, y) => edgeTooltip.value?.move(x, y))
   deckGLCVRP.setTooltipMover((x, y) => cvrpTooltip.value?.move(x, y))
 
-  deckGLTraffic.setEdgeClickCallback((u, v, name) => {
-    trafficStore.cycleEdgeModification(u, v, name)
-  })
+  deckGLTraffic.setEdgeClickCallback(cycleStreet)
 
   // The layers are a computed over the store and the network, so results that
   // arrived before the geometry simply show up when the geometry lands.

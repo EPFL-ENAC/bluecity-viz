@@ -1,9 +1,5 @@
-import {
-  fetchBaseline,
-  fetchGraphInfo,
-  type EdgeModification,
-  type ImpactStatistics
-} from '@/services/trafficAnalysis'
+import { fetchBaseline, fetchGraphInfo, type ImpactStatistics } from '@/services/trafficAnalysis'
+import { useScenarioStore } from '@/stores/scenario'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleDivergingSymlog, scaleSequential } from 'd3-scale'
 import { interpolateSpectral, interpolateViridis } from 'd3-scale-chromatic'
@@ -20,33 +16,15 @@ type LegendMode =
   | 'co2_delta'
   | 'betweenness'
   | 'betweenness_delta'
-export type ModificationAction = 'remove' | 'speed50' | 'speed30' | 'speed10'
 
 /** The visualization modes, 'none' included. */
 export type VisualizationMode = LegendMode
 /** The modes that have a color scale. */
 type ScaledMode = Exclude<VisualizationMode, 'none'>
 
-// Cycle order for edge modification actions
-export const MODIFICATION_CYCLE: (ModificationAction | null)[] = [
-  'remove',
-  'speed50',
-  'speed30',
-  'speed10',
-  null
-]
-
 export interface NodePair {
   origin: number
   destination: number
-}
-
-export interface EdgeModificationDisplay {
-  u: number
-  v: number
-  name: string
-  action: ModificationAction
-  isBidirectional: boolean
 }
 
 export interface EdgeUsageStats {
@@ -111,10 +89,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const isLoading = ref(false)
   const isCalculating = ref(false)
   const isRestoring = ref(false)
-  // Map of edge key -> { action, name }
-  const edgeModifications = ref<Map<string, { action: ModificationAction; name: string }>>(
-    new Map()
-  )
   const nodePairs = shallowRef<NodePair[]>([])
   const originalEdgeUsage = shallowRef<EdgeUsageStats[]>([])
   const newEdgeUsage = shallowRef<EdgeUsageStats[]>([])
@@ -160,67 +134,22 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   let colorCacheScale: ColorScale = null
   let colorCache = new Map<string, [number, number, number]>()
 
-  // Computed: convert edgeModifications to API format
-  const edgeModificationsArray = computed(() => {
-    const result: EdgeModification[] = []
-    edgeModifications.value.forEach((mod, key) => {
-      const [u, v] = key.split('-').map(Number)
-      if (mod.action === 'remove') {
-        result.push({ u, v, action: 'remove' })
-      } else {
-        const speed = mod.action === 'speed10' ? 10 : mod.action === 'speed30' ? 30 : 50
-        result.push({ u, v, action: 'modify', speed_kph: speed })
-      }
-    })
-    return result
-  })
-
-  const edgeModificationsForDisplay = computed(() => {
-    const entries = Array.from(edgeModifications.value.entries())
-    const displayed = new Set<string>()
-    const result: EdgeModificationDisplay[] = []
-
-    entries.forEach(([key, mod]) => {
-      if (displayed.has(key)) return
-
-      const [u, v] = key.split('-').map(Number)
-      const reverseKey = `${v}-${u}`
-      const reverseExists = edgeModifications.value.has(reverseKey)
-
-      result.push({
-        u,
-        v,
-        name: mod.name || `Edge ${u}→${v}`,
-        action: mod.action,
-        isBidirectional: reverseExists
-      })
-
-      displayed.add(key)
-      if (reverseExists) displayed.add(reverseKey)
-    })
-
-    return result.sort((a, b) => a.name.localeCompare(b.name))
-  })
-
-  const edgeModificationsCount = computed(() => {
-    const counted = new Set<string>()
-    let count = 0
-    edgeModifications.value.forEach((_, key) => {
-      if (counted.has(key)) return
-      const [u, v] = key.split('-')
-      counted.add(key)
-      counted.add(`${v}-${u}`)
-      count++
-    })
-    return count
-  })
-
-  // Helper to get modification for an edge
-  function getEdgeModification(u: number, v: number): ModificationAction | null {
-    return edgeModifications.value.get(`${u}-${v}`)?.action ?? null
-  }
+  // The scenario the results on screen were computed with. A result is stale
+  // when the scenario moved since, and the tool says so instead of quietly
+  // answering an old question.
+  const resultScenarioHash = ref<string | null>(null)
 
   const hasCalculatedRoutes = computed(() => originalEdgeUsage.value.length > 0)
+
+  /**
+   * True when the graph was edited after this result was computed. The result
+   * stays on the map, faded, until it is run again.
+   */
+  const isStale = computed(() => {
+    if (!hasCalculatedRoutes.value) return false
+    const scenario = useScenarioStore()
+    return resultScenarioHash.value !== scenario.hash
+  })
 
   // Available visualization modes based on calculated data
   const availableVisualizations = computed(() => {
@@ -273,33 +202,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   function closePanel() {
     isOpen.value = false
-  }
-
-  // Cycle through modification actions: remove → speed10 → speed30 → speed50 → (none)
-  function cycleEdgeModification(u: number, v: number, name?: string) {
-    const key = `${u}-${v}`
-    const current = edgeModifications.value.get(key)
-    const currentAction = current?.action ?? null
-    const currentIndex = MODIFICATION_CYCLE.indexOf(currentAction)
-    const nextAction = MODIFICATION_CYCLE[(currentIndex + 1) % MODIFICATION_CYCLE.length]
-
-    const newMap = new Map(edgeModifications.value)
-    if (nextAction === null) {
-      newMap.delete(key)
-    } else {
-      newMap.set(key, { action: nextAction, name: name || current?.name || `Edge ${u}→${v}` })
-    }
-    edgeModifications.value = newMap
-  }
-
-  function removeEdgeModification(u: number, v: number) {
-    const newMap = new Map(edgeModifications.value)
-    newMap.delete(`${u}-${v}`)
-    edgeModifications.value = newMap
-  }
-
-  function clearEdgeModifications() {
-    edgeModifications.value = new Map()
   }
 
   function setNodePairs(pairs: NodePair[]) {
@@ -434,12 +336,14 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     original: EdgeUsageStats[],
     newUsage: EdgeUsageStats[],
     impact?: ImpactStatistics,
-    usedOdPairs?: number | null
+    usedOdPairs?: number | null,
+    scenarioHash?: string | null
   ) {
     originalEdgeUsage.value = original
     newEdgeUsage.value = newUsage
     impactStatistics.value = impact ? markRaw(impact) : null
     resultOdPairs.value = usedOdPairs ?? null
+    if (scenarioHash !== undefined) resultScenarioHash.value = scenarioHash
 
     scales = buildScales(newUsage)
 
@@ -573,7 +477,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // Batch restore function for investigation switching (avoids multiple reactive updates)
   function restoreState(state: {
     isOpen: boolean
-    edgeModifications?: Array<{ u: number; v: number; action: string; name?: string }>
     nodePairs?: Array<{ origin: number; destination: number }>
     originalEdgeUsage?: EdgeUsageStats[]
     newEdgeUsage?: EdgeUsageStats[]
@@ -585,22 +488,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     filterBusRoutes?: boolean
     odPairs?: number | null
     resultOdPairs?: number | null
+    resultScenarioHash?: string | null
   }) {
     isRestoring.value = true
     isOpen.value = state.isOpen
-
-    // Restore edge modifications
-    const modMap = new Map<string, { action: ModificationAction; name: string }>()
-    ;(state.edgeModifications ?? []).forEach(
-      (edge: { u: number; v: number; action: string; name?: string }) => {
-        const key = `${edge.u}-${edge.v}`
-        modMap.set(key, {
-          action: (edge.action as ModificationAction) || 'remove',
-          name: edge.name || `Edge ${edge.u}→${edge.v}`
-        })
-      }
-    )
-    edgeModifications.value = modMap
+    resultScenarioHash.value = state.resultScenarioHash ?? null
 
     nodePairs.value = state.nodePairs ?? []
 
@@ -643,7 +535,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     isLoading,
     isCalculating,
     isRestoring,
-    edgeModifications,
     nodePairs,
     originalEdgeUsage,
     newEdgeUsage,
@@ -666,20 +557,15 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     activeVisualization,
 
     // Computed
-    edgeModificationsArray,
-    edgeModificationsForDisplay,
-    edgeModificationsCount,
     hasCalculatedRoutes,
+    resultScenarioHash,
+    isStale,
     availableVisualizations,
 
     // Actions
     togglePanel,
     openPanel,
     closePanel,
-    cycleEdgeModification,
-    removeEdgeModification,
-    clearEdgeModifications,
-    getEdgeModification,
     setNodePairs,
     setOdPairs,
     loadGraphInfo,

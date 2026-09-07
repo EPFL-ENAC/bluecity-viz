@@ -1,7 +1,7 @@
 import { computed, ref, type Ref } from 'vue'
-import { defaultTrafficInputs } from './persistence'
+import { defaultScenarioInputs, defaultTrafficInputs } from './persistence'
 import { copyResults, forgetResults } from './trafficResultsCache'
-import type { Investigation, Project, TrafficAnalysisInputs } from './types'
+import type { Investigation, Project, ScenarioInputs, TrafficAnalysisInputs } from './types'
 
 export function createInvestigationManagement(
   projects: Ref<Project[]>,
@@ -12,7 +12,9 @@ export function createInvestigationManagement(
   updateActiveSources: (sourceIds: string[]) => void,
   updateSelectedLayers: (selection: string[] | null) => void,
   getTrafficAnalysisInputs: () => TrafficAnalysisInputs,
-  applyTrafficAnalysisState: (inputs: TrafficAnalysisInputs, investigationId: string) => void
+  applyTrafficAnalysisState: (inputs: TrafficAnalysisInputs, investigationId: string) => void,
+  getScenarioInputs: () => ScenarioInputs,
+  applyScenarioState: (inputs: ScenarioInputs) => void
 ) {
   // Track if we're currently loading an investigation to prevent auto-updates
   const isLoadingInvestigation = ref(false)
@@ -62,7 +64,8 @@ export function createInvestigationManagement(
     updateSelectedLayers(investigation.selectedLayers)
 
     // Always apply, with empty inputs when the investigation has none, so the
-    // previous investigation's traffic state does not stay on the map.
+    // previous investigation's scenario and traffic state do not stay on the map.
+    applyScenarioState(investigation.scenario ?? defaultScenarioInputs())
     applyTrafficAnalysisState(
       investigation.trafficAnalysis ?? defaultTrafficInputs(),
       investigation.id
@@ -83,7 +86,8 @@ export function createInvestigationManagement(
       selectedSources: [...availableResourceSources.value],
       selectedLayers: [...selectedLayers.value],
       createdAt: new Date(),
-      trafficAnalysis: trafficState
+      trafficAnalysis: trafficState,
+      scenario: getScenarioInputs()
     }
 
     // Keep the results on screen for the copy we just made.
@@ -168,6 +172,7 @@ export function createInvestigationManagement(
     investigation.selectedSources = [...availableResourceSources.value]
     investigation.selectedLayers = [...selectedLayers.value]
     investigation.trafficAnalysis = getTrafficAnalysisInputs()
+    investigation.scenario = getScenarioInputs()
   }
 
   return {

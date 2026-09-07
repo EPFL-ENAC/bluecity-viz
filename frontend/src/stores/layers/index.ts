@@ -1,4 +1,5 @@
 import { layerGroups as configLayerGroups } from '@/config/mapConfig'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { defineStore } from 'pinia'
 import { ref, shallowRef, toRaw, watch } from 'vue'
@@ -14,7 +15,7 @@ import {
 } from './persistence'
 import { createSourceManagement } from './sourceManagement'
 import { getResults, rememberResults } from './trafficResultsCache'
-import type { PersistedState, Project, TrafficAnalysisInputs } from './types'
+import type { PersistedState, Project, ScenarioInputs, TrafficAnalysisInputs } from './types'
 import { createUrlSharingComposable } from './urlSharing'
 
 // Re-export types for backward compatibility
@@ -99,16 +100,8 @@ export const useLayersStore = defineStore('layers', () => {
   function getTrafficAnalysisInputs(): TrafficAnalysisInputs {
     const trafficStore = useTrafficAnalysisStore()
 
-    const edgeModificationsArray = Array.from(trafficStore.edgeModifications.entries()).map(
-      ([key, value]) => {
-        const [u, v] = key.split('-').map(Number)
-        return { u, v, action: value.action, name: value.name }
-      }
-    )
-
     return {
       isOpen: trafficStore.isOpen,
-      edgeModifications: edgeModificationsArray,
       activeVisualization: trafficStore.activeVisualization,
       useCongestionModel: trafficStore.useCongestionModel,
       congestionIterations: trafficStore.congestionIterations,
@@ -126,7 +119,6 @@ export const useLayersStore = defineStore('layers', () => {
 
     trafficStore.restoreState({
       isOpen: inputs.isOpen,
-      edgeModifications: inputs.edgeModifications ?? [],
       nodePairs: results?.nodePairs ?? [],
       originalEdgeUsage: results?.originalEdgeUsage ?? [],
       newEdgeUsage: results?.newEdgeUsage ?? [],
@@ -134,7 +126,8 @@ export const useLayersStore = defineStore('layers', () => {
       activeVisualization: inputs.activeVisualization ?? 'none',
       // an input, restoreState assigns it without clearing the results above
       odPairs: inputs.odPairs ?? null,
-      resultOdPairs: results?.resultOdPairs ?? null
+      resultOdPairs: results?.resultOdPairs ?? null,
+      resultScenarioHash: results?.resultScenarioHash ?? null
     })
 
     // The other routing options are not part of restoreState's own defaults,
@@ -143,6 +136,15 @@ export const useLayersStore = defineStore('layers', () => {
     trafficStore.congestionIterations = inputs.congestionIterations ?? 1
     trafficStore.elasticDemand = inputs.elasticDemand ?? false
     trafficStore.filterBusRoutes = inputs.filterBusRoutes ?? false
+  }
+
+  // The scenario belongs to no tool, so it is saved and restored on its own.
+  function getScenarioInputs(): ScenarioInputs {
+    return { edgeModifications: useScenarioStore().serialize() }
+  }
+
+  function applyScenarioState(inputs: ScenarioInputs): void {
+    useScenarioStore().restore(inputs.edgeModifications ?? [])
   }
 
   // Filter categories function
@@ -167,7 +169,9 @@ export const useLayersStore = defineStore('layers', () => {
       investigationMgmt.updateCurrentInvestigation()
     },
     getTrafficAnalysisInputs,
-    applyTrafficAnalysisState
+    applyTrafficAnalysisState,
+    getScenarioInputs,
+    applyScenarioState
   )
 
   // Create layer management
@@ -249,15 +253,16 @@ export const useLayersStore = defineStore('layers', () => {
   // the results are out of the investigations.
   watch([projects, expandedGroups], schedulePersist, { deep: true })
 
-  // Watch traffic store for changes to persist. An array of sources, compared
-  // one by one: no new object on every run. edgeModifications (a Map) and
-  // newEdgeUsage (a shallowRef array) are replaced by the store on each change,
-  // so comparing them by identity is enough.
+  // Watch the scenario and the traffic store for changes to persist. An array
+  // of sources, compared one by one: no new object on every run.
+  // edgeModifications (a Map) and newEdgeUsage (a shallowRef array) are
+  // replaced by their store on each change, so identity is enough.
   const trafficStore = useTrafficAnalysisStore()
+  const scenarioStore = useScenarioStore()
   watch(
     [
       () => trafficStore.isOpen,
-      () => trafficStore.edgeModifications,
+      () => scenarioStore.edgeModifications,
       () => trafficStore.activeVisualization,
       () => trafficStore.useCongestionModel,
       () => trafficStore.congestionIterations,
@@ -277,7 +282,8 @@ export const useLayersStore = defineStore('layers', () => {
         originalEdgeUsage: toRaw(trafficStore.originalEdgeUsage),
         newEdgeUsage: toRaw(trafficStore.newEdgeUsage),
         impactStatistics: toRaw(trafficStore.impactStatistics),
-        resultOdPairs: trafficStore.resultOdPairs
+        resultOdPairs: trafficStore.resultOdPairs,
+        resultScenarioHash: trafficStore.resultScenarioHash
       })
 
       persist.schedule()

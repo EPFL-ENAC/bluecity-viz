@@ -11,6 +11,7 @@ import {
 import { useEdgeTooltip, type EdgeTooltipData } from '@/composables/useEdgeTooltip'
 import { edgeKey, useGraphEdges } from '@/composables/useGraphEdges'
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore, type EdgeUsageStats } from '@/stores/trafficAnalysis'
 import type { HullOutline } from '@/utils/geometry'
 import { computed, shallowRef, watch } from 'vue'
@@ -27,6 +28,7 @@ export type { EdgeTooltipData }
  */
 export function useDeckGLTrafficAnalysis() {
   const trafficStore = useTrafficAnalysisStore()
+  const scenarioStore = useScenarioStore()
   const { edges, edgeMap, loadGraphEdges, getEdge, getReverseEdge } = useGraphEdges()
   const { tooltipData, setTooltip, setTooltipMover, moveTooltip } = useEdgeTooltip()
 
@@ -103,11 +105,20 @@ export function useDeckGLTrafficAnalysis() {
     if (map.size === 0) return []
 
     const out: ModifiedEdge[] = []
-    trafficStore.edgeModifications.forEach((mod, key) => {
-      const edge = map.get(key)
-      if (!edge) return
-      out.push({ key, edge, action: mod.action, hull: hullFor(hullCache, key, edge) })
-    })
+    // The scenario keys a street, the layer draws directed edges: one lane, or
+    // both when the modification applies to both.
+    for (const [streetKey, mod] of scenarioStore.edgeModifications) {
+      const [lo, hi] = streetKey.split('-')
+      const keys: string[] = []
+      if (mod.dir !== 'bwd') keys.push(`${lo}-${hi}`)
+      if (mod.dir !== 'fwd') keys.push(`${hi}-${lo}`)
+
+      for (const key of keys) {
+        const edge = map.get(key)
+        if (!edge) continue
+        out.push({ key, edge, action: mod.action, hull: hullFor(hullCache, key, edge) })
+      }
+    }
     return out
   })
 

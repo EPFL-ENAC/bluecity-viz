@@ -1,23 +1,23 @@
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
-import type { ModificationAction } from '@/stores/trafficAnalysis'
+import type { ScenarioAction } from '@/stores/scenario'
 import { createHullOutline, type HullOutline, type Point } from '@/utils/geometry'
 import { PathStyleExtension } from '@deck.gl/extensions'
 import { PathLayer, TextLayer } from '@deck.gl/layers'
 
 // Colors for the modification types
-export const MODIFICATION_COLORS: Record<ModificationAction, [number, number, number, number]> = {
+export const MODIFICATION_COLORS: Record<ScenarioAction, [number, number, number, number]> = {
   remove: [0, 0, 0, 255], // Black for removed (#000000)
-  speed50: [220, 38, 38, 255], // Red for 50 km/h (#dc2626)
-  speed30: [251, 146, 60, 255], // Orange for 30 km/h (#fb923c)
-  speed10: [250, 204, 21, 255] // Yellow for 10 km/h (#facc15)
+  '50': [220, 38, 38, 255], // Red for 50 km/h (#dc2626)
+  '30': [251, 146, 60, 255], // Orange for 30 km/h (#fb923c)
+  '10': [250, 204, 21, 255] // Yellow for 10 km/h (#facc15)
 }
 
 // What the icon in the middle of a modified edge says
-const SPEED_LIMIT_TEXT: Record<ModificationAction, string> = {
+const SPEED_LIMIT_TEXT: Record<ScenarioAction, string> = {
   remove: '✕',
-  speed10: '10',
-  speed30: '30',
-  speed50: '50'
+  '10': '10',
+  '30': '30',
+  '50': '50'
 }
 
 /** The only glyphs the icon layer needs. The default set stops at ASCII 127,
@@ -65,7 +65,7 @@ export interface RouteEdge extends EdgeGeometry {
 export interface ModifiedEdge {
   key: string
   edge: EdgeGeometry
-  action: ModificationAction
+  action: ScenarioAction
   hull: HullOutline
 }
 

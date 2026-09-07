@@ -1,6 +1,6 @@
 import type { CVRPSolveResponse } from '@/services/cvrp'
 import { fetchCVRPCentroids, solveCVRP } from '@/services/cvrp'
-import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { useScenarioStore } from '@/stores/scenario'
 import { scaleSequential } from 'd3-scale'
 import { interpolateViridis } from 'd3-scale-chromatic'
 import { defineStore } from 'pinia'
@@ -50,6 +50,15 @@ export const useCVRPStore = defineStore('cvrp', () => {
 
   const hasResult = computed(() => lastResult.value !== null)
 
+  // The scenario this solution was found on. When the graph is edited after,
+  // the routes no longer answer the question on screen.
+  const resultScenarioHash = ref<string | null>(null)
+
+  const isStale = computed(() => {
+    if (!hasResult.value) return false
+    return resultScenarioHash.value !== useScenarioStore().hash
+  })
+
   function getEdgeLoadColor(load: number): [number, number, number, number] {
     if (!edgeLoadColorScale.value || edgeLoadMax.value === 0) return [100, 100, 100, 180]
     const hex = edgeLoadColorScale.value(load)
@@ -76,10 +85,11 @@ export const useCVRPStore = defineStore('cvrp', () => {
     lastResult.value = null
     edgeLoadColorScale.value = null
     edgeLoadMax.value = 0
+    resultScenarioHash.value = null
   }
 
   async function solve() {
-    const trafficStore = useTrafficAnalysisStore()
+    const scenarioStore = useScenarioStore()
     isSolving.value = true
     try {
       const response = await solveCVRP({
@@ -89,9 +99,10 @@ export const useCVRPStore = defineStore('cvrp', () => {
         max_runtime: maxRuntime.value,
         waste_per_centroid: 10,
         load_unit: loadUnit.value,
-        edge_modifications: trafficStore.edgeModificationsArray
+        edge_modifications: scenarioStore.wire
       })
       setResult(response)
+      resultScenarioHash.value = scenarioStore.hash
     } finally {
       isSolving.value = false
     }
@@ -120,8 +131,10 @@ export const useCVRPStore = defineStore('cvrp', () => {
     lastResult,
     centroids,
     edgeLoadMax,
+    resultScenarioHash,
     // Computed
     hasResult,
+    isStale,
     // Actions
     solve,
     loadCentroids,
