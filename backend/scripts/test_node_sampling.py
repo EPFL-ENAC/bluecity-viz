@@ -88,9 +88,7 @@ try:
         origins = [p.origin for p in pairs]
         unique_origins = set(origins)
 
-        print(
-            f"✓ Generated {len(pairs)} OD pairs from {len(unique_origins)} unique origins"
-        )
+        print(f"✓ Generated {len(pairs)} OD pairs from {len(unique_origins)} unique origins")
 
         # Calculate concentration metrics
         from collections import Counter
@@ -101,22 +99,16 @@ try:
 
         print("  Origin distribution:")
         print(f"    - Unique origins: {len(unique_origins)}")
-        print(
-            f"    - Max pairs from single origin: {max_count} ({max_concentration:.1%})"
-        )
+        print(f"    - Max pairs from single origin: {max_count} ({max_concentration:.1%})")
         print(f"    - Average pairs per origin: {len(pairs) / len(unique_origins):.1f}")
 
         # Verify we don't have the single-origin bug
         if len(unique_origins) < 5:
-            print(
-                f"✗ FAILED: Too few origins ({len(unique_origins)}), single-origin bug likely!"
-            )
+            print(f"✗ FAILED: Too few origins ({len(unique_origins)}), single-origin bug likely!")
             sys.exit(1)
 
         if max_concentration > 0.5:
-            print(
-                f"✗ FAILED: Single origin dominates with {max_concentration:.1%} of pairs!"
-            )
+            print(f"✗ FAILED: Single origin dominates with {max_concentration:.1%} of pairs!")
             sys.exit(1)
 
         print("✓ Origin distribution looks healthy (bug fixed!)")
@@ -124,7 +116,7 @@ try:
         # Show top origins
         print("  Top 5 origins by frequency:")
         for origin, count in origin_counts.most_common(5):
-            print(f"    - Origin {origin}: {count} pairs ({count/len(pairs):.1%})")
+            print(f"    - Origin {origin}: {count} pairs ({count / len(pairs):.1%})")
 
 except Exception as e:
     print(f"✗ Failed: {e}")

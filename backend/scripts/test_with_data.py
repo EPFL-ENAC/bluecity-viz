@@ -56,7 +56,7 @@ def test_calculate_routes():
         data = response.json()
         print(f"Number of routes calculated: {len(data['routes'])}")
         for i, route in enumerate(data["routes"]):
-            print(f"\nRoute {i+1}:")
+            print(f"\nRoute {i + 1}:")
             print(f"  Origin: {route['origin']}")
             print(f"  Destination: {route['destination']}")
             print(f"  Path length: {len(route['path'])} nodes")
@@ -120,15 +120,11 @@ def test_recalculate_routes():
 
         print("\nOriginal route:")
         print(f"  Path length: {len(comparison['original_route']['path'])} nodes")
-        print(
-            f"  Travel time: {comparison['original_route'].get('travel_time', 'N/A')} seconds"
-        )
+        print(f"  Travel time: {comparison['original_route'].get('travel_time', 'N/A')} seconds")
 
         print("\nNew route (with edge removed):")
         print(f"  Path length: {len(comparison['new_route']['path'])} nodes")
-        print(
-            f"  Travel time: {comparison['new_route'].get('travel_time', 'N/A')} seconds"
-        )
+        print(f"  Travel time: {comparison['new_route'].get('travel_time', 'N/A')} seconds")
 
         if comparison["removed_edge_on_path"]:
             print("\n✓ Removed edge was on the original path")
