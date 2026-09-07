@@ -142,6 +142,53 @@ describe('layers store persistence', () => {
     expect(setItem).toHaveBeenCalledTimes(1)
   })
 
+  it('clears the traffic state when the next investigation has none', async () => {
+    vi.stubGlobal('localStorage', makeStorage())
+
+    const store = useLayersStore()
+    const traffic = useTrafficAnalysisStore()
+
+    store.switchToInvestigation('inv-1')
+    traffic.openPanel()
+    traffic.cycleEdgeModification(1, 2, 'Rue X')
+    traffic.setEdgeUsage(edgeRows(20), edgeRows(20), { total_distance_km: 12 } as any)
+    traffic.setActiveVisualization('frequency')
+    await nextTick()
+
+    // inv-2 has no saved analysis, so this is the case we care about.
+    expect(store.findInvestigation('inv-2')?.trafficAnalysis).toBeUndefined()
+
+    store.switchToInvestigation('inv-2')
+
+    expect(traffic.edgeModifications.size).toBe(0)
+    expect(traffic.newEdgeUsage).toHaveLength(0)
+    expect(traffic.originalEdgeUsage).toHaveLength(0)
+    expect(traffic.impactStatistics).toBeNull()
+    expect(traffic.activeVisualization).toBe('none')
+  })
+
+  it('gives the results back when coming back in the same session', async () => {
+    vi.stubGlobal('localStorage', makeStorage())
+
+    const store = useLayersStore()
+    const traffic = useTrafficAnalysisStore()
+
+    store.switchToInvestigation('inv-1')
+    traffic.openPanel()
+    traffic.cycleEdgeModification(1, 2, 'Rue X')
+    traffic.setEdgeUsage(edgeRows(20), edgeRows(20), { total_distance_km: 12 } as any)
+    traffic.setActiveVisualization('frequency')
+    await nextTick()
+
+    store.switchToInvestigation('inv-2')
+    await nextTick()
+    store.switchToInvestigation('inv-1')
+
+    expect(traffic.edgeModifications.get('1-2')).toEqual({ action: 'remove', name: 'Rue X' })
+    expect(traffic.newEdgeUsage).toHaveLength(20)
+    expect(traffic.activeVisualization).toBe('frequency')
+  })
+
   it('keeps the inputs across a reload', async () => {
     const storage = makeStorage()
     vi.stubGlobal('localStorage', storage)
