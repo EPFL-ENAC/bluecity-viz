@@ -1,9 +1,8 @@
-/// <reference types="vitest/config" />
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
 import vuetify from 'vite-plugin-vuetify'
-import { configDefaults } from 'vitest/config'
+// defineConfig comes from vitest/config, not vite, so the test block below is typed.
+import { configDefaults, defineConfig } from 'vitest/config'
 
 // https://vitejs.dev/config/
 // Git worktrees run one backend and one vite per branch. wt-setup.sh writes the

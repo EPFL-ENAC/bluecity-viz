@@ -39,7 +39,7 @@ async function testApiKey(keyToTest: string): Promise<boolean> {
     emit('apiKeySaved', keyToTest)
     dialogOpen.value = false
     return true
-  } catch (error) {
+  } catch {
     // If testing the stored key and it fails, show error message
     if (keyToTest === apiKeyStore.apiKey) {
       errorMessage.value = 'Your saved API key is invalid. Please enter a valid key.'
