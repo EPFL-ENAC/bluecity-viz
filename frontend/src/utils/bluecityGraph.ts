@@ -22,6 +22,38 @@ export const GRAPH_SOURCE = 'bc-edges'
 export const BADGE_SOURCE = 'bc-badges'
 export const CVRP_SOURCE = 'bc-cvrp-routes'
 export const CVRP_POINT_SOURCE = 'bc-cvrp-pts'
+/**
+ * The pointer rides its own source, holding the one or two edges under the
+ * cursor. On the 10k edge source these four layers carried the whole graph:
+ * 123k vertices drawn every frame and 2.5 MB of paint buffers rewritten on
+ * every hover. Here they carry two features.
+ */
+export const POINTER_SOURCE = 'bc-pointer'
+
+/** 'hover' follows the cursor, 'selected' is the clicked street, 'ghost' the
+ * lane a one-direction selection leaves out. */
+export type PointerRole = 'hover' | 'selected' | 'ghost'
+
+export interface PointerFeature {
+  type: 'Feature'
+  geometry: { type: 'LineString'; coordinates: [number, number][] }
+  properties: {
+    role: PointerRole
+    /** which way to push the lane, +1 or -1 */
+    side: number
+    /** 1 to sit on the lane, 0 to stay on the centre line */
+    lane: number
+  }
+}
+
+export function emptyPointer(): { type: 'FeatureCollection'; features: PointerFeature[] } {
+  return { type: 'FeatureCollection', features: [] }
+}
+
+/** Put the one or two edges under the pointer on the map. */
+export function setPointer(map: MapLibreMap, features: PointerFeature[]): void {
+  setData(map, POINTER_SOURCE, { type: 'FeatureCollection', features })
+}
 
 export const BADGE_PAPER = 'bc-badge-paper'
 export const BADGE_INK = 'bc-badge-ink'
@@ -120,6 +152,19 @@ function stateOffset(name: string, k = 1): ExpressionSpecification {
 }
 
 /**
+ * The lane the pointer sits on, read from the feature itself: `lane` is 0 for
+ * a whole street (both directions, so the centre line) and 1 for one lane.
+ */
+/** The role a pointer feature plays, so one small source feeds four layers. */
+function isRole(role: PointerRole): ExpressionSpecification {
+  return ['==', ['get', 'role'], role]
+}
+
+function pointerOffset(): ExpressionSpecification {
+  return zi(LANE_STOPS, (v) => ['*', v, ['*', ['get', 'side'], ['get', 'lane']]])
+}
+
+/**
  * Show a pointer layer only on the feature carrying the state.
  *
  * The pointer used to be a setFilter, but a filter change makes MapLibre
@@ -147,6 +192,7 @@ export function buildGraphLayers(options: GraphLayerOptions): LayerSpecification
   const result = options.mode === 'result'
   const { ink, paper, grey, accent } = colors
   const src = { source: GRAPH_SOURCE }
+  const pointer = { source: POINTER_SOURCE }
 
   const layers: LayerSpecification[] = [
     // 1 · the graph. One hairline far out, two lanes from z14.5.
@@ -279,54 +325,58 @@ export function buildGraphLayers(options: GraphLayerOptions): LayerSpecification
       }
     },
 
-    // 4 · pointer. The accent is used for this and nothing else.
+    // 4 · pointer. The accent is used for this and nothing else. These four sit
+    //     on their own source, so pointing at a street never touches the graph.
     {
-      ...src,
+      ...pointer,
       id: 'bc-hover-halo',
       type: 'line',
+      filter: isRole('hover'),
       layout: { 'line-cap': 'round' },
       paint: {
         'line-color': accent,
         'line-width': wGraph(2.2, 6),
-        'line-offset': stateOffset('hl'),
-        'line-opacity': stateOpacity('h', 0.18)
+        'line-offset': pointerOffset(),
+        'line-opacity': 0.18
       }
     },
     {
-      ...src,
+      ...pointer,
       id: 'bc-hover',
       type: 'line',
+      filter: isRole('hover'),
       layout: { 'line-cap': 'round' },
       paint: {
         'line-color': accent,
         'line-width': wGraph(2.2),
-        'line-offset': stateOffset('hl'),
-        'line-opacity': stateOpacity('h', 1)
+        'line-offset': pointerOffset()
       }
     },
     {
-      ...src,
+      ...pointer,
       id: 'bc-selected',
       type: 'line',
+      filter: isRole('selected'),
       layout: { 'line-cap': 'butt' },
       paint: {
         'line-color': accent,
         'line-width': wMod(1, 6),
-        'line-offset': stateOffset('sl'),
-        'line-opacity': stateOpacity('s', 0.25)
+        'line-offset': pointerOffset(),
+        'line-opacity': 0.25
       }
     },
     // the lane left out of a one-direction selection, so the exclusion shows
     {
-      ...src,
+      ...pointer,
       id: 'bc-selected-ghost',
       type: 'line',
+      filter: isRole('ghost'),
       layout: { 'line-cap': 'butt' },
       paint: {
         'line-color': accent,
         'line-width': wGraph(1.4),
-        'line-offset': laneOffset(),
-        'line-opacity': stateOpacity('g', 0.35),
+        'line-offset': pointerOffset(),
+        'line-opacity': 0.35,
         'line-dasharray': [1, 1.5]
       }
     },

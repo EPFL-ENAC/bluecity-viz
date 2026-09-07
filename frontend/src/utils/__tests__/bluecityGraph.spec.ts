@@ -4,6 +4,8 @@ import {
   buildGraphLayers,
   cvrpHoverStates,
   drawFor,
+  GRAPH_SOURCE,
+  POINTER_SOURCE,
   graphLayerIds,
   idFilter,
   laneOffset,
@@ -60,29 +62,32 @@ describe('buildGraphLayers', () => {
     expect(BEFORE_LAYER).toBe('rd-label')
   })
 
-  // A filter change makes MapLibre reload every tile of the source, which is
-  // far too slow for something that follows the mouse.
-  it('shows the pointer through feature state, never through a filter', () => {
-    const cases: Array<[string, string]> = [
-      ['bc-hover', 'h'],
-      ['bc-hover-halo', 'h'],
-      ['bc-selected', 's'],
-      ['bc-selected-ghost', 'g'],
-      ['bc-cvrp-halo', 'hl']
-    ]
-    for (const [id, state] of cases) {
-      const l = layer(id)
-      expect(l.filter).toBeUndefined()
-      expect(JSON.stringify(l.paint['line-opacity'])).toContain(`["feature-state","${state}"]`)
+  // Touching the graph source on every mouse move is what made hovering slow:
+  // a filter change reloads its tiles, and dropping the filter made these four
+  // layers carry all 10k edges. They ride their own two feature source now.
+  it('draws the pointer from its own source, not from the graph', () => {
+    for (const id of ['bc-hover', 'bc-hover-halo', 'bc-selected', 'bc-selected-ghost']) {
+      expect(layer(id).source).toBe(POINTER_SOURCE)
+    }
+    for (const id of ['bc-graph-one', 'bc-lanes', 'bc-data', 'bc-mod']) {
+      expect(layer(id).source).toBe(GRAPH_SOURCE)
     }
   })
 
-  it('hides a pointer layer when its state is not set', () => {
-    // ['case', ['==', ['coalesce', ['feature-state', 'h'], 0], 0], 0, 1]
-    const opacity = layer('bc-hover').paint['line-opacity']
-    expect(opacity[0]).toBe('case')
-    expect(opacity[2]).toBe(0)
-    expect(opacity[3]).toBe(1)
+  it('gives each pointer layer a fixed role filter, so nothing changes at runtime', () => {
+    expect(layer('bc-hover').filter).toEqual(['==', ['get', 'role'], 'hover'])
+    expect(layer('bc-hover-halo').filter).toEqual(['==', ['get', 'role'], 'hover'])
+    expect(layer('bc-selected').filter).toEqual(['==', ['get', 'role'], 'selected'])
+    expect(layer('bc-selected-ghost').filter).toEqual(['==', ['get', 'role'], 'ghost'])
+  })
+
+  it('keeps the pointer opacity constant and reads the lane from the feature', () => {
+    expect(layer('bc-selected').paint['line-opacity']).toBe(0.25)
+    expect(layer('bc-hover-halo').paint['line-opacity']).toBe(0.18)
+    const offset = JSON.stringify(layer('bc-hover').paint['line-offset'])
+    expect(offset).toContain('["get","side"]')
+    expect(offset).toContain('["get","lane"]')
+    expect(offset).not.toContain('feature-state')
   })
 
   it('splits the graph into one-way lines and two-way lanes', () => {

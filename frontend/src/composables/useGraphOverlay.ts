@@ -21,7 +21,12 @@ import {
   GRAPH_SOURCE,
   graphLayerIds,
   idFilter,
-  type CvrpRouteRef
+  emptyPointer,
+  POINTER_SOURCE,
+  setPointer,
+  type CvrpRouteRef,
+  type PointerFeature,
+  type PointerRole
 } from '@/utils/bluecityGraph'
 import { GRAPH_COLORS } from '@/utils/epflBasemap'
 import { pointFeatures, routeFeatures } from '@/utils/cvrpSource'
@@ -82,6 +87,9 @@ export function useGraphOverlay(
   // the route features on the map, and the vehicle the pointer is on
   let routeRefs: CvrpRouteRef[] = []
   let hoveredRoute: number | null = null
+  // what the pointer source draws right now
+  let hoverFeatures: PointerFeature[] = []
+  let selectionFeatures: PointerFeature[] = []
   // Which map instance carries our layers, so a new map remounts instead of
   // writing feature state into a style that no longer holds the source.
   let mountedOn: MapLibreMap | null = null
@@ -97,10 +105,31 @@ export function useGraphOverlay(
     return ids
   }
 
-  function setState(map: MapLibreMap, ids: number[], state: Record<string, number>): void {
+  /**
+   * The edges under the pointer, copied onto the small pointer source.
+   *
+   * `lane` is 0 for a whole street, so the accent sits on the centre line, and
+   * 1 for one direction, so it sits on that lane.
+   */
+  function pointerFeatures(ids: number[], role: PointerRole, lane: number): PointerFeature[] {
+    const features = graph.value?.collection.features
+    if (!features) return []
+    const out: PointerFeature[] = []
     for (const id of ids) {
-      map.setFeatureState({ source: GRAPH_SOURCE, id }, state)
+      const feature = features[id]
+      if (!feature) continue
+      out.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: feature.geometry.coordinates },
+        properties: { role, side: Number(feature.properties.side) || 1, lane }
+      })
     }
+    return out
+  }
+
+  /** One setData for the whole pointer: hover, selection and ghost together. */
+  function drawPointer(map: MapLibreMap): void {
+    setPointer(map, [...hoverFeatures, ...selectionFeatures])
   }
 
   /**
@@ -133,6 +162,12 @@ export function useGraphOverlay(
           data: emptyBadges() as unknown as FeatureCollection
         })
       }
+      if (!map.getSource(POINTER_SOURCE)) {
+        map.addSource(POINTER_SOURCE, {
+          type: 'geojson',
+          data: emptyPointer() as unknown as FeatureCollection
+        })
+      }
       for (const id of [CVRP_SOURCE, CVRP_POINT_SOURCE]) {
         if (!map.getSource(id)) {
           map.addSource(id, {
@@ -156,6 +191,7 @@ export function useGraphOverlay(
 
     mountedOn = map
     redraw()
+    drawPointer(map)
     applyResult()
     applyRoutes()
   }
@@ -334,39 +370,42 @@ export function useGraphOverlay(
     const map = mapRef.value
     if (!map || mountedOn !== map) return
 
-    setState(map, hoverIds, { h: 0, hl: 0 })
-    hoverIds = []
-
     const hovered = scenarioStore.hovered
-    if (!hovered) return
-
-    hoverIds = idsFor(hovered.key, hovered.dir)
+    hoverIds = hovered ? idsFor(hovered.key, hovered.dir) : []
     // one lane hovered: offset onto it. Both: stay on the centre line.
-    setState(map, hoverIds, { h: 1, hl: hovered.dir === 'both' ? 0 : 1 })
+    hoverFeatures = hovered
+      ? pointerFeatures(hoverIds, 'hover', hovered.dir === 'both' ? 0 : 1)
+      : []
+    drawPointer(map)
   }
 
   function applySelection(): void {
     const map = mapRef.value
     if (!map || mountedOn !== map) return
 
-    setState(map, selectedIds, { s: 0, sl: 0 })
-    setState(map, ghostIds, { g: 0 })
     selectedIds = []
     ghostIds = []
+    selectionFeatures = []
 
     const selected = scenarioStore.selected
-    if (!selected) return
+    if (!selected) {
+      drawPointer(map)
+      return
+    }
 
     selectedIds = idsFor(selected.key, selected.dir)
-    setState(map, selectedIds, { s: 1, sl: selected.dir === 'both' ? 0 : 1 })
+    const lane = selected.dir === 'both' ? 0 : 1
+    selectionFeatures = pointerFeatures(selectedIds, 'selected', lane)
 
     // With one lane selected, the other shows a dotted ghost so the user sees
     // which direction is left out.
     if (selected.dir !== 'both') {
       const other = selected.dir === 'fwd' ? 'bwd' : 'fwd'
       ghostIds = idsFor(selected.key, other)
-      setState(map, ghostIds, { g: 1 })
+      selectionFeatures.push(...pointerFeatures(ghostIds, 'ghost', 1))
     }
+
+    drawPointer(map)
   }
 
   /** Which street, and which lane, is under the cursor. */
