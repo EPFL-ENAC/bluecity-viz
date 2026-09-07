@@ -95,24 +95,24 @@ let needsResync = false
 const LOADING_BAR_DELAY = 150
 let loadingTimer: number | undefined
 
-// Ink-on-paper themes of the Trait basemap. Both are the same engine and the
-// same layers, only the colours change.
-const TRAIT_THEMES: Record<string, BasemapTheme> = {
-  trait: basemapTheme({ ink: '#141414', paper: '#ffffff', density: 0.8 }),
-  'trait-dark': basemapTheme({ ink: '#E6E6E6', paper: '#141414', density: 0.8 })
+// Ink-on-paper themes of the Substrat basemap. Both are the same engine and
+// the same layers, only the colours change.
+const SUBSTRAT_THEMES: Record<string, BasemapTheme> = {
+  substrat: basemapTheme({ ink: '#141414', paper: '#ffffff', density: 0.8 }),
+  'substrat-dark': basemapTheme({ ink: '#F2F2F2', paper: '#141414', density: 0.8 })
 }
 
-function isTraitKey(key: string): boolean {
-  return key.startsWith('trait')
+function isSubstratKey(key: string): boolean {
+  return key.startsWith('substrat')
 }
 
 function themeFor(key: string): BasemapTheme {
-  return TRAIT_THEMES[key] ?? TRAIT_THEMES.trait
+  return SUBSTRAT_THEMES[key] ?? SUBSTRAT_THEMES.substrat
 }
 
 /** Either a style URL (public/style/*.json) or a style built by the EPFL engine. */
 function styleFor(key: string): string | StyleSpecification {
-  return isTraitKey(key) ? buildStyle('contour', themeFor(key)) : key
+  return isSubstratKey(key) ? buildStyle('substrat', themeFor(key)) : key
 }
 
 // Use the map events composable
@@ -167,13 +167,23 @@ function ensureLayer(entry: MapLayerConfig): boolean {
   }
 }
 
+// onMounted and the api key watcher can both call initMap. The tile fetch in
+// between is async, so a plain `if (map.value)` guard is not enough: a second
+// call would slip through and build a second map in the same container.
+let initStarted = false
+
 async function initMap() {
-  if (map.value) return
+  if (map.value || initStarted) return
+  initStarted = true
 
   // The Trait style needs the OpenFreeMap tile URLs (memoised fetch), so build
   // the style only after they arrived.
-  await loadTiles()
-  if (map.value) return
+  try {
+    await loadTiles()
+  } catch (error) {
+    initStarted = false
+    throw error
+  }
 
   const initialStyle = styleFor(themeStore.theme)
 
@@ -459,13 +469,19 @@ const configSourceIds = new Set(mapConfig.sources.map((source) => source.id))
  * setStyle drops everything the new style does not declare. Put our own
  * dataset sources and layers back, with the filter and the visibility they
  * had. Layers of other plugins (Deck.gl) are left alone, they re-add theirs.
+ *
+ * The graph overlay sources (bc-*) are carried too, with the same `data`
+ * object, so the 6 MB of edges are not fetched and tiled again. Its layers are
+ * not: useGraphOverlay re-adds them on style.load, under the street labels of
+ * the new style.
  */
-const carryDatasetLayers: TransformStyleFunction = (previous, next) => {
+const carryOverlay: TransformStyleFunction = (previous, next) => {
   if (!previous) return next
 
   const sources = { ...next.sources }
   for (const [id, source] of Object.entries(previous.sources)) {
-    if (configSourceIds.has(id) && !sources[id]) sources[id] = source
+    const keep = configSourceIds.has(id) || id.startsWith('bc-')
+    if (keep && !sources[id]) sources[id] = source
   }
 
   return {
@@ -485,18 +501,18 @@ watch(
     setMapTheme(mapInstance, themeFor(next))
     clearPatterns(mapInstance)
 
-    // Trait light to Trait dark: same style, other colours. No setStyle, so
-    // the dataset layers and their tiles are never touched.
-    if (isTraitKey(next) && isTraitKey(previous)) {
+    // Substrat light to Substrat dark: same style, other colours. No setStyle,
+    // so the dataset layers and their tiles are never touched.
+    if (isSubstratKey(next) && isSubstratKey(previous)) {
       applyPaintDiff(
         mapInstance,
-        buildStyle('contour', themeFor(previous)),
-        buildStyle('contour', themeFor(next))
+        buildStyle('substrat', themeFor(previous)),
+        buildStyle('substrat', themeFor(next))
       )
       return
     }
 
-    mapInstance.setStyle(styleFor(next), { diff: true, transformStyle: carryDatasetLayers })
+    mapInstance.setStyle(styleFor(next), { diff: true, transformStyle: carryOverlay })
   }
 )
 </script>

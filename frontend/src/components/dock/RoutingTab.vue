@@ -5,16 +5,17 @@ import BcRow from '@/components/ui/BcRow.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
 import { recalculateRoutes } from '@/services/trafficAnalysis'
-import { useLayersStore } from '@/stores/layers'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { computed, onMounted, ref } from 'vue'
 
-const layersStore = useLayersStore()
+// The routing tool, inside the scenario workbench. The scenario itself (the
+// modified edges) belongs to the dock above, both tools read it.
+
 const trafficStore = useTrafficAnalysisStore()
+const scenarioStore = useScenarioStore()
 
 const loadingMessage = ref('')
-
-const title = computed(() => layersStore.activeInvestigation?.name ?? 'Road closure scenario')
 
 // The pair counts come from the server, not from a constant here.
 onMounted(() => {
@@ -73,14 +74,6 @@ function visLabel(mode: string, fallback: string) {
   return VIS_LABELS[mode] ?? fallback
 }
 
-// The badge in front of each modified edge: x to remove, else the speed limit.
-function edgeBadge(action: string) {
-  if (action === 'remove') return '×'
-  if (action === 'speed10') return '10'
-  if (action === 'speed30') return '30'
-  return '50'
-}
-
 async function calculateRoutes() {
   const odPairs = chosenOdPairs()
   const trips = odPairs ? ` on ${formatTrips(odPairs)} trips` : ''
@@ -96,7 +89,7 @@ async function calculateRoutes() {
     // the store cache after the first time.
     const [baseline, result] = await Promise.all([
       trafficStore.getBaseline(odPairs),
-      recalculateRoutes(trafficStore.edgeModificationsArray, {
+      recalculateRoutes(scenarioStore.wire, {
         useCongestionModel: trafficStore.useCongestionModel,
         congestionIterations: trafficStore.congestionIterations,
         elasticDemand: trafficStore.elasticDemand,
@@ -115,7 +108,8 @@ async function calculateRoutes() {
       baseline.rows,
       result.new_edge_usage,
       result.impact_statistics,
-      result.od_pairs
+      result.od_pairs,
+      scenarioStore.hash
     )
   } catch (error) {
     console.error('Failed to calculate routes:', error)
@@ -126,47 +120,11 @@ async function calculateRoutes() {
 </script>
 
 <template>
-  <div class="dock-panel">
-    <div class="dock-head">
-      <div class="bc-micro">Traffic analysis</div>
-      <div class="dock-title">{{ title }}</div>
-    </div>
+  <div>
 
-    <!-- Modified edges -->
-    <div class="dock-section">
-      <div class="dock-section__head">
-        <span class="bc-micro">Modified edges · {{ trafficStore.edgeModificationsCount }}</span>
-        <button
-          v-if="trafficStore.edgeModificationsCount > 0"
-          class="bc-micro clear-btn"
-          @click="trafficStore.clearEdgeModifications()"
-        >
-          Clear
-        </button>
-      </div>
-
-      <div
-        v-for="edge in trafficStore.edgeModificationsForDisplay"
-        :key="`${edge.u}-${edge.v}`"
-        class="edge-row"
-      >
-        <span class="edge-row__badge">{{ edgeBadge(edge.action) }}</span>
-        <span class="edge-row__name">{{ edge.name }}</span>
-        <span class="edge-row__dir">{{ edge.isBidirectional ? '↔' : '→' }}</span>
-        <button
-          class="edge-row__remove"
-          title="Remove this modification"
-          @click="trafficStore.removeEdgeModification(edge.u, edge.v)"
-        >
-          <BcIcon name="x" />
-        </button>
-      </div>
-
-      <p v-if="trafficStore.edgeModificationsCount === 0" class="bc-empty edge-empty">
-        Click an edge on the map to cycle: remove → 50 → 30 → 10 km/h.
-      </p>
-    </div>
-
+    <p v-if="trafficStore.isStale" class="stale-banner">
+      Scenario changed since this result, shown at 40 % on the map.
+    </p>
     <!-- Routing model -->
     <div class="dock-section">
       <div class="bc-micro dock-section__title">Routing model</div>
@@ -184,16 +142,16 @@ async function calculateRoutes() {
             <div>
               <div class="font-weight-bold mb-1">Static betweenness vs. iterative volumes</div>
               <div class="mb-2">
-                <strong>Off — Static betweenness:</strong> BC is computed once on the modified graph
+                <strong>Off (static betweenness):</strong> BC is computed once on the modified graph
                 to derive congested travel times (<em>duration_bc</em>), then all affected routes
                 are re-run with those weights. Roads that structurally attract more flow appear
                 slower, discouraging over-assignment without any iteration.
               </div>
               <div>
-                <strong>On — Iterative volumes:</strong> actual simulated route volumes are counted,
+                <strong>On (iterative volumes):</strong> actual simulated route volumes are counted,
                 normalised to daily vehicle-km, and fed into the BPR speed-reduction formula. Routes
                 are then re-run with the updated weights, repeating for the chosen number of
-                iterations — converging toward a <em>Wardrop user equilibrium</em>.
+                iterations, converging toward a <em>Wardrop user equilibrium</em>.
               </div>
             </div>
           </v-tooltip>
@@ -299,6 +257,14 @@ async function calculateRoutes() {
 </template>
 
 <style scoped>
+.stale-banner {
+  margin: 16px 22px 0;
+  padding: 8px 10px;
+  border: 1px solid #b51f1f;
+  color: #b51f1f;
+  font-size: var(--bc-fs-small);
+}
+
 .dock-head {
   padding: 18px 22px 14px;
   border-bottom: 1px solid var(--bc-line);
@@ -348,6 +314,50 @@ async function calculateRoutes() {
   font-size: var(--bc-fs-body);
 }
 
+.edge-row[data-lit='true'] {
+  background: var(--bc-hover);
+  box-shadow: -3px 0 0 0 var(--bc-accent);
+}
+
+/* absorbers carry no badge, so the name takes the whole first line */
+.edge-row--absorb {
+  grid-template-columns: 1fr;
+}
+
+/* the Δ bar goes on a second line, full width */
+.edge-row__meta {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.edge-row__bar {
+  flex: 1;
+  height: 3px;
+  background: var(--bc-line);
+  min-width: 0;
+}
+
+.edge-row__bar-fill {
+  display: block;
+  height: 100%;
+}
+
+.edge-row__delta {
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--bc-grey);
+  white-space: nowrap;
+}
+
+.absorb-head {
+  margin-top: 14px;
+  margin-bottom: 2px;
+}
+
 .edge-row__badge {
   font-family: var(--bc-font-mono);
   font-size: var(--bc-fs-micro);
@@ -381,6 +391,40 @@ async function calculateRoutes() {
 
 .edge-row__remove:hover {
   color: var(--bc-ink);
+}
+
+.edit-graph {
+  margin-top: 10px;
+  width: 100%;
+  font-family: var(--bc-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--bc-ink);
+  border: 1px solid var(--bc-ink);
+  padding: 9px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background var(--bc-t);
+}
+
+.edit-graph:hover {
+  background: var(--bc-hover);
+}
+
+.edit-graph__dot {
+  width: 5px;
+  height: 5px;
+  background: var(--bc-accent);
+  flex: none;
+}
+
+.edit-graph__dot[data-on='true'] {
+  background: var(--bc-ink);
 }
 
 .edge-empty {

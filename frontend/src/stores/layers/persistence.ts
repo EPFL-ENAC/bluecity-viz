@@ -2,6 +2,8 @@ import type {
   Investigation,
   PersistedState,
   Project,
+  ScenarioInputs,
+  ScenarioModEntry,
   TrafficAnalysisInputs,
   TrafficVisualization
 } from './types'
@@ -11,13 +13,14 @@ const STORAGE_KEY = 'bluecity-layers-store'
 // v1 stored the full traffic results (edge usage, node pairs) inside every
 // investigation, which made the payload a few MB and blew the quota. v2 keeps
 // only the inputs, the results are recomputed on demand. v3 adds the OD pair
-// count (odPairs), missing in older entries and read back as null.
-export const SCHEMA_VERSION = 3
+// count (odPairs), missing in older entries and read back as null. v4 moves the
+// edge modifications out of the traffic tool into a scenario both tools share,
+// keyed by street instead of by directed edge.
+export const SCHEMA_VERSION = 4
 
 export function defaultTrafficInputs(): TrafficAnalysisInputs {
   return {
     isOpen: false,
-    edgeModifications: [],
     activeVisualization: 'none',
     useCongestionModel: false,
     congestionIterations: 1,
@@ -25,6 +28,68 @@ export function defaultTrafficInputs(): TrafficAnalysisInputs {
     filterBusRoutes: false,
     odPairs: null
   }
+}
+
+// v3 wrote one row per directed edge, with speed50 style actions. The scenario
+// keys a street once and says which way it is modified, so the two rows of a
+// two-way street fold into a single "both" entry.
+const ACTION_V3_TO_V4: Record<string, string> = {
+  remove: 'remove',
+  speed50: '50',
+  speed30: '30',
+  speed10: '10'
+}
+
+export function migrateDirectedMods(raw: any): ScenarioModEntry[] {
+  if (!Array.isArray(raw)) return []
+
+  const byStreet = new Map<string, ScenarioModEntry>()
+
+  for (const mod of raw) {
+    if (!mod || typeof mod !== 'object') continue
+    const u = Number(mod.u)
+    const v = Number(mod.v)
+    if (!Number.isFinite(u) || !Number.isFinite(v)) continue
+
+    const key = u <= v ? `${u}-${v}` : `${v}-${u}`
+    const dir = u <= v ? 'fwd' : 'bwd'
+    const action = ACTION_V3_TO_V4[String(mod.action)] ?? 'remove'
+    const name = typeof mod.name === 'string' ? mod.name : undefined
+
+    const seen = byStreet.get(key)
+    if (!seen) {
+      byStreet.set(key, { key, action, dir, name })
+    } else if (seen.dir !== dir && seen.dir !== 'both') {
+      // the other direction of the same street: one entry, both ways.
+      // The first action wins, they were always written as a pair.
+      byStreet.set(key, { ...seen, dir: 'both', name: seen.name ?? name })
+    }
+  }
+
+  return Array.from(byStreet.values())
+}
+
+export function defaultScenarioInputs(): ScenarioInputs {
+  return { edgeModifications: [] }
+}
+
+function pickScenarioInputs(raw: any, legacyTraffic: any): ScenarioInputs {
+  // v4 and later keep their own block; older entries carry the modifications
+  // inside the traffic tool.
+  if (raw && typeof raw === 'object' && Array.isArray(raw.edgeModifications)) {
+    return {
+      edgeModifications: raw.edgeModifications
+        .filter((mod: any) => mod && typeof mod === 'object' && typeof mod.key === 'string')
+        .map((mod: any) => ({
+          key: String(mod.key),
+          action: String(mod.action ?? 'remove'),
+          dir: String(mod.dir ?? 'both'),
+          name: typeof mod.name === 'string' ? mod.name : undefined
+        }))
+    }
+  }
+
+  return { edgeModifications: migrateDirectedMods(legacyTraffic?.edgeModifications) }
 }
 
 // Keep the input fields only. Anything else (nodePairs, originalEdgeUsage,
@@ -35,16 +100,6 @@ function pickTrafficInputs(raw: any): TrafficAnalysisInputs {
 
   return {
     isOpen: !!raw.isOpen,
-    edgeModifications: Array.isArray(raw.edgeModifications)
-      ? raw.edgeModifications
-          .filter((mod: any) => mod && typeof mod === 'object')
-          .map((mod: any) => ({
-            u: Number(mod.u),
-            v: Number(mod.v),
-            action: String(mod.action ?? 'remove'),
-            name: typeof mod.name === 'string' ? mod.name : undefined
-          }))
-      : [],
     activeVisualization: (raw.activeVisualization ?? 'none') as TrafficVisualization,
     useCongestionModel: !!raw.useCongestionModel,
     congestionIterations: Number(raw.congestionIterations) || 1,
@@ -82,6 +137,10 @@ export function migratePersistedState(raw: unknown): Partial<PersistedState> {
               }
               if (inv.trafficAnalysis) {
                 migrated.trafficAnalysis = pickTrafficInputs(inv.trafficAnalysis)
+              }
+              const scenario = pickScenarioInputs(inv.scenario, inv.trafficAnalysis)
+              if (scenario.edgeModifications.length > 0 || inv.scenario) {
+                migrated.scenario = scenario
               }
               return migrated
             })

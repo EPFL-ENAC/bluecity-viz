@@ -1,4 +1,5 @@
 import { useLayersStore } from '@/stores/layers'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -89,8 +90,12 @@ describe('layers store persistence', () => {
     expect(investigation).not.toBeNull()
     const traffic = investigation!.trafficAnalysis as unknown as Record<string, unknown>
     expect(traffic.isOpen).toBe(true)
-    expect(traffic.edgeModifications).toEqual([{ u: 1, v: 2, action: 'remove', name: 'Rue X' }])
     expect(traffic.activeVisualization).toBe('frequency')
+    // v4 moved the modifications out of the tool into the shared scenario
+    expect(traffic).not.toHaveProperty('edgeModifications')
+    expect(investigation!.scenario?.edgeModifications).toEqual([
+      { key: '1-2', action: 'remove', dir: 'fwd', name: 'Rue X' }
+    ])
     // v1 knew nothing about the pair count, it reads back as the server default
     expect(traffic.odPairs).toBeNull()
     for (const key of BULK_KEYS) {
@@ -172,10 +177,12 @@ describe('layers store persistence', () => {
 
     const store = useLayersStore()
     const traffic = useTrafficAnalysisStore()
+    const scenario = useScenarioStore()
 
     store.switchToInvestigation('inv-1')
-    traffic.openPanel()
-    traffic.cycleEdgeModification(1, 2, 'Rue X')
+    // the workbench owns "open", both tools follow it
+    scenario.isOpen = true
+    scenario.set('1-2', { action: 'remove', dir: 'both', name: 'Rue X' })
     traffic.setEdgeUsage(edgeRows(20), edgeRows(20), { total_distance_km: 12 } as any)
     traffic.setActiveVisualization('frequency')
     await nextTick()
@@ -185,7 +192,7 @@ describe('layers store persistence', () => {
 
     store.switchToInvestigation('inv-2')
 
-    expect(traffic.edgeModifications.size).toBe(0)
+    expect(scenario.count).toBe(0)
     expect(traffic.newEdgeUsage).toHaveLength(0)
     expect(traffic.originalEdgeUsage).toHaveLength(0)
     expect(traffic.impactStatistics).toBeNull()
@@ -197,10 +204,11 @@ describe('layers store persistence', () => {
 
     const store = useLayersStore()
     const traffic = useTrafficAnalysisStore()
+    const scenario = useScenarioStore()
 
     store.switchToInvestigation('inv-1')
     traffic.openPanel()
-    traffic.cycleEdgeModification(1, 2, 'Rue X')
+    scenario.set('1-2', { action: 'remove', dir: 'both', name: 'Rue X' })
     traffic.setEdgeUsage(edgeRows(20), edgeRows(20), { total_distance_km: 12 } as any)
     traffic.setActiveVisualization('frequency')
     await nextTick()
@@ -209,7 +217,7 @@ describe('layers store persistence', () => {
     await nextTick()
     store.switchToInvestigation('inv-1')
 
-    expect(traffic.edgeModifications.get('1-2')).toEqual({ action: 'remove', name: 'Rue X' })
+    expect(scenario.get('1-2')).toEqual({ action: 'remove', dir: 'both', name: 'Rue X' })
     expect(traffic.newEdgeUsage).toHaveLength(20)
     expect(traffic.activeVisualization).toBe('frequency')
   })
@@ -220,9 +228,11 @@ describe('layers store persistence', () => {
 
     const store = useLayersStore()
     const traffic = useTrafficAnalysisStore()
+    const scenario = useScenarioStore()
 
-    traffic.openPanel()
-    traffic.cycleEdgeModification(1, 2, 'Rue X')
+    // the workbench owns "open", both tools follow it
+    scenario.isOpen = true
+    scenario.set('1-2', { action: 'remove', dir: 'both', name: 'Rue X' })
     traffic.setActiveVisualization('frequency')
     traffic.useCongestionModel = true
     traffic.congestionIterations = 3
@@ -241,9 +251,10 @@ describe('layers store persistence', () => {
     const reloadedTraffic = useTrafficAnalysisStore()
 
     expect(reloaded.selectedLayers).toEqual(['lausanne_pop_density-layer'])
-    expect(reloadedTraffic.isOpen).toBe(true)
-    expect(reloadedTraffic.edgeModifications.get('1-2')).toEqual({
+    expect(useScenarioStore().isOpen).toBe(true)
+    expect(useScenarioStore().get('1-2')).toEqual({
       action: 'remove',
+      dir: 'both',
       name: 'Rue X'
     })
     expect(reloadedTraffic.activeVisualization).toBe('frequency')
