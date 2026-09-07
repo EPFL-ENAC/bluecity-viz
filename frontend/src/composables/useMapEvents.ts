@@ -1,3 +1,4 @@
+import { useScenarioStore } from '@/stores/scenario'
 import type { MapLayerMouseEvent, Map as MapLibre } from 'maplibre-gl'
 import { Popup as MapLibrePopup } from 'maplibre-gl'
 import { onUnmounted, ref, type Ref } from 'vue'
@@ -70,6 +71,8 @@ export function useMapEvents(
   mapRef: Ref<MapLibre | undefined>,
   popupOptions = {}
 ): MapEventsReturn {
+  const scenarioStore = useScenarioStore()
+
   // State refs exposed by the composable
   const hoveredFeature = ref<Record<string, any> | null>(null)
   const selectedFeatureId = ref<string | undefined>(undefined)
@@ -93,6 +96,8 @@ export function useMapEvents(
    */
   function handleLayerClick(_layerId: string, layerLabel: string, e: MapLayerMouseEvent): void {
     if (!e.features || e.features.length === 0 || !mapRef.value) return
+    // A street under the cursor owns the click while the workbench is open.
+    if (scenarioStore.isOpen && scenarioStore.hovered) return
 
     const feature = e.features[0]
 
@@ -141,6 +146,8 @@ export function useMapEvents(
    */
   function handleLayerMouseMove(_layerId: string, layerLabel: string, e: MapLayerMouseEvent): void {
     if (!e.features || e.features.length === 0 || !mapRef.value) return
+    // Same rule as the click: the graph takes the pointer when it is under it.
+    if (scenarioStore.isOpen && scenarioStore.hovered) return
 
     const feature = e.features[0]
     mapRef.value.getCanvas().style.cursor = 'pointer'

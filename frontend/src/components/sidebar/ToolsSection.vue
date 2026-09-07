@@ -1,20 +1,14 @@
 <script setup lang="ts">
 import BcRow from '@/components/ui/BcRow.vue'
-import { useCVRPStore } from '@/stores/cvrp'
-import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { useScenarioStore } from '@/stores/scenario'
 
-const trafficStore = useTrafficAnalysisStore()
-const cvrpStore = useCVRPStore()
+// One row, one dock. Routing and waste collection are two tabs of the same
+// workbench because they answer the same question about the same graph. The
+// panel mirrors this flag onto the two tool stores.
+const scenarioStore = useScenarioStore()
 
-// The two tools are mutually exclusive: opening one closes the other.
-function toggleTraffic() {
-  if (!trafficStore.isOpen && cvrpStore.isOpen) cvrpStore.togglePanel()
-  trafficStore.togglePanel()
-}
-
-function toggleCvrp() {
-  if (!cvrpStore.isOpen && trafficStore.isOpen) trafficStore.togglePanel()
-  cvrpStore.togglePanel()
+function toggleWorkbench() {
+  scenarioStore.isOpen = !scenarioStore.isOpen
 }
 
 const comingSoon = [
@@ -27,15 +21,11 @@ const comingSoon = [
   <div class="bc-section bc-section--last">
     <div class="bc-micro tools__head">Analytics tools</div>
 
-    <BcRow :on="trafficStore.isOpen" @click="toggleTraffic">
-      Traffic analysis
-      <template v-if="trafficStore.isOpen" #meta><span class="tools__meta">active</span></template>
+    <BcRow :on="scenarioStore.isOpen" @click="toggleWorkbench">
+      Scenario workbench
+      <template v-if="scenarioStore.isOpen" #meta><span class="tools__meta">active</span></template>
     </BcRow>
-
-    <BcRow :on="cvrpStore.isOpen" @click="toggleCvrp">
-      Waste CVRP
-      <template v-if="cvrpStore.isOpen" #meta><span class="tools__meta">active</span></template>
-    </BcRow>
+    <p class="tools__caption">Routing · Waste CVRP, one dock, one scenario, two tools.</p>
 
     <BcRow v-for="tool in comingSoon" :key="tool.id" disabled>
       {{ tool.label }}
@@ -51,6 +41,12 @@ const comingSoon = [
 
 .tools__meta {
   font-family: var(--bc-font-sans);
+  font-size: var(--bc-fs-small);
+  color: var(--bc-grey);
+}
+
+.tools__caption {
+  margin: 4px 0 8px;
   font-size: var(--bc-fs-small);
   color: var(--bc-grey);
 }

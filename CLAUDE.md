@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Overview
 
 BlueCity Viz is a geospatial urban analytics platform with three main components:
-- **Frontend**: Vue 3 + MapLibre + Deck.gl SPA for interactive map visualization
+- **Frontend**: Vue 3 + MapLibre SPA for interactive map visualization
 - **Backend**: FastAPI service for traffic network analysis (graph routing, CO₂ estimation, betweenness centrality)
 - **Processing**: Python/Jupyter tools for converting raw datasets into PMTiles
 
@@ -43,11 +43,25 @@ uv run python scripts/test_with_data.py        # manual check against a running 
 ### Frontend (`frontend/src/`)
 
 **Stores (Pinia)** are the central state hub:
-- `stores/trafficAnalysis.ts` — the most complex store; manages edge modifications, OD pair routing results, and all D3 color scales for the 6 visualization modes (frequency, delta, CO₂, CO₂-delta, betweenness, betweenness-delta)
+- `stores/scenario.ts` — the modified graph, shared by every tool. One entry per
+  street (`{lo}-{hi}`) with an action (`remove | 50 | 30 | 10`) and a direction
+  (`both | fwd | bwd`). `wire` is the backend format, `hash` says when a result
+  went stale.
+- `stores/trafficAnalysis.ts` — OD pair routing results, the per street totals
+  and all D3 color scales for the 6 visualization modes (frequency, delta, CO₂,
+  CO₂-delta, betweenness, betweenness-delta)
+- `stores/cvrp.ts` — the waste collection solver, its result and the viridis
+  load scale
 - `stores/layers.ts`, `stores/apiKey.ts`, `stores/theme.ts` — map layer visibility, API key, theme
 
 **Composables** encapsulate map logic:
-- `composables/useDeckGLTrafficAnalysis.ts` — creates and updates Deck.gl `PathLayer`/`GeoJsonLayer`/`TextLayer` for traffic analysis overlays; reads from `trafficAnalysis` store to color edges
+- `composables/useGraphOverlay.ts` — mounts the graph overlay on the map, owns
+  the pointer (hover, click, shift-click, Esc), fits the camera on streets
+  (`focus`) and writes the result and the routes through `feature-state`
+- `composables/useMapView.ts` — what the map draws (`shown`) and which dock zone
+  is dimmed, derived from the active tab and the lit zone
+- `composables/useResultStates.ts` — joins the per edge numbers to the streets
+  and sums the two directions
 - `composables/useMapLogic.ts`, `useMapEvents.ts` — MapLibre map setup and event handling
 
 **Services** (`services/trafficAnalysis.ts`) — thin HTTP client wrapping `fetch` calls to the backend `/api/v1/routes/*` endpoints.
@@ -72,16 +86,39 @@ dock on the right when a tool is open. There is no app bar and no drawer.
 - `components/sidebar/` — `InvestigationSection` (project tree, rename, share, delete),
   `DatasetsSection`, `LayersSection`, `ToolsSection`
 - `components/panels/VisualizationsPanel.vue` — the map stage; mounts the map, the
-  Deck.gl overlay, the tooltips and the dock
-- `components/dock/` — `TrafficDock.vue` and `CvrpDock.vue`, one per analytics tool
-- `MapLibreMap.vue` + `DeckGLOverlay.vue` — the main map canvas, Deck.gl renders on top of MapLibre
+  graph overlay and the dock
+- `components/dock/` — `ScenarioDock.vue` (the workbench: the shared scenario
+  plus a tab bar) with `RoutingTab.vue` and `CvrpTab.vue`
+- `components/map/` — `GraphOverlay.vue` and its chrome: `EdgeHoverCard`,
+  `EdgePopover`, `EditChip`, `ModeToggle`, `RouteHoverCard`
+- `MapLibreMap.vue` — the map canvas
 - `LegendMap.vue`, `ImpactStatistics.vue` — result display
 - `components/dialogs/` — add sources, share, delete
 
-**Basemap**: `utils/epflBasemap.ts` builds the EPFL "Trait" ink-on-paper style
-(OpenFreeMap vector tiles, canvas textures). `stores/theme.ts` offers `trait`,
-`trait-dark`, `style/light.json` and `style/none.json`; `isDark` drives both the
-UI theme and the map ink. The UI follows the basemap.
+**The map overlay** (`utils/bluecityGraph.ts`, `utils/graphSource.ts`) draws
+everything on one GeoJSON source of directed edges, `bc-edges`, plus small
+sources for the badges and the CVRP routes. The vocabulary (Bertin):
+- the graph is one grey hairline; from z14.5 a two-way street splits into two
+  parallel hairlines, one per directed edge
+- data is colour and width, on the centreline, both directions summed
+- a modification is ink and shape, never colour: a closed edge is ink cut by
+  paper dashes, a speed limit is ink with direction arrows, and a 22px square
+  badge sits at the middle of the street
+- the accent blue is only the pointer: hover and selection
+The dock says what the map draws, there is no toggle on the map. It has two
+zones, the scenario block and the tool, and exactly one is lit: the map shows
+the ink scenario, or the active tab's result. The other zone goes to 40 % but
+stays clickable, and a click lights it. `composables/useMapView.ts` is the one
+place that answers "what is on the map". Only the tab you are on ever draws.
+Colours and highlights ride `feature-state`, so switching never touches the
+6 MB source.
+
+**Basemap**: `utils/epflBasemap.ts` builds the EPFL "Substrat" style
+(OpenFreeMap vector tiles, canvas textures): flat tints, no road line at all,
+labels at 50 % ink. The graph overlay owns every line on the map.
+`stores/theme.ts` offers `substrat`, `substrat-dark`, `style/light.json` and
+`style/none.json`; `isDark` drives both the UI theme and the map ink. The UI
+follows the basemap.
 
 ### Backend (`backend/app/`)
 
@@ -99,17 +136,18 @@ The backend loads a **GraphML road network** (Lausanne) at startup via osmnx, th
 - `services/node_sampling_service.py` + `services/sampling/` — research-based OD pair generation
 
 **Key API endpoints** (`/api/v1/routes/`):
-- `GET /graph` — full graph for Deck.gl visualization
+- `GET /graph` — full graph
 - `GET /edge-geometries` — edge coordinates + travel time (GZip compressed)
 - `POST /recalculate` — apply edge modifications (remove/speed-limit) and re-route all OD pairs, returning per-edge usage stats with delta, CO₂/km, and betweenness centrality
 
 ### Data Flow for Traffic Analysis
 
-1. User clicks edges on map → `useDeckGLTrafficAnalysis` calls `cycleEdgeModification` on the store
-2. User triggers recalculate → `MapControlsPanel` calls backend `POST /recalculate` with the modification list
+1. User clicks a street on the map (no mode to turn on first, ⇧-click picks one
+   lane) → the popover writes `{action, dir}` to the `scenario` store
+2. User triggers recalculate → `RoutingTab` calls backend `POST /recalculate` with `scenario.wire`
 3. Backend applies modifications, re-routes with igraph Dijkstra (optionally with BPR congestion), computes CO₂ and BC
 4. Response `EdgeUsageStats[]` is stored in `trafficAnalysis` store → D3 color scales are recomputed
-5. `useDeckGLTrafficAnalysis` reacts to store changes and rebuilds Deck.gl layers
+5. `useGraphOverlay` reacts to store changes and writes the colours as feature-state
 
 ### Processing (`processing/`)
 

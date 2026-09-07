@@ -5,6 +5,7 @@ import {
   EXPECTED_STATE_KEYS,
   makeUsage
 } from '@/stores/__tests__/fixtures/trafficScales'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -115,14 +116,18 @@ describe('traffic analysis store', () => {
     expect(Object.keys(store.$state).sort()).toEqual([...EXPECTED_STATE_KEYS].sort())
   })
 
-  it('cycles a modification remove then 50 then 30 then 10 then off', () => {
+  it('is stale when the scenario moved after the run', () => {
     const store = useTrafficAnalysisStore()
-    const actions = []
-    for (let i = 0; i < 5; i++) {
-      store.cycleEdgeModification(1, 2, 'Rue de Test')
-      actions.push(store.getEdgeModification(1, 2))
-    }
-    expect(actions).toEqual(['remove', 'speed50', 'speed30', 'speed10', null])
+    const scenario = useScenarioStore()
+
+    // nothing computed yet, so nothing to be stale about
+    expect(store.isStale).toBe(false)
+
+    store.setEdgeUsage([{ u: 1, v: 2, count: 1, frequency: 1 }], [], undefined, null, scenario.hash)
+    expect(store.isStale).toBe(false)
+
+    scenario.set('1-2', { action: 'remove', dir: 'both', name: 'Rue de Test' })
+    expect(store.isStale).toBe(true)
   })
   it('restores without the bulk arrays', () => {
     const store = useTrafficAnalysisStore()
@@ -130,7 +135,6 @@ describe('traffic analysis store', () => {
     expect(() =>
       store.restoreState({
         isOpen: true,
-        edgeModifications: [{ u: 1, v: 2, action: 'remove', name: 'Rue de Test' }],
         activeVisualization: 'none'
       })
     ).not.toThrow()
@@ -140,7 +144,6 @@ describe('traffic analysis store', () => {
     expect(store.originalEdgeUsage).toEqual([])
     expect(store.newEdgeUsage).toEqual([])
     expect(store.impactStatistics).toBeNull()
-    expect(store.getEdgeModification(1, 2)).toBe('remove')
     expect(store.isRestoring).toBe(false)
   })
 
@@ -148,7 +151,6 @@ describe('traffic analysis store', () => {
     const store = useTrafficAnalysisStore()
     store.restoreState({
       isOpen: true,
-      edgeModifications: [],
       nodePairs: [],
       originalEdgeUsage: [],
       newEdgeUsage: [],
@@ -271,7 +273,6 @@ describe('traffic analysis store', () => {
 
     store.restoreState({
       isOpen: true,
-      edgeModifications: [],
       originalEdgeUsage: usage,
       newEdgeUsage: usage,
       activeVisualization: 'frequency',
@@ -303,7 +304,6 @@ describe('traffic analysis store', () => {
 
     store.restoreState({
       isOpen: true,
-      edgeModifications: [],
       nodePairs: [],
       originalEdgeUsage: usage,
       newEdgeUsage: usage,

@@ -1,3 +1,5 @@
+import type { FeatureCollection } from 'geojson'
+
 // Relative in dev too: vite proxies /api to this checkout's own backend, whose
 // port changes per git worktree (see vite.config.ts and docs/worktree-env/).
 const API_BASE_URL = '/api/v1/cvrp'
@@ -49,7 +51,7 @@ export async function solveCVRP(req: CVRPRequest): Promise<CVRPSolveResponse> {
   return response.json()
 }
 
-export async function fetchCVRPCentroids(wasteType: string): Promise<GeoJSON.FeatureCollection> {
+export async function fetchCVRPCentroids(wasteType: string): Promise<FeatureCollection> {
   const response = await fetch(`${API_BASE_URL}/centroids?waste_type=${wasteType}`)
   if (!response.ok) {
     throw new Error(`Failed to fetch centroids for ${wasteType}`)
