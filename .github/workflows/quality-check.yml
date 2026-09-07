@@ -28,6 +28,9 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          # the action reads packageManager from the repo root by default, ours is in frontend/
+          package_json_file: frontend/package.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

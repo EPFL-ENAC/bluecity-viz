@@ -31,12 +31,12 @@ fork="$(git merge-base "$branch" origin/main)"
 git merge-base --is-ancestor "$fork" "origin/$BASE_BRANCH" \
   || die "$branch holds commits of main that origin/$BASE_BRANCH lacks. Fast-forward $BASE_BRANCH first (e.g. git push origin main:$BASE_BRANCH), then re-run"
 
-# A session that merged origin/dev along the way (the documented practice) already
-# resolved its conflicts in a merge commit. A rebase would drop that commit and
-# ask for the same resolution again, one commit at a time. Skip it then.
-if git merge-base --is-ancestor "origin/$BASE_BRANCH" "$branch"; then
-  echo "==> $branch already contains origin/$BASE_BRANCH, no rebase"
-else
+# The PR mode rebases so the squash has a clean base. The local mode merges with
+# --no-ff, and git's three-way merge handles a branch that merged origin/dev
+# along the way (the documented practice): a conflict resolved in that merge
+# commit stays resolved. A rebase would drop the merge commit and ask for the
+# same resolution again, one commit at a time. So no rebase in local mode.
+if [ "$mode" != --local ]; then
   echo "==> rebasing $branch onto origin/$BASE_BRANCH"
   git -C "$wt_path" rebase "origin/$BASE_BRANCH" || die "rebase stopped — resolve it in $wt_path, then re-run"
   git -C "$wt_path" push --force-with-lease origin "$branch"
@@ -83,13 +83,12 @@ case "$mode" in
     git checkout "$BASE_BRANCH"
     git pull --ff-only origin "$BASE_BRANCH"
     git merge --no-ff "$branch" -m "Merge branch '$branch' into $BASE_BRANCH"
-    # The root Makefile has no lint/test target: run the frontend checks CI runs,
-    # and on the backend the same blocking selection as CI's flake8 step (syntax
-    # errors and undefined names) through ruff, the only linter in its deps.
-    # --no-fix: pyproject turns fixes on, and a land must not edit files.
+    # The root Makefile has no lint/test target: run the frontend checks CI runs
+    # (lint:check, not lint: a land must not edit files), and on the backend the
+    # blocking selection (syntax errors and undefined names) through ruff.
     if [ "${WT_SKIP_CHECKS:-0}" != 1 ]; then
       # The branch may change the lockfile: install first, then check.
-      (cd frontend && pnpm install --frozen-lockfile && pnpm run lint && pnpm run type-check)
+      (cd frontend && pnpm install --frozen-lockfile && pnpm run lint:check && pnpm run type-check)
       (cd backend && uv run ruff check --no-fix --select E9,F63,F7,F82 app)
     fi
     git push origin "$BASE_BRANCH"
