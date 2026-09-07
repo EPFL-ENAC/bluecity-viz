@@ -102,4 +102,77 @@ describe('traffic analysis store', () => {
     }
     expect(actions).toEqual(['remove', 'speed50', 'speed30', 'speed10', null])
   })
+  it('restores without the bulk arrays', () => {
+    const store = useTrafficAnalysisStore()
+    // a saved investigation that no longer keeps the results
+    expect(() =>
+      store.restoreState({
+        isOpen: true,
+        edgeModifications: [{ u: 1, v: 2, action: 'remove', name: 'Rue de Test' }],
+        activeVisualization: 'none'
+      })
+    ).not.toThrow()
+
+    expect(store.isOpen).toBe(true)
+    expect(store.nodePairs).toEqual([])
+    expect(store.originalEdgeUsage).toEqual([])
+    expect(store.newEdgeUsage).toEqual([])
+    expect(store.impactStatistics).toBeNull()
+    expect(store.getEdgeModification(1, 2)).toBe('remove')
+    expect(store.isRestoring).toBe(false)
+  })
+
+  it('restores the routing options when the state has them', () => {
+    const store = useTrafficAnalysisStore()
+    store.restoreState({
+      isOpen: true,
+      edgeModifications: [],
+      nodePairs: [],
+      originalEdgeUsage: [],
+      newEdgeUsage: [],
+      impactStatistics: null,
+      activeVisualization: 'none',
+      useCongestionModel: true,
+      congestionIterations: 4,
+      elasticDemand: true,
+      filterBusRoutes: true
+    })
+
+    expect(store.useCongestionModel).toBe(true)
+    expect(store.congestionIterations).toBe(4)
+    expect(store.elasticDemand).toBe(true)
+    expect(store.filterBusRoutes).toBe(true)
+  })
+
+  it('leaves the routing options alone when the state omits them', () => {
+    const store = useTrafficAnalysisStore()
+    store.useCongestionModel = true
+    store.congestionIterations = 3
+
+    store.restoreState({ isOpen: false, activeVisualization: 'none' })
+
+    expect(store.useCongestionModel).toBe(true)
+    expect(store.congestionIterations).toBe(3)
+  })
+
+  it('keeps the saved mode when it restores results', () => {
+    const store = useTrafficAnalysisStore()
+    const usage = makeUsage()
+
+    store.restoreState({
+      isOpen: true,
+      edgeModifications: [],
+      nodePairs: [],
+      originalEdgeUsage: usage,
+      newEdgeUsage: usage,
+      impactStatistics: null,
+      activeVisualization: 'co2'
+    })
+
+    // setEdgeUsage would have picked delta, the saved mode wins
+    expect(store.activeVisualization).toBe('co2')
+    expect(store.legendMode).toBe('co2')
+    expect(store.minValue).toBeCloseTo(EXPECTED_SCALES.perMode.co2.min, 10)
+  })
+
 })
