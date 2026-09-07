@@ -49,7 +49,7 @@ from app.services.graph_helpers import (
 )
 from app.services.graph_mirror import GraphMirror
 from app.services.impact_calculator import compute_impact_statistics_arrays
-from app.services.routing_engine import RouteSet, route_pairs
+from app.services.routing_engine import PairArrays, RouteSet, route_pairs
 from app.services.utils.timing import timed
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ BASELINE_CACHE_SIZE = 8
 class Baseline:
     """The unmodified network: computed once at startup, never rebuilt."""
 
-    pairs: List[NodePair]
+    pairs: PairArrays
     routes: RouteSet
     counts: np.ndarray  # per igraph edge
     counts_group: np.ndarray  # per (u, v) group
@@ -91,7 +91,7 @@ class GraphService:
         self.mirror: Optional[GraphMirror] = None
         self.graph_path = graph_path
         self.baseline: Optional[Baseline] = None
-        self.default_pairs: Optional[List[NodePair]] = None
+        self.default_pairs: Optional[PairArrays] = None
         self.od_nodes = None  # pd.Series {NX node id: weight}, pool for resampling
         self.sampling_config = None
         self._bc_sample_vertices: List[int] = []
@@ -211,7 +211,7 @@ class GraphService:
         self.sampling_config = config
 
         if sampling_method == "research":
-            from app.services.node_sampling_service import generate_research_based_pairs
+            from app.services.sampling.od_sampler import generate_research_based_pairs_mirror
 
             # main.py still passes count=500, which the old sampler ignored: the
             # real size was n_origins x n_destinations_per_origin. The size is a
@@ -223,14 +223,15 @@ class GraphService:
                 )
             if count != n_pairs:
                 logger.info("[STARTUP] ignoring count=%s, using OD_PAIRS_MAX=%d", count, n_pairs)
-            with self.lock:
-                self.default_pairs, self.od_nodes = generate_research_based_pairs(
-                    self.graph, n_pairs=n_pairs, config=config, seed=seed, return_nodes=True
-                )
+            # No lock: the sampler reads the mirror and writes nothing. The old
+            # one set weight attributes on the shared NetworkX graph.
+            self.default_pairs, self.od_nodes = generate_research_based_pairs_mirror(
+                self.mirror, n_pairs=n_pairs, config=config, seed=seed, return_nodes=True
+            )
         else:
             logger.info("[STARTUP] simple random sampling, %d OD pairs", count)
-            self.default_pairs = self.generate_random_pairs(
-                count=count, seed=seed, radius_km=radius_km
+            self.default_pairs = PairArrays.from_nodepairs(
+                self.generate_random_pairs(count=count, seed=seed, radius_km=radius_km)
             )
 
         logger.info("[STARTUP] %d OD pairs generated", len(self.default_pairs))
@@ -258,7 +259,7 @@ class GraphService:
         counts = routes.edge_counts(mirror.n_edges)
         counts_group = mirror.group_sum(counts)
         small = Baseline(
-            pairs=self.baseline.pairs[:n],
+            pairs=self.baseline.pairs.prefix(n),
             routes=routes,
             counts=counts,
             counts_group=counts_group,
@@ -388,9 +389,11 @@ class GraphService:
         rs.compute_metrics(self.mirror, self.mirror.travel_time, self.base_co2_g)
         return rs.to_routes(self.mirror)
 
-    def _route_set_for(self, pairs: List[NodePair]) -> RouteSet:
+    def _route_set_for(self, pairs) -> RouteSet:
         """RouteSet of the unmodified network for these pairs, memoised."""
-        key = tuple((p.origin, p.destination) for p in pairs)
+        pairs = PairArrays.coerce(pairs)
+        # A hash of the arrays: the pair list itself can be 76k entries long.
+        key = pairs.cache_key()
         cached = self.route_cache.get(key)
         if cached is not None:
             self.route_cache.move_to_end(key)
@@ -458,6 +461,7 @@ class GraphService:
         with timed("cache_lookup", timing):
             if pairs:
                 # The client gave its own pairs: N does not apply.
+                pairs = PairArrays.coerce(pairs)
                 n_pairs = len(pairs)
                 original = self._route_set_for(pairs)
                 base = None
@@ -748,9 +752,7 @@ class GraphService:
                 "od_pairs": len(self.default_pairs) if self.default_pairs else 0,
                 "od_pairs_default": settings.od_pairs,
                 "od_pairs_max": settings.od_pairs_max,
-                "od_origins": len({p.origin for p in self.default_pairs})
-                if self.default_pairs
-                else 0,
+                "od_origins": self.default_pairs.n_origins if self.default_pairs else 0,
                 "n_destinations_per_origin": (
                     self.sampling_config.n_destinations_per_origin if self.sampling_config else None
                 ),

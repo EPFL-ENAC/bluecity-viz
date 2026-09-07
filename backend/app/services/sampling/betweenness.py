@@ -119,3 +119,68 @@ def edge_betweenness_igraph(
     bc_dict = {idx: bc * factor for idx, bc in zip(h.get_edgelist(), bc_result)}
 
     return bc_dict
+
+
+def considered_nodes_from_mirror(
+    mirror,
+    rng: np.random.RandomState,
+    max_nodes: int,
+    node_weight_col: str,
+) -> pd.Series:
+    """Same node pool as ``get_considered_nodes``, read from the graph mirror.
+
+    The mirror keeps the nodes in NetworkX order, so the filtered Series has
+    the same index order as the GeoDataFrame the NetworkX version builds, and
+    ``sample`` draws exactly the same nodes for the same seed.
+
+    Only the "dummy" weight column exists on the mirror: the mirror does not
+    carry arbitrary node attributes.
+    """
+    if node_weight_col != "dummy":
+        raise ValueError(
+            f"node_weight_col={node_weight_col!r} needs the NetworkX graph, "
+            "the mirror only knows the uniform 'dummy' weight"
+        )
+
+    keep = mirror.street_count >= 3
+    n = pd.Series(
+        1,
+        index=pd.Index(mirror.node_ids[keep], name="osmid"),
+        name=node_weight_col,
+    )
+    logger.info(f"{len(n):,} nodes available for sampling.")
+
+    if len(n) > max_nodes:
+        n = n.sample(max_nodes, random_state=rng, replace=False, weights=n)
+        logger.info(f"Sampled {max_nodes:,} nodes for processing.")
+
+    return n
+
+
+def edge_betweenness_mirror(
+    mirror,
+    weights: np.ndarray,
+    expected_km_driven: float,
+    sources: List[int],
+    targets: List[int],
+) -> np.ndarray:
+    """``edge_betweenness_igraph`` on the mirror, as a per-edge array.
+
+    Same single igraph call and same normalisation, so the numbers match the
+    NetworkX version bit for bit.
+
+    One quirk is kept on purpose: the old code stored the result in a dict
+    keyed by (u, v), so among parallel edges only the last one kept its value
+    and the others read back as 0. Changing that would move every OD pair of
+    the existing Lausanne sample, so it stays until we decide to resample.
+    """
+    bc_result = mirror.h.edge_betweenness(True, None, weights, sources, targets)
+
+    total_sum = sum(bc * length for bc, length in zip(bc_result, mirror.length))
+    factor = expected_km_driven * 1_000 / total_sum
+
+    raw = np.asarray(bc_result, dtype=np.float64)
+    out = np.zeros(mirror.n_edges, dtype=np.float64)
+    last = mirror.last_of_group
+    out[last] = raw[last] * factor
+    return out

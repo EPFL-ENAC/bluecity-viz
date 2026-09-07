@@ -44,12 +44,12 @@ def test_startup_samples_the_max(service):
 def test_baseline_for_n_equals_routing_the_first_n_pairs(service):
     n = DEFAULT_PAIRS
     base = service.baseline_for(n)
+    first_n = service.default_pairs.prefix(n)
 
-    assert [(p.origin, p.destination) for p in base.pairs] == [
-        (p.origin, p.destination) for p in service.default_pairs[:n]
-    ]
+    assert np.array_equal(base.pairs.origins, first_n.origins)
+    assert np.array_equal(base.pairs.destinations, first_n.destinations)
 
-    fresh = route_pairs(service.mirror, service.default_pairs[:n], service.mirror.travel_time)
+    fresh = route_pairs(service.mirror, first_n, service.mirror.travel_time)
     assert np.array_equal(base.counts, fresh.edge_counts(service.mirror.n_edges))
     assert base.routes.n_found == fresh.n_found
 
@@ -91,3 +91,24 @@ def test_recalculate_reports_the_count_it_used(service):
 def test_asking_for_more_pairs_than_sampled_is_refused():
     with pytest.raises(ValueError):
         RecalculateRequest(od_pairs=settings.od_pairs_max + 1)
+
+
+def test_route_i_describes_pair_i(service):
+    """Routes come back in the caller's order, whatever the origin grouping."""
+    pairs = service.default_pairs.prefix(200)
+    shuffled = pairs.subset(np.random.default_rng(0).permutation(len(pairs)))
+
+    routes = route_pairs(service.mirror, shuffled, service.mirror.travel_time)
+
+    assert np.array_equal(routes.origins, shuffled.origins)
+    assert np.array_equal(routes.destinations, shuffled.destinations)
+    for i in range(len(shuffled)):
+        if routes.found[i]:
+            path = routes.node_path(service.mirror, i)
+            assert path[0] == shuffled.origins[i]
+            assert path[-1] == shuffled.destinations[i]
+
+
+def test_route_edges_are_int32(service):
+    """Half the memory of a baseline route set, and 2 billion edges is plenty."""
+    assert service.baseline.routes.edges.dtype == np.int32
