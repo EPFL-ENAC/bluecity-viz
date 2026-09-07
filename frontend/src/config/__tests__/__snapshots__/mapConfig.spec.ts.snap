@@ -1387,6 +1387,65 @@ exports[`map config registry > keeps the same layers 1`] = `
     "unit": "cluster",
   },
   {
+    "encoding": {
+      "categories": [
+        {
+          "color": "#440154",
+          "value": "Before 1919",
+        },
+        {
+          "color": "#481f70",
+          "value": "1920 – 1945",
+        },
+        {
+          "color": "#443983",
+          "value": "1946 – 1960",
+        },
+        {
+          "color": "#3b528b",
+          "value": "1961 – 1970",
+        },
+        {
+          "color": "#31688e",
+          "value": "1971 – 1980",
+        },
+        {
+          "color": "#287c8e",
+          "value": "1981 – 1985",
+        },
+        {
+          "color": "#21918c",
+          "value": "1986 – 1990",
+        },
+        {
+          "color": "#20a486",
+          "value": "1991 – 1995",
+        },
+        {
+          "color": "#35b779",
+          "value": "1996 – 2000",
+        },
+        {
+          "color": "#5ec962",
+          "value": "2001 – 2005",
+        },
+        {
+          "color": "#90d743",
+          "value": "2006 - 2010",
+        },
+        {
+          "color": "#c8e020",
+          "value": "2011 – 2015",
+        },
+        {
+          "color": "#fde725",
+          "value": "After 2015",
+        },
+      ],
+      "defaultColor": "#bdbdbd",
+      "kind": "categorical",
+      "property": "Era",
+    },
     "id": "buildings_by_era",
     "info": "Buildings in Lausanne colored by construction era",
     "label": "Buildings by Era",
@@ -1429,7 +1488,7 @@ exports[`map config registry > keeps the same layers 1`] = `
         ],
         "fill-opacity": 0.8,
       },
-      "source": "buildings_by_era",
+      "source": "buildings_era",
       "source-layer": "buildings",
       "type": "fill",
     },
@@ -1444,6 +1503,33 @@ exports[`map config registry > keeps the same layers 1`] = `
     "unit": "era",
   },
   {
+    "encoding": {
+      "categories": [
+        {
+          "color": "#2196F3",
+          "value": "Housing",
+        },
+        {
+          "color": "#4CAF50",
+          "value": "Business",
+        },
+        {
+          "color": "#FF9800",
+          "value": "Industry",
+        },
+        {
+          "color": "#F44336",
+          "value": "Health",
+        },
+        {
+          "color": "#9C27B0",
+          "value": "Culture",
+        },
+      ],
+      "defaultColor": "#757575",
+      "kind": "categorical",
+      "property": "Function",
+    },
     "id": "buildings_by_function",
     "info": "Buildings in Lausanne colored by their functional use",
     "label": "Buildings by Function",
@@ -1470,7 +1556,7 @@ exports[`map config registry > keeps the same layers 1`] = `
         ],
         "fill-opacity": 0.8,
       },
-      "source": "buildings_by_function",
+      "source": "buildings_era",
       "source-layer": "buildings",
       "type": "fill",
     },
@@ -1485,6 +1571,81 @@ exports[`map config registry > keeps the same layers 1`] = `
     "unit": "function",
   },
   {
+    "encoding": {
+      "categories": [
+        {
+          "color": "#0d47a1",
+          "value": "Housing before 1919",
+        },
+        {
+          "color": "#1565c0",
+          "value": "Housing 1920 - 1945",
+        },
+        {
+          "color": "#1976d2",
+          "value": "Housing 1946 - 1960",
+        },
+        {
+          "color": "#1e88e5",
+          "value": "Housing 1961 - 1980",
+        },
+        {
+          "color": "#42a5f5",
+          "value": "Housing 1981 - 1990",
+        },
+        {
+          "color": "#90caf9",
+          "value": "Housing 1991 - 2015",
+        },
+        {
+          "color": "#bbdefb",
+          "value": "Housing after 2015",
+        },
+        {
+          "color": "#673ab7",
+          "value": "Housing high",
+        },
+        {
+          "color": "#2e7d32",
+          "value": "Bus Large",
+        },
+        {
+          "color": "#66bb6a",
+          "value": "Bus Small",
+        },
+        {
+          "color": "#e65100",
+          "value": "Ind Large",
+        },
+        {
+          "color": "#ff9800",
+          "value": "Ind Small",
+        },
+        {
+          "color": "#b71c1c",
+          "value": "Heal Large",
+        },
+        {
+          "color": "#ef5350",
+          "value": "Heal Small",
+        },
+        {
+          "color": "#6a1b9a",
+          "value": "Cult before 1919",
+        },
+        {
+          "color": "#9c27b0",
+          "value": "Cult 1920 - 1990",
+        },
+        {
+          "color": "#e1bee7",
+          "value": "Cult 1991 - 2024",
+        },
+      ],
+      "defaultColor": "#bdbdbd",
+      "kind": "categorical",
+      "property": "Archetype",
+    },
     "id": "buildings_by_archetype",
     "info": "Buildings in Lausanne colored by their architectural archetype",
     "label": "Buildings by Archetype",
@@ -1535,7 +1696,7 @@ exports[`map config registry > keeps the same layers 1`] = `
         ],
         "fill-opacity": 0.8,
       },
-      "source": "buildings_by_archetype",
+      "source": "buildings_archetype",
       "source-layer": "buildings",
       "type": "fill",
     },
