@@ -14,7 +14,7 @@ A Vue.js application designed to visualize geospatial data using MapLibre, with 
 
 ### Prerequisites
 
-- **Node.js** 22 (see `frontend/.nvmrc`)
+- **Node.js** 24 (see `frontend/.nvmrc`)
 - **pnpm** (pinned by the `packageManager` field)
 - **Python** 3.12 or later
 - **uv** (Python package manager)
