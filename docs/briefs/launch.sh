@@ -44,6 +44,7 @@ declare -A BRANCH=(
   [s4]=perf/backend-routing
   [s5]=chore/frontend-tooling
   [s6]=fix/backend-cvrp-quality
+  [s7]=feat/od-pairs-ui
   [final]=chore/tooling-upgrades
 )
 declare -A FILE=(
@@ -53,16 +54,18 @@ declare -A FILE=(
   [s4]=s4-backend-routing.md
   [s5]=s5-frontend-tooling.md
   [s6]=s6-backend-cvrp-quality.md
+  [s7]=s7-od-pairs-ui.md
   [final]=final-tooling-upgrades.md
 )
 
-# "final" is not started by default: it runs after the six others are landed.
+# "s7" and "final" are not started by default: they run after the six others are landed
+# (docs/briefs/launch.sh s7 final).
 sessions=("$@")
 [ ${#sessions[@]} -gt 0 ] || sessions=(s5 s6 s4 s1 s2 s3)
 
 for s in "${sessions[@]}"; do
   b="${BRANCH[$s]:-}"; f="${FILE[$s]:-}"
-  [ -n "$b" ] || { echo "unknown session: $s (use s1..s6 or final)" >&2; exit 1; }
+  [ -n "$b" ] || { echo "unknown session: $s (use s1..s7 or final)" >&2; exit 1; }
   echo "==> $s  $b  ($f)"
   scripts/wt-new.sh "$b" origin/dev --prompt "$BRIEFS/$f" --no-attach
 done
