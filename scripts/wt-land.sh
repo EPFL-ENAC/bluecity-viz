@@ -31,9 +31,16 @@ fork="$(git merge-base "$branch" origin/main)"
 git merge-base --is-ancestor "$fork" "origin/$BASE_BRANCH" \
   || die "$branch holds commits of main that origin/$BASE_BRANCH lacks. Fast-forward $BASE_BRANCH first (e.g. git push origin main:$BASE_BRANCH), then re-run"
 
-echo "==> rebasing $branch onto origin/$BASE_BRANCH"
-git -C "$wt_path" rebase "origin/$BASE_BRANCH" || die "rebase stopped — resolve it in $wt_path, then re-run"
-git -C "$wt_path" push --force-with-lease origin "$branch"
+# A session that merged origin/dev along the way (the documented practice) already
+# resolved its conflicts in a merge commit. A rebase would drop that commit and
+# ask for the same resolution again, one commit at a time. Skip it then.
+if git merge-base --is-ancestor "origin/$BASE_BRANCH" "$branch"; then
+  echo "==> $branch already contains origin/$BASE_BRANCH, no rebase"
+else
+  echo "==> rebasing $branch onto origin/$BASE_BRANCH"
+  git -C "$wt_path" rebase "origin/$BASE_BRANCH" || die "rebase stopped — resolve it in $wt_path, then re-run"
+  git -C "$wt_path" push --force-with-lease origin "$branch"
+fi
 
 update_local_base() {
   local base_wt; base_wt="$(worktree_path_for "$BASE_BRANCH")"
