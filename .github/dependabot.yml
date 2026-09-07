@@ -1,0 +1,69 @@
+# Keeps the dependencies fresh so we do not end up doing another big
+# catch-up branch. Grouped, weekly, and always onto dev (never main).
+#
+# Cooldown: a freshly published version waits a few days before we get a
+# PR. Most bad releases (stolen maintainer token, typosquat) are caught
+# and yanked in that window. It does not catch everything, it just
+# removes the noisy cases.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "dev"
+    open-pull-requests-limit: 5
+    commit-message:
+      # lowercase, commitlint refuses a subject starting with a capital
+      prefix: "build(frontend)"
+      prefix-development: "build(frontend)"
+    labels:
+      - "dependencies"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    groups:
+      # one PR for all the small stuff, majors stay on their own
+      frontend-minor:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "uv"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "dev"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(backend)"
+      prefix-development: "build(backend)"
+    labels:
+      - "dependencies"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    groups:
+      backend-minor:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "dev"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - "dependencies"
+    groups:
+      actions:
+        update-types:
+          - "minor"
+          - "patch"
