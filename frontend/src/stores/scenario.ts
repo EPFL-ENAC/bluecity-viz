@@ -1,7 +1,7 @@
 import type { EdgeModification } from '@/services/trafficAnalysis'
 import { scenarioHash, scenarioSignature } from '@/utils/scenarioHash'
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, markRaw, ref, shallowRef } from 'vue'
 
 /** What was done to a street. Colour never says this, ink and shape do. */
 export type ScenarioAction = 'remove' | '50' | '30' | '10'
@@ -82,8 +82,16 @@ export const useScenarioStore = defineStore('scenario', () => {
   const hovered = ref<EdgeRef | null>(null)
   const mapMode = ref<'scenario' | 'result'>('scenario')
 
-  /** The streets of the loaded graph, filled by useGraphEdges. */
-  const streets = ref<Map<string, Street>>(new Map())
+  /**
+   * The streets of the loaded graph, filled by useGraphEdges.
+   *
+   * markRaw and shallowRef on purpose. This map holds one entry per street of
+   * the whole city, and Pinia's devtools plugin deep watches every store: on
+   * each mutation it walks the entire state. With 10k reactive streets in it,
+   * one hover cost 60 ms in dev. Nothing here is ever changed in place, the
+   * map is replaced whole, so reactivity on the entries buys us nothing.
+   */
+  const streets = shallowRef<Map<string, Street>>(markRaw(new Map()))
 
   const count = computed(() => edgeModifications.value.size)
   const hasModifications = computed(() => edgeModifications.value.size > 0)
@@ -186,7 +194,7 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   /** Put the streets of the loaded graph in, and fold what they teach us. */
   function setStreets(next: Map<string, Street>): void {
-    streets.value = next
+    streets.value = markRaw(next)
     normalizeOneWay()
   }
 
