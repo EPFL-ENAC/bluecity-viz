@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+
+# dev data, production reads the S3 CDN (see config/layerTypes.ts)
+public/geodata
+
+.env
+.env.*
+*.log
+.vscode
+.idea
+README.md
+LICENSE
+Makefile

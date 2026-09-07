@@ -2,11 +2,21 @@ name: Quality Checks
 
 on:
   pull_request:
-    branches: [main]
+    branches: [dev, main]
   push:
-    branches: [main]
+    branches: [dev, main]
 
 jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages
+        uses: wagoid/commitlint-github-action@v6
+
   frontend-quality:
     runs-on: ubuntu-latest
     defaults:
@@ -22,21 +32,27 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version-file: frontend/.nvmrc
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run ESLint
-        run: pnpm run lint
+      - name: Lint
+        run: pnpm run lint:check
 
       - name: Type check
         run: pnpm run type-check
 
+      - name: Type check (tests)
+        run: pnpm run type-check:test
+
+      - name: Unit tests
+        run: pnpm run test:unit
+
       - name: Build
-        run: pnpm run build
+        run: pnpm run build-only
 
   backend-quality:
     runs-on: ubuntu-latest
@@ -58,10 +74,16 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Run linter
-        run: |
-          uv run flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics
-          uv run flake8 app --count --exit-zero --max-complexity=15 --max-line-length=100 --statistics
+      - name: Lint
+        run: uv run ruff check --no-fix app
 
-      - name: Run formatter check
-        run: uv run black --check app
+      - name: Format check
+        run: uv run ruff format --check app
+
+      - name: Tests
+        run: |
+          if [ -d tests ]; then
+            uv run pytest
+          else
+            echo "no tests/ directory yet, skipping"
+          fi
