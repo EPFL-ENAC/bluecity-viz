@@ -22,7 +22,7 @@ dependencies = [
     # 0.14 reworked the model API (Location, index-based Depot/Client,
     # activities instead of trips). Migration of cvrp_service.py is a
     # separate job, so we stay under it for now.
-    "pyvrp>=0.13.3,<0.14",
+    "pyvrp>=0.13.3,<0.15",
     "scikit-learn>=1.8.0",
     "orjson>=3.12.0",
 ]
