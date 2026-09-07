@@ -1,14 +1,20 @@
 import { layerGroups as configLayerGroups } from '@/config/mapConfig'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref, shallowRef, toRaw, watch } from 'vue'
 
 // Import modular functionality
 import { createInvestigationManagement } from './investigationManagement'
 import { createLayerManagement } from './layerManagement'
-import { clearPersistedData, loadPersistedState, saveStateToStorage } from './persistence'
+import {
+  clearPersistedData,
+  createPersistScheduler,
+  loadPersistedState,
+  saveStateToStorage
+} from './persistence'
 import { createSourceManagement } from './sourceManagement'
-import type { PersistedState, Project, TrafficAnalysisState } from './types'
+import { getResults, rememberResults } from './trafficResultsCache'
+import type { PersistedState, Project, TrafficAnalysisInputs } from './types'
 import { createUrlSharingComposable } from './urlSharing'
 
 // Re-export types for backward compatibility
@@ -18,8 +24,9 @@ export const useLayersStore = defineStore('layers', () => {
   // Load persisted state
   const persistedState = loadPersistedState()
 
-  // Core state
-  const layerGroups = ref(configLayerGroups)
+  // Core state. shallowRef: the layer config is a big static tree, we only ever
+  // read it, so there is no point making all of it reactive.
+  const layerGroups = shallowRef(configLayerGroups)
   const sp0Period = ref<string>(persistedState.sp0Period || '2020-2023')
   const selectedLayers = ref<string[]>(persistedState.selectedLayers || [])
 
@@ -35,6 +42,7 @@ export const useLayersStore = defineStore('layers', () => {
     persistedState.activeSources || ['lausanne_migration', 'lausanne_temperature']
   )
 
+  // Deep on purpose: LegendMap and MapLibreMap mutate this in place.
   const filteredCategories = ref<Record<string, Record<string, string[]>>>({})
 
   const expandedGroups = ref<Record<string, boolean>>(
@@ -85,10 +93,12 @@ export const useLayersStore = defineStore('layers', () => {
   const activeInvestigationId = ref<string | null>(persistedState.activeInvestigationId || 'inv-1')
 
   // Traffic analysis state management functions
-  function getTrafficAnalysisState(): TrafficAnalysisState {
+
+  // Only the inputs. No clone of the result arrays, this runs on every layer
+  // toggle and every edge click.
+  function getTrafficAnalysisInputs(): TrafficAnalysisInputs {
     const trafficStore = useTrafficAnalysisStore()
 
-    // Convert edge modifications to serializable array
     const edgeModificationsArray = Array.from(trafficStore.edgeModifications.entries()).map(
       ([key, value]) => {
         const [u, v] = key.split('-').map(Number)
@@ -96,25 +106,41 @@ export const useLayersStore = defineStore('layers', () => {
       }
     )
 
-    // Convert to plain objects to avoid storing reactive proxies
     return {
       isOpen: trafficStore.isOpen,
       edgeModifications: edgeModificationsArray,
-      nodePairs: JSON.parse(JSON.stringify(trafficStore.nodePairs)),
-      originalEdgeUsage: JSON.parse(JSON.stringify(trafficStore.originalEdgeUsage)),
-      newEdgeUsage: JSON.parse(JSON.stringify(trafficStore.newEdgeUsage)),
-      impactStatistics: trafficStore.impactStatistics
-        ? JSON.parse(JSON.stringify(trafficStore.impactStatistics))
-        : null,
-      activeVisualization: trafficStore.activeVisualization
+      activeVisualization: trafficStore.activeVisualization,
+      useCongestionModel: trafficStore.useCongestionModel,
+      congestionIterations: trafficStore.congestionIterations,
+      elasticDemand: trafficStore.elasticDemand,
+      filterBusRoutes: trafficStore.filterBusRoutes
     }
   }
 
-  function applyTrafficAnalysisState(state: TrafficAnalysisState): void {
+  // Restore the inputs, plus the results we still have in memory for that
+  // investigation. The arrays are always passed, empty when we have nothing.
+  function applyTrafficAnalysisState(
+    inputs: TrafficAnalysisInputs,
+    investigationId: string
+  ): void {
     const trafficStore = useTrafficAnalysisStore()
+    const results = getResults(investigationId)
 
-    // Use batch restore to apply all changes at once (much faster)
-    trafficStore.restoreState(state)
+    trafficStore.restoreState({
+      isOpen: inputs.isOpen,
+      edgeModifications: inputs.edgeModifications ?? [],
+      nodePairs: results?.nodePairs ?? [],
+      originalEdgeUsage: results?.originalEdgeUsage ?? [],
+      newEdgeUsage: results?.newEdgeUsage ?? [],
+      impactStatistics: results?.impactStatistics ?? null,
+      activeVisualization: inputs.activeVisualization ?? 'none'
+    })
+
+    // restoreState does not handle the routing options, set them here.
+    trafficStore.useCongestionModel = inputs.useCongestionModel ?? false
+    trafficStore.congestionIterations = inputs.congestionIterations ?? 1
+    trafficStore.elasticDemand = inputs.elasticDemand ?? false
+    trafficStore.filterBusRoutes = inputs.filterBusRoutes ?? false
   }
 
   // Filter categories function
@@ -135,14 +161,10 @@ export const useLayersStore = defineStore('layers', () => {
       activeSources.value = [...sourceIds]
     },
     (selection: string[] | null) => {
-      if (selection !== null) {
-        selectedLayers.value = [...selection]
-      } else {
-        selectedLayers.value.length = 0
-      }
+      selectedLayers.value = selection !== null ? [...selection] : []
       investigationMgmt.updateCurrentInvestigation()
     },
-    getTrafficAnalysisState,
+    getTrafficAnalysisInputs,
     applyTrafficAnalysisState
   )
 
@@ -205,45 +227,66 @@ export const useLayersStore = defineStore('layers', () => {
     saveStateToStorage(stateToPersist)
   }
 
-  // Set up watchers to automatically persist state changes
+  const persist = createPersistScheduler(persistState, 300)
+
+  function schedulePersist() {
+    if (!investigationMgmt.isLoadingInvestigation.value) {
+      persist.schedule()
+    }
+  }
+
+  // Set up watchers to automatically persist state changes.
+  // No deep here: these refs are always replaced, never mutated in place.
   watch(
-    [
-      selectedLayers,
-      availableResourceSources,
-      activeSources,
-      projects,
-      activeInvestigationId,
-      sp0Period,
-      expandedGroups
-    ],
-    () => {
-      // Debounce the persistence to avoid too frequent writes
-      if (!investigationMgmt.isLoadingInvestigation.value) {
-        setTimeout(persistState, 100)
-      }
-    },
-    { deep: true }
+    [selectedLayers, availableResourceSources, activeSources, activeInvestigationId, sp0Period],
+    schedulePersist
   )
 
-  // Watch traffic store for changes to persist
+  // These two are mutated in place (rename, toggleProject, toggleGroup,
+  // updateCurrentInvestigation), so they need deep. Both stay small now that
+  // the results are out of the investigations.
+  watch([projects, expandedGroups], schedulePersist, { deep: true })
+
+  // Watch traffic store for changes to persist. An array of sources, compared
+  // one by one: no new object on every run. edgeModifications (a Map) and
+  // newEdgeUsage (a shallowRef array) are replaced by the store on each change,
+  // so comparing them by identity is enough.
   const trafficStore = useTrafficAnalysisStore()
   watch(
-    () => ({
-      isOpen: trafficStore.isOpen,
-      edgeModificationsSize: trafficStore.edgeModifications.size,
-      nodePairsLength: trafficStore.nodePairs.length,
-      originalEdgeUsageLength: trafficStore.originalEdgeUsage.length,
-      newEdgeUsageLength: trafficStore.newEdgeUsage.length,
-      hasImpactStatistics: trafficStore.impactStatistics !== null,
-      activeVisualization: trafficStore.activeVisualization
-    }),
+    [
+      () => trafficStore.isOpen,
+      () => trafficStore.edgeModifications,
+      () => trafficStore.activeVisualization,
+      () => trafficStore.useCongestionModel,
+      () => trafficStore.congestionIterations,
+      () => trafficStore.elasticDemand,
+      () => trafficStore.filterBusRoutes,
+      () => trafficStore.newEdgeUsage
+    ],
     () => {
-      if (!investigationMgmt.isLoadingInvestigation.value) {
-        investigationMgmt.updateCurrentInvestigation()
-        setTimeout(persistState, 100)
-      }
+      if (investigationMgmt.isLoadingInvestigation.value) return
+
+      investigationMgmt.updateCurrentInvestigation()
+
+      // Results stay in memory, keyed by investigation.
+      rememberResults(activeInvestigationId.value, {
+        nodePairs: toRaw(trafficStore.nodePairs),
+        originalEdgeUsage: toRaw(trafficStore.originalEdgeUsage),
+        newEdgeUsage: toRaw(trafficStore.newEdgeUsage),
+        impactStatistics: toRaw(trafficStore.impactStatistics)
+      })
+
+      persist.schedule()
     }
   )
+
+  // Do not lose a pending write when the tab goes away.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', persist.flush)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') persist.flush()
+    })
+  }
 
   return {
     // Core state
@@ -275,6 +318,7 @@ export const useLayersStore = defineStore('layers', () => {
     filterOutCategories,
     initializeInvestigations,
     persistState,
+    flushPersistState: persist.flush,
     generateShareableUrl: urlSharing.generateShareableUrl,
     loadStateFromUrl: urlSharing.loadStateFromUrl,
     clearPersistedData
