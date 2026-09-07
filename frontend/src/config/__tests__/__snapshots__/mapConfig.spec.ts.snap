@@ -1893,7 +1893,7 @@ exports[`map config registry > keeps the same layers 1`] = `
           4,
         ],
       },
-      "source": "vehicle_tracks_by_date",
+      "source": "vehicle_tracks",
       "source-layer": "vehicle_tracks",
       "type": "line",
     },
