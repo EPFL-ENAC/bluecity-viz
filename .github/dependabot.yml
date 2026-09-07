@@ -50,6 +50,13 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 30
+    ignore:
+      # 0.14 reworked the model API (Location, index-based Depot/Client,
+      # activities instead of trips) and cvrp_service.py breaks on it.
+      # The bound in pyproject.toml is not enough: dependabot just raises
+      # it. Drop this entry once someone does the migration.
+      - dependency-name: "pyvrp"
+        versions: [">=0.14"]
     groups:
       backend-minor:
         update-types:
