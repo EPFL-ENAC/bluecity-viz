@@ -1,19 +1,21 @@
 import MapLibreMap from '@/components/MapLibreMap.vue'
 import { useLayersStore } from '@/stores/layers'
-import { ref, shallowRef, watch } from 'vue'
+import { shallowRef, watch } from 'vue'
 
-// Import types
-import type { Parameters } from '@/utils/jsonWebMap'
+/** Extra map settings. Nothing fills them today, the map uses its defaults. */
+export interface MapParameters {
+  popupLayerIds?: string[]
+}
 
 /**
  * Composable for handling map logic and state
  */
 export function useMapLogic() {
   // Map reference
-  const map = ref<InstanceType<typeof MapLibreMap>>()
+  const map = shallowRef<InstanceType<typeof MapLibreMap>>()
 
   // Map parameters
-  const parameters = shallowRef<Parameters>({})
+  const parameters: MapParameters = {}
 
   // Layers store
   const layersStore = useLayersStore()
@@ -26,19 +28,34 @@ export function useMapLogic() {
 
   const zoom = 11
 
-  // Sync layer visibility with the map when the selected layers change
+  /**
+   * Put every layer of the config in the state the selection asks for.
+   * Used on first load and after a basemap change, when we know nothing
+   * about what the map already shows.
+   */
   const syncAllLayersVisibility = (layersSelected: string[]) => {
+    const selected = new Set(layersSelected)
     for (const { id: layerID } of layersStore.possibleLayers) {
-      if (layersSelected.includes(layerID)) {
-        map.value?.setLayerVisibility(layerID, true)
-      } else {
-        map.value?.setLayerVisibility(layerID, false)
-      }
+      map.value?.setLayerVisibility(layerID, selected.has(layerID))
     }
   }
 
-  // Watch for layer selection changes
-  watch(() => layersStore.selectedLayers, syncAllLayersVisibility, { immediate: true, deep: true })
+  /** Only touch the layers the user just checked or unchecked. */
+  const applySelectionDiff = (selected: string[], previous: string[] = []) => {
+    const next = new Set(selected)
+    const before = new Set(previous)
+
+    for (const layerID of next) {
+      if (!before.has(layerID)) map.value?.setLayerVisibility(layerID, true)
+    }
+    for (const layerID of before) {
+      if (!next.has(layerID)) map.value?.setLayerVisibility(layerID, false)
+    }
+  }
+
+  // Watch for layer selection changes. The copy tracks the length and every
+  // index, so an in place change in the store still fires the watcher.
+  watch(() => layersStore.selectedLayers.slice(), applySelectionDiff)
 
   // Return all values and functions needed by the component
   return {
