@@ -89,6 +89,10 @@ const layerOrder = new Map<string, number>(orderedLayerIds.map((id, index) => [i
 // Set when MapLibre refuses an addLayer because a style is still loading.
 let needsResync = false
 
+// One cancellable timer for the loading bar, never a polling loop.
+const LOADING_BAR_DELAY = 150
+let loadingTimer: number | undefined
+
 // Ink-on-paper theme of the Trait basemap, light and dark.
 const traitTheme = computed(() =>
   themeStore.isDark
@@ -215,31 +219,29 @@ async function initMap() {
   newMap.addControl(new ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-left')
   newMap.addControl(new AttributionControl({ compact: true }), 'bottom-right')
 
+  // Loading bar. 'dataloading' fires per tile, so wait a bit before showing
+  // the bar, and 'idle' fires once the map has nothing left to load.
+  newMap.on('dataloading', () => {
+    if (loadingTimer !== undefined) return
+    loadingTimer = window.setTimeout(() => {
+      loadingTimer = undefined
+      loading.value = true
+    }, LOADING_BAR_DELAY)
+  })
+
+  newMap.on('idle', () => {
+    if (loadingTimer !== undefined) {
+      window.clearTimeout(loadingTimer)
+      loadingTimer = undefined
+    }
+    loading.value = false
+  })
+
   newMap.on('load', () => {
     if (!map.value) return
     hasLoaded.value = true
     loading.value = false
     map.value.resize()
-
-    function testTilesLoaded() {
-      if (map.value?.areTilesLoaded()) {
-        loading.value = false
-      } else {
-        loading.value = true
-        setTimeout(testTilesLoaded, 1000)
-      }
-    }
-
-    function handleDataEvent() {
-      if (map.value?.areTilesLoaded()) {
-        loading.value = false
-      } else {
-        testTilesLoaded()
-      }
-    }
-
-    newMap.on('sourcedata', handleDataEvent)
-    newMap.on('sourcedataloading', handleDataEvent)
 
     // The selected layers are added here, by the parent sync.
     if (props.callbackLoaded) {
