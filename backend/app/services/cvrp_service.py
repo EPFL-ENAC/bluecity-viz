@@ -1,7 +1,6 @@
 """CVRP service for waste collection route optimization."""
 
 import asyncio
-import contextlib
 import logging
 import time
 from collections import defaultdict
@@ -613,12 +612,19 @@ class CVRPService:
 
         t_start = time.perf_counter()
 
-        # Copy the graph in a worker thread, under the routing lock when the graph
-        # service has one: recalculate mutates the shared graph in place and rolls
-        # it back later, so a copy taken in between would carry its edits.
-        lock = getattr(self._graph_service, "_recalc_lock", None) or contextlib.nullcontext()
-        async with lock:
-            graph_copy = await asyncio.to_thread(self._graph_service.graph.copy)
+        # Copy the graph in a worker thread, holding the routing lock while we
+        # copy: the sampling code writes weight attributes on the shared graph,
+        # so a copy taken in the middle of that would be inconsistent.
+        # GraphService.lock is a threading.RLock, so it is taken inside the
+        # thread, not with `async with`.
+        def copy_graph_locked():
+            lock = getattr(self._graph_service, "lock", None)
+            if lock is None:
+                return self._graph_service.graph.copy()
+            with lock:
+                return self._graph_service.graph.copy()
+
+        graph_copy = await asyncio.to_thread(copy_graph_locked)
 
         # Use all pre-snapped centroids (base centroid_waste is count of centroids per node)
         node_df = self._node_dfs[waste_type].copy()

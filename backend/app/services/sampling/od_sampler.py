@@ -1,6 +1,8 @@
 """OD pair sampling using lognormal travel-time weighting."""
 
 import logging
+import math
+from collections import Counter
 from typing import Dict, List
 
 import networkx as nx
@@ -28,7 +30,8 @@ def show_weight_info(lognorm_mu: float, lognorm_sigma: float) -> None:
 def sample_od_pairs(
     nodes: pd.Series,
     rng: np.random.RandomState,
-    n_samples: int,
+    n_origins: int,
+    n_destinations: int,
     lognorm_mu: float,
     lognorm_sigma: float,
     t_matrix_dict: Dict[int, Dict[int, float]],
@@ -40,25 +43,30 @@ def sample_od_pairs(
     data with mode ≈ 940 s (≈ 15 min), reflecting typical urban trip lengths.
 
     Origins are sampled WITH replacement so high-weight nodes attract more trips.
+    An origin drawn twice gets twice as many destinations. It used to overwrite
+    its own entry, so 500 draws gave 382 origins and lost the extra weight.
 
     Args:
         nodes: Node weights indexed by NetworkX node ID
-        n_samples: Number of origins to sample (each gets n_samples destinations)
+        n_origins: Number of origin draws
+        n_destinations: Number of destinations per origin draw
         t_matrix_dict: {origin_nx_id: {dest_nx_id: travel_time_s}}
     """
-    origins = list(nodes.sample(n_samples, random_state=rng, replace=True, weights=nodes).index)
+    origins = list(nodes.sample(n_origins, random_state=rng, replace=True, weights=nodes).index)
 
     od_pairs: Dict[int, List[int]] = {}
     failed_origins = []
 
-    for origin in origins:
+    for origin, draws in Counter(origins).items():
         times = [t_matrix_dict[origin][dest] for dest in nodes.index]
         time_weights = lognorm.pdf(times, s=lognorm_sigma, scale=np.exp(lognorm_mu))
         weights = nodes * time_weights
 
         try:
             destinations = list(
-                nodes.sample(n_samples, random_state=rng, replace=True, weights=weights).index
+                nodes.sample(
+                    n_destinations * draws, random_state=rng, replace=True, weights=weights
+                ).index
             )
             od_pairs[origin] = destinations
         except ValueError:
@@ -75,8 +83,8 @@ def sample_od_pairs(
 def resample_od_destinations(
     pairs: List,
     nodes: pd.Series,
-    ig_modified,
-    idx_maps: dict,
+    mirror,
+    weights,
     config,
 ) -> List:
     """Resample destinations for each origin using travel times on the modified graph.
@@ -88,8 +96,8 @@ def resample_od_destinations(
     Args:
         pairs: Original NodePair list (provides origin set and dest counts)
         nodes: Candidate pool — pd.Series {NX node ID → weight}
-        ig_modified: igraph.Graph built from modified NX graph, with "travel_time" attribute
-        idx_maps: Node/edge index maps from networkx_to_igraph_with_indices
+        mirror: GraphMirror of the network
+        weights: Per-edge travel time array of the modified network
         config: SamplingConfig (uses lognorm_mu / lognorm_sigma)
 
     Returns:
@@ -97,7 +105,7 @@ def resample_od_destinations(
     """
     from app.models.route import NodePair
 
-    nx_to_ig = idx_maps["node_nx_to_ig"]
+    nx_to_ig = mirror.node_index
 
     # Build candidate arrays (only nodes present in igraph)
     candidate_nx_ids = [n for n in nodes.index if n in nx_to_ig]
@@ -113,9 +121,7 @@ def resample_od_destinations(
     origin_ig_ids = [nx_to_ig[nx] for nx in valid_origin_nx]
 
     # Compute travel-time matrix: origins × candidates
-    t_matrix = ig_modified.distances(
-        source=origin_ig_ids, target=candidate_ig_ids, weights="travel_time"
-    )
+    t_matrix = mirror.h.distances(source=origin_ig_ids, target=candidate_ig_ids, weights=weights)
 
     rng = np.random.RandomState()
     new_pairs: List = []
@@ -197,11 +203,15 @@ def generate_research_based_pairs(
 
     config = config or SamplingConfig()
 
-    if config.n_nodes_preprocess < n_pairs * 1.05:
-        raise ValueError(
-            f"n_nodes_preprocess ({config.n_nodes_preprocess}) must be at least "
-            f"5% higher than n_pairs ({n_pairs})"
-        )
+    if n_pairs < 1:
+        raise ValueError(f"n_pairs must be at least 1, got {n_pairs}")
+
+    # How many origins we need to reach n_pairs. The old code passed n_pairs to
+    # a check and then ignored it: the real size was n_origins x
+    # n_destinations_per_origin, which is how asking for 500 pairs produced
+    # 76,400 of them.
+    n_destinations = config.n_destinations_per_origin
+    n_origins = max(1, math.ceil(n_pairs / n_destinations))
 
     logger.info("Starting research-based OD pair sampling")
     logger.info(f"Configuration: {config.model_dump()}")
@@ -245,13 +255,14 @@ def generate_research_based_pairs(
 
     # Step 5: Sample OD pairs
     logger.info(
-        f"Sampling {config.n_origins} origins × "
-        f"{config.n_destinations_per_origin} destinations per origin..."
+        f"Sampling {n_pairs} OD pairs: {n_origins} origin draws × "
+        f"{n_destinations} destinations per draw..."
     )
     od_pairs_dict = sample_od_pairs(
         nodes,
         rng,
-        config.n_origins,
+        n_origins,
+        n_destinations,
         config.lognorm_mu,
         config.lognorm_sigma,
         t_matrix_dict,
@@ -259,8 +270,10 @@ def generate_research_based_pairs(
 
     node_pairs = []
     for origin, destinations in od_pairs_dict.items():
-        for destination in destinations[: config.n_destinations_per_origin]:
+        for destination in destinations:
             node_pairs.append(NodePair(origin=origin, destination=destination))
+    node_pairs = node_pairs[:n_pairs]
+    logger.info(f"Generated {len(node_pairs)} OD pairs from {len(od_pairs_dict)} distinct origins")
 
     if return_nodes:
         return node_pairs, nodes

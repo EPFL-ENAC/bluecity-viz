@@ -42,16 +42,34 @@ Trip destinations are sampled using a lognormal distribution based on travel tim
 
 The `SamplingConfig` model controls the sampling behavior:
 
+The number of pairs is a setting (`backend/app/config.py`), not a field of
+`SamplingConfig`. The number of origin draws follows from it:
+
+    origin draws = ceil(pairs / n_destinations_per_origin)
+
+Two settings, because the count is also a per-request choice:
+
+- `OD_PAIRS_MAX` (76,400) is sampled and routed once, at startup.
+- `OD_PAIRS` (20,000) is what a request gets when it does not say.
+  `POST /routes/recalculate` takes `od_pairs`, `GET /routes/baseline` takes
+  `?od_pairs=`, both capped at `OD_PAIRS_MAX`.
+
+**The sets are nested.** N pairs are the *first* N pairs of the set sampled
+at startup, so 20,000 is a subset of 76,400: more pairs means the same trips
+plus extra ones, never a different sample. Two results are comparable as long
+as they used the same N, and going from 20,000 to 76,400 only adds trips.
+This works because the origin draws are in random order, so a prefix is still
+a random sample of origins. The baseline for N is a slice of the route set,
+not a new routing.
+
 ```python
 class SamplingConfig(BaseModel):
     n_origins: int = 500
-    # Number of origin nodes to sample
-    # Higher = better geographic spread across the city
+    # Not used when a pair count is given. Kept for the API schema.
 
-    n_destinations_per_origin: int = 50
-    # Number of destinations to sample per origin
-    # Total candidate OD pairs = n_origins × n_destinations_per_origin
-    # Final pairs selected from candidates ordered by betweenness centrality
+    n_destinations_per_origin: int = 200
+    # Number of destinations per origin draw.
+    # An origin drawn twice gets twice as many destinations.
 
     n_nodes_preprocess: int = 1000
     # Maximum nodes for travel time matrix (higher = more accurate, slower)
@@ -78,19 +96,37 @@ class SamplingConfig(BaseModel):
     # Controls spread of trip distances
 ```
 
-### Default Behavior (19,100 OD pairs)
+### The set sampled at startup (76,400 OD pairs)
 
-With defaults: `n_origins=500`, `n_destinations_per_origin=50`:
-1. Algorithm samples **500 origins** weighted by betweenness centrality
-2. For each origin, samples **50 destinations** using lognormal distribution
-3. Total **~25,000 candidate OD pairs** generated
-4. Approximately **19,100 pairs** successfully routed (~382 unique origins with 50 destinations each)
+With `OD_PAIRS_MAX=76400` and `n_destinations_per_origin=200`:
+1. 382 origin draws, weighted by node weight (uniform by default)
+2. Each draw samples 200 destinations with the lognormal travel-time weights
+3. About 76,200 pairs come out, from roughly 307 distinct origins
+   (382 draws with replacement, and an origin with no reachable
+   destination is dropped)
 
-This ensures:
-- ✅ Geographic diversity (hundreds of different origins)
-- ✅ Realistic trip patterns (lognormal distance distribution)
-- ✅ Traffic concentration on important nodes (betweenness ordering)
-- ✅ Fast routing via igraph one-to-many optimization (~9,000 routes/sec)
+Before this was a setting, the count came out of
+`n_origins × n_destinations_per_origin` while the code checked a `n_pairs`
+argument it then ignored. Asking for 500 pairs gave 76,400 of them.
+
+#### How many pairs do we need?
+
+Every frequency, betweenness and CO2 value on the map comes from this set,
+so the count is a product decision. Per-edge usage frequency compared to the
+76,400 set, free-flow routing on the Lausanne graph:
+
+| set | correlation | top 100 edges in common | edges used |
+|---|---|---|---|
+| old sampler, 76,400 | 0.990 | 95 | 6,406 |
+| 20,000 | 0.958 | 85 | 5,644 |
+| 10,000 | 0.919 | 73 | 5,353 |
+| 5,000 | 0.857 | 59 | 4,975 |
+
+The first row is the set the old code produced. Fixing the sampler barely
+moves the map (0.99 correlation).
+
+The default is 20,000: 0.96 correlation and 85 of the top 100 edges, for a
+congestion run about 4 times faster. The full set stays one request away.
 
 ### Tuning for Different Cities
 

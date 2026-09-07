@@ -1,13 +1,19 @@
 """Route calculation endpoints."""
 
+import hashlib
 import logging
+import threading
 import traceback
-from typing import List, Optional
+from typing import Callable, List, Optional
 
-from fastapi import APIRouter, HTTPException, Response
+import orjson
+from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
 
+from app.config import settings
 from app.models.route import (
+    BaselineResponse,
     GraphData,
     NodePair,
     RandomPairsRequest,
@@ -16,6 +22,7 @@ from app.models.route import (
     RouteRequest,
     RouteResponse,
 )
+from app.services.graph_helpers import habitat_geojson
 from app.services.graph_service import GraphService
 
 logger = logging.getLogger(__name__)
@@ -25,6 +32,35 @@ router = APIRouter(prefix="/routes", tags=["routes"])
 # Initialize graph service (will be properly initialized with graph data)
 graph_service = GraphService()
 
+# Payloads that only depend on the graph: built once, then served from bytes
+# with an ETag. The graph never changes while the process runs.
+_payload_cache: dict = {}
+_payload_lock = threading.Lock()
+STATIC_CACHE_CONTROL = "public, max-age=86400"
+
+
+def _cached_json(key: str, build: Callable[[], object]) -> tuple:
+    """Return (bytes, etag) for a payload that never changes, building it once."""
+    hit = _payload_cache.get(key)
+    if hit is None:
+        with _payload_lock:
+            hit = _payload_cache.get(key)
+            if hit is None:
+                data = orjson.dumps(build())
+                etag = '"' + hashlib.blake2b(data, digest_size=16).hexdigest() + '"'
+                hit = (data, etag)
+                _payload_cache[key] = hit
+                logger.info("[CACHE] built %s payload, %.1f MB", key, len(data) / 1e6)
+    return hit
+
+
+def _json_or_304(request: Request, data: bytes, etag: str, cache_control: str) -> Response:
+    """Serve cached bytes, or 304 when the client already has this version."""
+    headers = {"ETag": etag, "Cache-Control": cache_control}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=data, media_type="application/json", headers=headers)
+
 
 class GraphInfoResponse(BaseModel):
     """Graph information response."""
@@ -32,10 +68,15 @@ class GraphInfoResponse(BaseModel):
     node_count: int
     edge_count: int
     sample_nodes: List[int]
+    od_pairs: int = 0
+    od_pairs_default: int = 0
+    od_pairs_max: int = 0
+    od_origins: int = 0
+    n_destinations_per_origin: Optional[int] = None
 
 
 @router.get("/graph-info", response_model=GraphInfoResponse)
-async def get_graph_info():
+def get_graph_info():
     """
     Get information about the loaded graph including sample node IDs.
 
@@ -50,7 +91,7 @@ async def get_graph_info():
 
 
 @router.post("/calculate", response_model=RouteResponse)
-async def calculate_routes(request: RouteRequest):
+def calculate_routes(request: RouteRequest):
     """
     Calculate shortest paths between origin-destination pairs.
 
@@ -61,17 +102,22 @@ async def calculate_routes(request: RouteRequest):
         Calculated routes with paths and metadata
     """
     try:
-        routes = await graph_service.calculate_routes(
-            pairs=request.pairs,
-            weight=request.weight,
-        )
+        with graph_service.lock:
+            routes = graph_service.calculate_routes(
+                pairs=request.pairs,
+                weight=request.weight,
+            )
         return RouteResponse(routes=routes)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/recalculate", response_model=RecalculateResponse)
-async def recalculate_routes(request: RecalculateRequest):
+@router.post(
+    "/recalculate",
+    response_model=None,
+    responses={200: {"model": RecalculateResponse}},
+)
+def recalculate_routes(request: RecalculateRequest) -> dict:
     """
     Recalculate shortest paths after applying edge modifications.
     Modifications can remove edges or change their speed.
@@ -84,37 +130,86 @@ async def recalculate_routes(request: RecalculateRequest):
         Original and recalculated routes with comparison data
     """
     try:
-        result = await graph_service.recalculate_with_modifications(
+        result = graph_service.recalculate_with_modifications(
             pairs=request.pairs,
             edge_modifications=request.edge_modifications,
             weight=request.weight,
             use_congestion=request.use_congestion,
             congestion_iterations=request.congestion_iterations,
             resample_destinations=request.resample_destinations,
+            include_baseline=request.include_baseline,
+            od_pairs=request.od_pairs,
         )
-        return result
+        phases = result.pop("_timing_raw", {})
+        # Server-Timing shows the phases in the browser network panel, so the
+        # per-request [TIMING] log line can stay at DEBUG.
+        headers = {
+            "Server-Timing": ", ".join(f"{name};dur={ms:.1f}" for name, ms in phases.items())
+        }
+        return ORJSONResponse(result, headers=headers)
     except Exception as e:
         logger.error("Recalculate error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/graph", response_model=GraphData)
-async def get_graph():
+@router.get(
+    "/baseline",
+    response_model=None,
+    responses={200: {"model": BaselineResponse}},
+)
+def get_baseline(
+    request: Request,
+    od_pairs: Optional[int] = Query(
+        None,
+        ge=1,
+        description="How many OD pairs. Defaults to the OD_PAIRS setting.",
+    ),
+):
+    """
+    Edge usage of the unmodified network, for a given number of OD pairs.
+
+    It does not change until the server restarts, so it is served with an
+    ETag, one per pair count. Fetch it once, then call /recalculate with the
+    same od_pairs and include_baseline=false.
+    """
+    if od_pairs is not None and od_pairs > settings.od_pairs_max:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"od_pairs must be at most {settings.od_pairs_max} "
+                f"(OD_PAIRS_MAX, the set sampled at startup)"
+            ),
+        )
+    try:
+        n = min(od_pairs or settings.od_pairs, settings.od_pairs_max)
+        data, etag = _cached_json(f"baseline:{n}", lambda: graph_service.baseline_payload(n))
+        return _json_or_304(request, data, etag, "no-cache")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/graph",
+    response_model=None,
+    responses={200: {"model": GraphData}},
+    deprecated=True,
+)
+def get_graph(request: Request):
     """
     Get complete graph data for visualization.
 
-    Returns:
-        Complete graph with all edges and their geometries
+    Deprecated: the frontend loads /geodata/lausanne.geojson instead. Kept for
+    scripts and notebooks. Served from a cached payload with an ETag.
     """
     try:
-        graph_data = graph_service.get_graph_data()
-        return graph_data
+        data, etag = _cached_json("graph", graph_service.get_graph_data)
+        return _json_or_304(request, data, etag, STATIC_CACHE_CONTROL)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/random-pairs", response_model=List[NodePair])
-async def generate_random_pairs(request: RandomPairsRequest):
+def generate_random_pairs(request: RandomPairsRequest):
     """
     Generate random origin-destination node pairs.
 
@@ -140,25 +235,27 @@ async def generate_random_pairs(request: RandomPairsRequest):
             )
 
             config = request.sampling_config or SamplingConfig()
-            pairs = generate_research_based_pairs(
-                graph_service.graph,
-                n_pairs=request.count,
-                config=config,
-                seed=request.seed or 42,
-            )
+            with graph_service.lock:
+                pairs = generate_research_based_pairs(
+                    graph_service.graph,
+                    n_pairs=request.count,
+                    config=config,
+                    seed=request.seed or 42,
+                )
         else:
-            pairs = graph_service.generate_random_pairs(
-                count=request.count,
-                seed=request.seed,
-                radius_km=request.radius_km,
-            )
+            with graph_service.lock:
+                pairs = graph_service.generate_random_pairs(
+                    count=request.count,
+                    seed=request.seed,
+                    radius_km=request.radius_km,
+                )
         return pairs
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/clear-cache")
-async def clear_cache():
+def clear_cache():
     """
     Clear the route calculation cache.
 
@@ -184,84 +281,39 @@ class EdgeGeometry(BaseModel):
     highway: Optional[str] = None
 
 
-@router.get("/edge-geometries")
-async def get_edge_geometries(response: Response, limit: Optional[int] = None):
+@router.get("/edge-geometries", deprecated=True)
+def get_edge_geometries(request: Request, limit: Optional[int] = None):
     """
     Get all edge geometries from the graph for Deck.gl visualization.
 
-    Args:
-        limit: Optional limit on number of edges to return (for testing)
-
-    Returns:
-        List of edges with u, v node IDs and coordinate arrays
+    Deprecated: the frontend loads /geodata/lausanne.geojson instead. The full
+    payload is built once and served from bytes with an ETag. A `limit` is only
+    for quick tests, so it is built on the fly and not cached.
     """
-    import json
-    import time
-
     try:
-        request_start = time.time()
-
-        data_start = time.time()
-        edges = graph_service.get_edge_geometries(limit=limit)
-        data_time = time.time() - data_start
-
-        # Manually serialize to check size
-        json_start = time.time()
-        json_str = json.dumps(edges)
-        json_time = time.time() - json_start
-        uncompressed_size = len(json_str) / (1024 * 1024)  # MB
-
-        total_time = time.time() - request_start
-
-        print(f"[PERF] Data generation: {data_time:.3f}s for {len(edges)} edges")
-        print(f"[PERF] JSON serialization: {json_time:.3f}s")
-        print(f"[PERF] Uncompressed JSON size: {uncompressed_size:.2f} MB")
-        print(f"[PERF] Total endpoint time: {total_time:.3f}s")
-
-        # Add Server-Timing headers
-        response.headers["Server-Timing"] = (
-            f"data;dur={data_time * 1000:.1f}, "
-            f"json;dur={json_time * 1000:.1f}, "
-            f"total;dur={total_time * 1000:.1f}"
-        )
-
-        return edges
+        if limit is not None:
+            return ORJSONResponse(graph_service.get_edge_geometries(limit=limit))
+        data, etag = _cached_json("edge-geometries", graph_service.get_edge_geometries)
+        return _json_or_304(request, data, etag, STATIC_CACHE_CONTROL)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/habitat-geojson")
-async def get_habitat_geojson():
+def get_habitat_geojson(request: Request):
     """
     Get habitat density as a GeoJSON FeatureCollection for MapLibre visualization.
+
+    The graph does not change while the process runs, so the payload is built
+    once and served from bytes with an ETag.
     """
     try:
-        graph = graph_service.graph
-        features = []
-        for u, v, data in graph.edges(data=True):
-            coords = (
-                [[lon, lat] for lon, lat in data["geometry"].coords]
-                if "geometry" in data
-                else [
-                    [graph.nodes[u]["x"], graph.nodes[u]["y"]],
-                    [graph.nodes[v]["x"], graph.nodes[v]["y"]],
-                ]
-            )
-            length = float(data.get("length", 1.0) or 1.0)
-            habitat = float(data.get("habitat_area_m2", 0.0) or 0.0)
-            density = habitat / length if length > 0 else 0.0
-            if habitat > 0:
-                features.append(
-                    {
-                        "type": "Feature",
-                        "geometry": {"type": "LineString", "coordinates": coords},
-                        "properties": {
-                            "u": int(u),
-                            "v": int(v),
-                            "habitat_density_m2_per_m": density,
-                        },
-                    }
-                )
-        return {"type": "FeatureCollection", "features": features}
+
+        def build():
+            with graph_service.lock:
+                return habitat_geojson(graph_service.graph)
+
+        data, etag = _cached_json("habitat-geojson", build)
+        return _json_or_304(request, data, etag, STATIC_CACHE_CONTROL)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

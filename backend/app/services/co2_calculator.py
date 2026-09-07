@@ -25,6 +25,8 @@ Typical range for a hilly city (flat → 15 % steep): ~170–310 g/km.
 import logging
 from typing import Optional
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 
@@ -90,6 +92,38 @@ class CO2Calculator:
             grade_factor = 1.0 + grade * cls.GRADE_CO2_SENSITIVITY
 
         return cls.co2_per_km_at_speed(speed) * length_km * grade_factor
+
+    @classmethod
+    def co2_per_km_at_speed_array(cls, speed_kph: np.ndarray) -> np.ndarray:
+        """Vectorised co2_per_km_at_speed, for one value per graph edge."""
+        speed = np.asarray(speed_kph, dtype=np.float64)
+        safe = np.where(speed > 0, speed, 1.0)
+        return np.where(
+            speed > 0,
+            cls.IDLE_COEFF / safe + cls.ROLLING_COEFF + cls.AERO_COEFF * safe**2,
+            cls.IDLE_COEFF + cls.ROLLING_COEFF,
+        )
+
+    @classmethod
+    def edge_co2_array(
+        cls,
+        length: np.ndarray,
+        speed_kph: np.ndarray,
+        elevation_gain: np.ndarray,
+    ) -> np.ndarray:
+        """Vectorised calculate_edge_co2 (grams per edge). Same formula, one array."""
+        length = np.asarray(length, dtype=np.float64)
+        speed = np.asarray(speed_kph, dtype=np.float64)
+        elev = np.asarray(elevation_gain, dtype=np.float64)
+
+        speed = np.where(speed > 0, speed, cls.DEFAULT_SPEED_KPH)
+        per_km = cls.co2_per_km_at_speed_array(speed)
+
+        safe_length = np.where(length > 0, length, 1.0)
+        grade = np.where((elev > 0) & (length > 0), elev / safe_length, 0.0)
+        grade_factor = 1.0 + grade * cls.GRADE_CO2_SENSITIVITY
+
+        return np.where(length > 0, per_km * (length / 1000.0) * grade_factor, 0.0)
 
     @classmethod
     def calculate_route_co2(cls, edges_data: list) -> float:
