@@ -30,8 +30,8 @@ describe('computeOffsetPath', () => {
   it('moves a west to east line in latitude only', () => {
     const out = computeOffsetPath([[6, 46], [7, 46]], 111)
     expect(out).toHaveLength(2)
-    for (const [lon, lat] of out) {
-      expect(lat).toBeCloseTo(46.001, 6)
+    for (const point of out) {
+      expect(point[1]).toBeCloseTo(46.001, 6)
     }
     expect(out[0][0]).toBeCloseTo(6, 10)
     expect(out[1][0]).toBeCloseTo(7, 10)
@@ -39,8 +39,8 @@ describe('computeOffsetPath', () => {
 
   it('moves a south to north line in longitude only', () => {
     const out = computeOffsetPath([[6, 46], [6, 47]], 77)
-    for (const [lon, lat] of out) {
-      expect(lon).toBeCloseTo(5.999, 6)
+    for (const point of out) {
+      expect(point[0]).toBeCloseTo(5.999, 6)
     }
     expect(out[0][1]).toBeCloseTo(46, 10)
   })

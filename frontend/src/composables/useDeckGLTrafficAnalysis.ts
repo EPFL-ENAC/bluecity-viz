@@ -1,528 +1,250 @@
-import { fetchEdgeGeometries, type EdgeGeometry } from '@/services/trafficAnalysis'
-import { useTrafficAnalysisStore, type ModificationAction } from '@/stores/trafficAnalysis'
-import { createHullPaths, getPathMidpoint } from '@/utils/geometry'
-import { PathStyleExtension } from '@deck.gl/extensions'
-import { GeoJsonLayer, PathLayer, TextLayer } from '@deck.gl/layers'
-import type { Ref, ShallowRef } from 'vue'
-import { ref, shallowRef } from 'vue'
+import {
+  buildBaseLayer,
+  buildEdgeColors,
+  buildHoverLayer,
+  buildModifiedEdgeLayers,
+  buildRouteLayers,
+  hullFor,
+  type ModifiedEdge,
+  type RouteEdge
+} from '@/composables/buildTrafficLayers'
+import { useEdgeTooltip, type EdgeTooltipData } from '@/composables/useEdgeTooltip'
+import { edgeKey, useGraphEdges } from '@/composables/useGraphEdges'
+import type { EdgeGeometry } from '@/services/trafficAnalysis'
+import { useTrafficAnalysisStore, type EdgeUsageStats } from '@/stores/trafficAnalysis'
+import type { HullOutline } from '@/utils/geometry'
+import { computed, shallowRef } from 'vue'
 
-// Colors for different modification types (matching MapControlsPanel actionColors)
-const MODIFICATION_COLORS: Record<ModificationAction, [number, number, number, number]> = {
-  remove: [0, 0, 0, 255], // Black for removed (#000000)
-  speed50: [220, 38, 38, 255], // Red for 50 km/h (#dc2626)
-  speed30: [251, 146, 60, 255], // Orange for 30 km/h (#fb923c)
-  speed10: [250, 204, 21, 255] // Yellow for 10 km/h (#facc15)
-}
-
-// Speed limit text for each action
-const SPEED_LIMIT_TEXT: Record<ModificationAction, string> = {
-  remove: '✕',
-  speed10: '10',
-  speed30: '30',
-  speed50: '50'
-}
-
-
-interface EdgeUsageStats {
-  u: number
-  v: number
-  count: number
-  frequency: number
-  delta_count?: number
-  delta_frequency?: number
-  co2_per_km?: number
-  betweenness_centrality?: number
-  delta_betweenness?: number
-}
-
-// Tooltip data structure
-export interface EdgeTooltipData {
-  x: number
-  y: number
-  name: string
-  highway?: string
-  length?: number
-  travel_time?: number
-  speed_kph?: number
-  bus_route_refs?: string
-  // Route calculation stats (when available)
-  frequency?: number
-  count?: number
-  delta_count?: number
-  co2_per_km?: number
-  co2_total?: number
-  co2_delta?: number
-  betweenness_centrality?: number
-  delta_betweenness?: number
-}
-
-interface DeckGLTrafficAnalysisReturn {
-  layers: Ref<any[]>
-  tooltipData: Ref<EdgeTooltipData | null>
-  edgeMap: ShallowRef<Map<string, EdgeGeometry>>
-  loadGraphEdges: () => Promise<void>
-  updateModifiedEdges: () => void
-  visualizeEdgeUsage: (newUsage: EdgeUsageStats[]) => void
-  clearRoutes: () => void
-  handleClick: (info: any) => void
-  handleHover: (info: any) => void
-  setEdgeClickCallback: (callback: (u: number, v: number, name?: string) => void) => void
-}
+export type { EdgeTooltipData }
 
 /**
- * Composable for managing traffic analysis visualization using Deck.gl
+ * The deck.gl layers for the traffic analysis, and the edge interaction.
+ *
+ * Everything is derived: `layers` is a computed over the store, so a pointer
+ * move that does not change the hovered edge re-runs nothing at all, and a
+ * change of visualization mode only swaps a color buffer instead of rebuilding
+ * the 6k paths.
  */
-export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
-  // Use shallowRef for large arrays to avoid deep reactivity overhead
-  const layers = shallowRef<any[]>([])
-  const edgeGeometries = shallowRef<EdgeGeometry[]>([])
-  const edgeMap = shallowRef<Map<string, EdgeGeometry>>(new Map())
+export function useDeckGLTrafficAnalysis() {
+  const trafficStore = useTrafficAnalysisStore()
+  const { edges, edgeMap, loadGraphEdges, getEdge, getReverseEdge } = useGraphEdges()
+  const { tooltipData, setTooltip, setTooltipMover, moveTooltip } = useEdgeTooltip()
+
+  const hoveredEdge = shallowRef<EdgeGeometry | null>(null)
+  let hoveredKey: string | null = null
   let edgeClickCallback: ((u: number, v: number, name?: string) => void) | null = null
 
-  // Tooltip state
-  const tooltipData = ref<EdgeTooltipData | null>(null)
+  // hull outlines survive a click, only the list of modified edges changes
+  const hullCache = new Map<string, HullOutline>()
+  // one color buffer per mode, thrown away when the numbers change
+  let colorCache = new Map<string, Uint8Array>()
+  let colorVersion = 0
 
-  // Cache for edge stats from route calculation
-  const edgeStatsMap = shallowRef<Map<string, EdgeUsageStats>>(new Map())
-
-  // Get store instance
-  const trafficStore = useTrafficAnalysisStore()
-
-  // Cache the base layer to avoid recreating it (can be MVTLayer or PathLayer)
-  let baseLayer: any = null
+  /** The stats of the last calculation, by edge key, for the tooltip. */
+  const edgeStatsMap = computed(() => {
+    const map = new Map<string, EdgeUsageStats>()
+    for (const stat of trafficStore.newEdgeUsage) {
+      map.set(edgeKey(stat.u, stat.v), stat)
+    }
+    return map
+  })
 
   /**
-   * Load graph edges as GeoJSON for efficient rendering and interaction.
-   * No-op if the graph is already loaded.
+   * The edges to color, geometry and numbers joined.
+   *
+   * Does not read activeVisualization, so switching mode keeps the same array
+   * and deck keeps its buffers.
    */
-  async function loadGraphEdges(): Promise<void> {
-    if (baseLayer !== null) return  // already loaded
+  const displayEdges = computed<RouteEdge[]>(() => {
+    const usage = trafficStore.newEdgeUsage
+    const map = edgeMap.value
+    if (usage.length === 0 || map.size === 0) return []
 
-    try {
-      console.time('Loading graph edges as GeoJSON')
+    const onlyBusRoutes = trafficStore.filterBusRoutes
+    const out: RouteEdge[] = []
 
-      // Always load edge geometries fresh (don't cache in store)
-      const edges = await fetchEdgeGeometries()
-      edgeGeometries.value = edges
-      edgeGeometries.value.forEach((edge) => {
-        edgeMap.value.set(`${edge.u}-${edge.v}`, edge)
-      })
+    for (const stat of usage) {
+      const edge = map.get(edgeKey(stat.u, stat.v))
+      if (!edge) continue
+      if (onlyBusRoutes && (edge.bus_route_count ?? 0) === 0) continue
 
-      // Convert to GeoJSON format for Deck.gl
-      const geojsonData: any = {
-        type: 'FeatureCollection',
-        features: edges.map((edge) => ({
-          type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: edge.coordinates
-          },
-          properties: {
-            u: edge.u,
-            v: edge.v,
-            name: edge.name,
-            highway: edge.highway,
-            travel_time: edge.travel_time,
-            length: edge.length,
-            bus_route_count: edge.bus_route_count ?? 0,
-            bus_route_refs: edge.bus_route_refs ?? '',
-          }
-        }))
-      }
+      const deltaFrequency = stat.delta_frequency ?? 0
+      const co2PerKm = stat.co2_per_km ?? 0
+      const origFreq = stat.frequency - deltaFrequency
 
-      // Create single GeoJsonLayer for all edges (always pickable for removal)
-      baseLayer = new GeoJsonLayer({
-        id: 'traffic-graph-edges',
-        data: geojsonData,
-        lineWidthMinPixels: 3,
-        getLineColor: [136, 136, 136, 153],
-        getLineWidth: 2,
-        getFillColor: [136, 136, 136, 100],
-        pickable: true,
-        autoHighlight: true,
-        highlightColor: [0, 170, 255, 200]
-      })
-
-      console.timeEnd('Loading graph edges as GeoJSON')
-
-      layers.value = [baseLayer]
-    } catch (error) {
-      console.error('Failed to load graph edges:', error)
-    }
-  }
-
-
-  /**
-   * Update modified edges visualization with hollow outlines and speed limit icons
-   */
-  function updateModifiedEdges(): void {
-    if (edgeGeometries.value.length === 0 || !baseLayer) return
-
-    const modifications = trafficStore.edgeModifications
-
-    // Group edges by modification type
-    const modifiedEdgeData: Array<EdgeGeometry & { action: ModificationAction }> = []
-
-    modifications.forEach((mod, key) => {
-      const edge = edgeMap.value.get(key)
-      if (edge) {
-        modifiedEdgeData.push({ ...edge, action: mod.action })
-      }
-    })
-
-    if (modifiedEdgeData.length === 0) {
-      // Keep only base and route layers
-      const routeLayers = layers.value.filter((l) => l.id.startsWith('traffic-routes'))
-      layers.value = [baseLayer, ...routeLayers]
-      return
-    }
-
-    // Create hull outline data - compute offset paths for each edge
-    // Hull width in meters - will scale naturally with zoom
-    const hullWidth = 8 // meters
-    const hullPathsData: Array<{ path: number[][]; color: [number, number, number, number] }> = []
-
-    for (const edge of modifiedEdgeData) {
-      const [leftPath, rightPath] = createHullPaths(edge.coordinates, hullWidth)
-      const color = MODIFICATION_COLORS[edge.action]
-      hullPathsData.push({ path: leftPath, color })
-      hullPathsData.push({ path: rightPath, color })
-    }
-
-    // Create hull outline layer with dashed lines
-    // Use meters for width so it scales with zoom
-    const hullOutlineLayer = new PathLayer({
-      id: 'traffic-modified-edges-hull',
-      data: hullPathsData,
-      getPath: (d: any) => d.path,
-      getColor: (d: any) => d.color,
-      getWidth: 2, // meters
-      widthUnits: 'meters',
-      widthMinPixels: 2,
-      widthMaxPixels: 8,
-      getDashArray: [6, 4],
-      dashJustified: true,
-      pickable: false,
-      extensions: [new PathStyleExtension({ dash: true })]
-    })
-
-    // Create end caps as small perpendicular lines at start and end of each edge
-    const endCapData: Array<{ path: number[][]; color: [number, number, number, number] }> = []
-    for (const edge of modifiedEdgeData) {
-      const coords = edge.coordinates
-      if (coords.length < 2) continue
-
-      const color = MODIFICATION_COLORS[edge.action]
-      const [leftPath, rightPath] = createHullPaths(coords, hullWidth)
-
-      // Start cap: connect left[0] to right[0]
-      endCapData.push({
-        path: [leftPath[0], rightPath[0]],
-        color
-      })
-
-      // End cap: connect left[last] to right[last]
-      endCapData.push({
-        path: [leftPath[leftPath.length - 1], rightPath[rightPath.length - 1]],
-        color
+      out.push({
+        ...edge,
+        frequency: stat.frequency,
+        delta_count: stat.delta_count ?? 0,
+        delta_frequency: deltaFrequency,
+        co2_per_km: co2PerKm,
+        count: stat.count,
+        co2_total: co2PerKm * stat.count,
+        co2_delta: co2PerKm * deltaFrequency,
+        betweenness_centrality: stat.betweenness_centrality ?? 0,
+        delta_betweenness: stat.delta_betweenness ?? 0,
+        delta_relative: origFreq > 0.0001 ? (deltaFrequency / origFreq) * 100 : 0
       })
     }
 
-    // Create end caps layer
-    const endCapsLayer = new PathLayer({
-      id: 'traffic-modified-edges-caps',
-      data: endCapData,
-      getPath: (d: any) => d.path,
-      getColor: (d: any) => d.color,
-      getWidth: 2, // meters - same as hull outline
-      widthUnits: 'meters',
-      widthMinPixels: 2,
-      widthMaxPixels: 8,
-      pickable: false
+    // draw the busy edges last so they end up on top
+    out.sort((a, b) => a.frequency - b.frequency)
+
+    // the numbers changed, the old colors do not apply
+    colorCache = new Map()
+    colorVersion++
+
+    return out
+  })
+
+  /** The modified edges with their hull, ready to draw. */
+  const modifiedEdges = computed<ModifiedEdge[]>(() => {
+    const map = edgeMap.value
+    if (map.size === 0) return []
+
+    const out: ModifiedEdge[] = []
+    trafficStore.edgeModifications.forEach((mod, key) => {
+      const edge = map.get(key)
+      if (!edge) return
+      out.push({ key, edge, action: mod.action, hull: hullFor(hullCache, key, edge) })
     })
+    return out
+  })
 
-    // Prepare data for speed limit icons (for speed modifications)
-    // European speed limit signs: white circle with red border, black text
-    const speedLimitData = modifiedEdgeData
-      .filter((d) => d.action !== 'remove')
-      .map((d) => ({
-        position: getPathMidpoint(d.coordinates),
-        text: SPEED_LIMIT_TEXT[d.action],
-        action: d.action
-      }))
-
-    // Prepare data for removed edge icons (black circle with white X)
-    const removedEdgeData = modifiedEdgeData
-      .filter((d) => d.action === 'remove')
-      .map((d) => ({
-        position: getPathMidpoint(d.coordinates)
-      }))
-
-    // Create text layer for speed limit icons (European style: white bg, red border, black text)
-    const speedLimitLayer = new TextLayer({
-      id: 'traffic-modified-edges-speed-icons',
-      data: speedLimitData,
-      getPosition: (d: any) => d.position,
-      getText: (d: any) => d.text,
-      getColor: [0, 0, 0, 255], // Black text
-      getSize: 12,
-      fontWeight: 'bold',
-      getBackgroundColor: [255, 255, 255, 255], // White background
-      background: true,
-      backgroundPadding: [6, 4, 6, 4],
-      backgroundBorderRadius: 30,
-      getBorderColor: [220, 38, 38, 255], // Red border (European style)
-      getBorderWidth: 3,
-      getTextAnchor: 'middle',
-      getAlignmentBaseline: 'center',
-      fontFamily: 'Arial, sans-serif',
-      billboard: true, // Always face camera
-      sizeUnits: 'pixels',
-      pickable: false
-    })
-
-    // Create text layer for removed edge icons (black circle with white X - "no entry" style)
-    const removedEdgeLayer = new TextLayer({
-      id: 'traffic-modified-edges-removed-icons',
-      data: removedEdgeData,
-      getPosition: (d: any) => d.position,
-      getText: () => '✕',
-      getColor: [255, 255, 255, 255], // White X
-      getSize: 12,
-      fontWeight: 'bold',
-      getBackgroundColor: [0, 0, 0, 255], // Black background
-      background: true,
-      backgroundPadding: [6, 6, 6, 6],
-      backgroundBorderRadius: 30, // Circular
-      getBorderColor: [0, 0, 0, 255], // Black border
-      getBorderWidth: 2,
-      getTextAnchor: 'middle',
-      getAlignmentBaseline: 'center',
-      fontFamily: 'Arial, sans-serif',
-      billboard: true,
-      sizeUnits: 'pixels',
-      pickable: false
-    })
-
-    // Keep route layers if they exist
-    const routeLayers = layers.value.filter((l) => l.id.startsWith('traffic-routes'))
-
-    // Stack: base → routes → hull outline → end caps → speed icons → removed icons
-    layers.value = [
-      baseLayer,
-      ...routeLayers,
-      hullOutlineLayer,
-      endCapsLayer,
-      speedLimitLayer,
-      removedEdgeLayer
-    ]
+  function colorsFor(mode: string, list: RouteEdge[]): Uint8Array {
+    let colors = colorCache.get(mode)
+    if (!colors) {
+      colors = buildEdgeColors(list, mode, trafficStore.getColor)
+      colorCache.set(mode, colors)
+    }
+    return colors
   }
 
-  /**
-   * Visualize edge usage statistics using delta frequency for color coding
-   */
-  function visualizeEdgeUsage(newUsage: EdgeUsageStats[]): void {
-    clearRoutes()
+  const layers = computed<any[]>(() => {
+    const network = edges.value
+    if (network.length === 0) return []
 
-    // Cache edge stats for tooltip display
-    const statsMap = new Map<string, EdgeUsageStats>()
-    newUsage.forEach((stat) => {
-      statsMap.set(`${stat.u}-${stat.v}`, stat)
-    })
-    edgeStatsMap.value = statsMap
+    const out: any[] = [buildBaseLayer(network)]
 
-    // Use new usage stats (which include delta_count, co2_per_km, and betweenness)
-    const edgesWithStats = newUsage
-      .map((stat) => {
-        const edge = edgeMap.value.get(`${stat.u}-${stat.v}`)
-        return edge
-          ? {
-              ...edge,
-              frequency: stat.frequency,
-              delta_count: stat.delta_count ?? 0,
-              delta_frequency: stat.delta_frequency ?? 0,
-              co2_per_km: stat.co2_per_km ?? 0,
-              count: stat.count,
-              co2_total: (stat.co2_per_km ?? 0) * stat.count,
-              co2_delta: (stat.co2_per_km ?? 0) * (stat.delta_frequency ?? 0),
-              betweenness_centrality: stat.betweenness_centrality ?? 0,
-              delta_betweenness: stat.delta_betweenness ?? 0,
-              delta_relative: (() => {
-                const origFreq = stat.frequency - (stat.delta_frequency ?? 0)
-                return origFreq > 0.0001 ? ((stat.delta_frequency ?? 0) / origFreq) * 100 : 0
-              })()
-            }
-          : null
-      })
-      .filter(Boolean) as (EdgeGeometry & {
-      frequency: number
-      delta_count: number
-      delta_frequency: number
-      co2_per_km: number
-      count: number
-      co2_total: number
-      co2_delta: number
-      betweenness_centrality: number
-      delta_betweenness: number
-      delta_relative: number
-    })[]
+    const mode = trafficStore.activeVisualization
+    const list = displayEdges.value
+    if (mode !== 'none' && list.length > 0) {
+      out.push(
+        ...buildRouteLayers({
+          edges: list,
+          colors: colorsFor(mode, list),
+          mode,
+          colorVersion
+        })
+      )
+    }
 
-    // Apply bus route filter if active
-    const displayEdges = trafficStore.filterBusRoutes
-      ? edgesWithStats.filter((e) => (e.bus_route_count ?? 0) > 0)
-      : edgesWithStats
+    out.push(buildHoverLayer(hoveredEdge.value))
 
-    // Sort edges by frequency (ascending) so larger edges are drawn last
-    displayEdges.sort((a, b) => a.frequency - b.frequency)
+    const modified = modifiedEdges.value
+    if (modified.length > 0) {
+      out.push(...buildModifiedEdgeLayers(modified))
+    }
 
-    // Determine which value to use for coloring based on active visualization
-    const activeMode = trafficStore.activeVisualization
+    return out
+  })
 
-    // Create outline layer
-    const outlineLayer = new PathLayer({
-      id: 'traffic-routes-outline',
-      data: displayEdges,
-      getPath: (d: EdgeGeometry) => d.coordinates,
-      getColor: [0, 0, 0, 120], // Light dark outline
-      getWidth: (d: any) => Math.max(4, Math.min(12, d.frequency * 100 + 4)), // 2px wider than main
-      widthUnits: 'pixels',
-      widthMinPixels: 4,
-      widthMaxPixels: 12,
-      pickable: false
-    })
-
-    // Create main traffic layer with color from store
-    const trafficLayer = new PathLayer({
-      id: 'traffic-routes',
-      data: displayEdges,
-      getPath: (d: EdgeGeometry) => d.coordinates,
-      getColor: (d: any) => {
-        let value: number
-        if (activeMode === 'frequency') {
-          value = d.frequency
-        } else if (activeMode === 'delta') {
-          value = d.delta_count
-        } else if (activeMode === 'co2') {
-          value = d.co2_per_km
-        } else if (activeMode === 'co2_delta') {
-          value = d.co2_delta
-        } else if (activeMode === 'betweenness') {
-          value = d.betweenness_centrality
-        } else if (activeMode === 'betweenness_delta') {
-          value = d.delta_betweenness
-        } else if (activeMode === 'delta_relative') {
-          value = d.delta_relative
-        } else {
-          value = d.frequency
-        }
-        return trafficStore.getColor(value)
-      },
-      getWidth: (d: any) => Math.max(2, Math.min(10, d.frequency * 100 + 2)),
-      widthUnits: 'pixels',
-      widthMinPixels: 2,
-      widthMaxPixels: 10,
-      pickable: true,
-      autoHighlight: true
-    })
-
-    // Preserve modified edges layers (hull, caps, speed icons)
-    const modifiedEdgesLayers = layers.value.filter((l) =>
-      l.id.startsWith('traffic-modified-edges')
-    )
-
-    layers.value = [baseLayer, outlineLayer, trafficLayer, ...modifiedEdgesLayers].filter(Boolean)
-  }
-
-  /**
-   * Clear all route visualizations
-   */
-  function clearRoutes(): void {
-    const modifiedEdgesLayers = layers.value.filter((l) =>
-      l.id.startsWith('traffic-modified-edges')
-    )
-    layers.value = [baseLayer, ...modifiedEdgesLayers].filter(Boolean)
-  }
-
-  /**
-   * Handle click events on edges
-   */
+  /** Click an edge to cycle its modification, both directions together. */
   function handleClick(info: any): void {
     if (!info.object || !edgeClickCallback) return
 
-    // Handle both GeoJSON features and direct edge objects
-    const clickedEdge = info.object.properties || info.object
-    if (clickedEdge.u === undefined || clickedEdge.v === undefined) return
+    const clicked = info.object.properties || info.object
+    if (clicked.u === undefined || clicked.v === undefined) return
 
-    // Get edge name
-    const edgeName = clickedEdge.name || `Edge ${clickedEdge.u}→${clickedEdge.v}`
+    edgeClickCallback(clicked.u, clicked.v, clicked.name || `Edge ${clicked.u}→${clicked.v}`)
 
-    // Call callback with edge info including name
-    edgeClickCallback(clickedEdge.u, clickedEdge.v, edgeName)
-
-    // Also explicitly look for the reverse edge (u-v becomes v-u)
-    const reverseEdge = edgeGeometries.value.find(
-      (edge) => edge.u === clickedEdge.v && edge.v === clickedEdge.u
-    )
-
-    if (reverseEdge) {
-      const reverseName = reverseEdge.name || `Edge ${reverseEdge.u}→${reverseEdge.v}`
-      edgeClickCallback(reverseEdge.u!, reverseEdge.v!, reverseName)
+    const reverse = getReverseEdge(clicked.u, clicked.v)
+    if (reverse) {
+      edgeClickCallback(
+        reverse.u,
+        reverse.v,
+        reverse.name || `Edge ${reverse.u}→${reverse.v}`
+      )
     }
   }
 
-  /**
-   * Handle hover events on edges to show tooltips
-   */
-  function handleHover(info: any): void {
-    if (!info.object) {
-      tooltipData.value = null
-      return
-    }
+  function tooltipFor(key: string, hovered: any, edge?: EdgeGeometry): EdgeTooltipData {
+    const stats = edgeStatsMap.value.get(key)
 
-    // Handle both GeoJSON features and direct edge objects
-    const hoveredEdge = info.object.properties || info.object
-    if (hoveredEdge.u === undefined || hoveredEdge.v === undefined) {
-      tooltipData.value = null
-      return
-    }
-
-    const edgeKey = `${hoveredEdge.u}-${hoveredEdge.v}`
-    const edgeGeom = edgeMap.value.get(edgeKey)
-    const edgeStats = edgeStatsMap.value.get(edgeKey)
-
-    // Calculate speed from length and travel_time if available
-    const length = hoveredEdge.length || edgeGeom?.length
-    const travelTime = hoveredEdge.travel_time || edgeGeom?.travel_time
+    const length = hovered.length ?? edge?.length
+    const travelTime = hovered.travel_time ?? edge?.travel_time
     let speedKph: number | undefined
     if (length && travelTime && travelTime > 0) {
       speedKph = Math.round(length / 1000 / (travelTime / 3600)) // km/h
     }
 
-    const busRefs = hoveredEdge.bus_route_refs || edgeGeom?.bus_route_refs
-    tooltipData.value = {
-      x: info.x,
-      y: info.y,
-      name: hoveredEdge.name || edgeGeom?.name || `Edge ${hoveredEdge.u}→${hoveredEdge.v}`,
-      highway: hoveredEdge.highway || edgeGeom?.highway,
-      length: length,
+    const co2PerKm = stats?.co2_per_km ?? hovered.co2_per_km
+    const count = stats?.count ?? hovered.count
+    const deltaFrequency = stats?.delta_frequency ?? hovered.delta_frequency
+
+    return {
+      key,
+      name: hovered.name || edge?.name || `Edge ${hovered.u}→${hovered.v}`,
+      highway: hovered.highway || edge?.highway,
+      length,
       travel_time: travelTime,
       speed_kph: speedKph,
-      bus_route_refs: busRefs || undefined,
-      // Add route stats if available
-      frequency: edgeStats?.frequency ?? hoveredEdge.frequency,
-      count: edgeStats?.count ?? hoveredEdge.count,
-      delta_count: edgeStats?.delta_count ?? hoveredEdge.delta_count,
-      co2_per_km: edgeStats?.co2_per_km ?? hoveredEdge.co2_per_km,
-      co2_total: hoveredEdge.co2_total,
-      co2_delta: hoveredEdge.co2_delta,
-      betweenness_centrality: edgeStats?.betweenness_centrality ?? hoveredEdge.betweenness_centrality,
-      delta_betweenness: edgeStats?.delta_betweenness ?? hoveredEdge.delta_betweenness
+      bus_route_refs: (hovered.bus_route_refs || edge?.bus_route_refs) || undefined,
+      frequency: stats?.frequency ?? hovered.frequency,
+      count,
+      delta_count: stats?.delta_count ?? hovered.delta_count,
+      co2_per_km: co2PerKm,
+      // computed here so the tooltip is the same whether the cursor hit the
+      // grey network or a colored route
+      co2_total: co2PerKm !== undefined && count !== undefined ? co2PerKm * count : undefined,
+      co2_delta:
+        co2PerKm !== undefined && deltaFrequency !== undefined
+          ? co2PerKm * deltaFrequency
+          : undefined,
+      betweenness_centrality: stats?.betweenness_centrality ?? hovered.betweenness_centrality,
+      delta_betweenness: stats?.delta_betweenness ?? hovered.delta_betweenness
     }
   }
 
   /**
-   * Set callback for edge clicks
+   * Hover.
+   *
+   * Called once per animation frame by deck. The position always goes straight
+   * to the element; the reactive content and the highlighted edge only change
+   * when the cursor is on another edge, which is what keeps the basemap from
+   * repainting on every move.
    */
+  function handleHover(info: any): void {
+    const hovered = info.object ? info.object.properties || info.object : null
+
+    if (!hovered || hovered.u === undefined || hovered.v === undefined) {
+      if (hoveredKey !== null) {
+        hoveredKey = null
+        hoveredEdge.value = null
+        setTooltip(null)
+      }
+      return
+    }
+
+    const key = edgeKey(hovered.u, hovered.v)
+    moveTooltip(info.x, info.y)
+
+    if (key === hoveredKey) return
+
+    hoveredKey = key
+    const edge = getEdge(hovered.u, hovered.v)
+    hoveredEdge.value = edge ?? null
+    setTooltip(tooltipFor(key, hovered, edge))
+  }
+
+  /** Drop the highlight and the tooltip, e.g. when another tool takes over. */
+  function clearHover(): void {
+    if (hoveredKey === null) return
+    hoveredKey = null
+    hoveredEdge.value = null
+    setTooltip(null)
+  }
+
   function setEdgeClickCallback(callback: (u: number, v: number, name?: string) => void): void {
     edgeClickCallback = callback
   }
@@ -532,11 +254,10 @@ export function useDeckGLTrafficAnalysis(): DeckGLTrafficAnalysisReturn {
     tooltipData,
     edgeMap,
     loadGraphEdges,
-    updateModifiedEdges,
-    visualizeEdgeUsage,
-    clearRoutes,
     handleClick,
     handleHover,
-    setEdgeClickCallback
+    clearHover,
+    setEdgeClickCallback,
+    setTooltipMover
   }
 }

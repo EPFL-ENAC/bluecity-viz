@@ -8,7 +8,8 @@ const METERS_PER_DEGREE_LAT = 111000
 /** meters per degree of longitude at latitude ~46 */
 const METERS_PER_DEGREE_LON = 77000
 
-export type Point = number[]
+/** a [lon, lat] pair */
+export type Point = [number, number]
 
 export interface HullOutline {
   /** the path offset to the left, half the width away */
@@ -20,11 +21,11 @@ export interface HullOutline {
   /** the short line closing the hull at the end */
   endCap: Point[]
   /** the point half way along the path, where the icon goes */
-  midpoint: [number, number]
+  midpoint: Point
 }
 
 /** The point half way along the path, measured along the segments. */
-export function getPathMidpoint(coordinates: Point[]): [number, number] {
+export function getPathMidpoint(coordinates: number[][]): Point {
   if (coordinates.length === 0) return [0, 0]
   if (coordinates.length === 1) return [coordinates[0][0], coordinates[0][1]]
 
@@ -60,8 +61,8 @@ export function getPathMidpoint(coordinates: Point[]): [number, number] {
  * A line parallel to the given one, offsetMeters away. Positive is to the left
  * of the direction of travel, negative to the right.
  */
-export function computeOffsetPath(coordinates: Point[], offsetMeters: number): Point[] {
-  if (coordinates.length < 2) return coordinates
+export function computeOffsetPath(coordinates: number[][], offsetMeters: number): Point[] {
+  if (coordinates.length < 2) return coordinates as Point[]
 
   const offsetPath: Point[] = []
 
@@ -122,7 +123,7 @@ export function computeOffsetPath(coordinates: Point[], offsetMeters: number): P
 }
 
 /** The two sides of the hull around a path, widthMeters apart. */
-export function createHullPaths(coordinates: Point[], widthMeters: number): Point[][] {
+export function createHullPaths(coordinates: number[][], widthMeters: number): [Point[], Point[]] {
   const halfWidth = widthMeters / 2
   return [computeOffsetPath(coordinates, halfWidth), computeOffsetPath(coordinates, -halfWidth)]
 }
@@ -132,7 +133,7 @@ export function createHullPaths(coordinates: Point[], widthMeters: number): Poin
  * midpoint for the icon. Computed in one go so the caller does not walk the
  * path several times.
  */
-export function createHullOutline(coordinates: Point[], widthMeters: number): HullOutline {
+export function createHullOutline(coordinates: number[][], widthMeters: number): HullOutline {
   const [left, right] = createHullPaths(coordinates, widthMeters)
   const midpoint = getPathMidpoint(coordinates)
 
