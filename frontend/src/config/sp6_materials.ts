@@ -265,10 +265,3 @@ export const sp6MaterialsGroup = defineGroup({
     })
   ]
 })
-
-export const sp6MaterialsSources: CustomSourceSpecification[] = [
-  buildingsEraSource,
-  buildingsArchetypeSource,
-  buildingsOutlineSource
-]
-export const sp6MaterialsLayers = sp6MaterialsGroup.layers

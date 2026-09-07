@@ -191,10 +191,3 @@ export const sp3NatureGroup = defineGroup({
     })
   ]
 })
-
-export const sp3NatureSources: CustomSourceSpecification[] = [
-  temperatureYearlySource,
-  aqiYearlySource,
-  speciesObservationSource
-]
-export const sp3NatureLayers = sp3NatureGroup.layers

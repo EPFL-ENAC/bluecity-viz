@@ -172,6 +172,3 @@ export const sp0MigrationGroup = defineGroup({
     })
   ]
 })
-
-export const sp0MigrationSources: CustomSourceSpecification[] = [migrationSource]
-export const sp0MigrationLayers = sp0MigrationGroup.layers

@@ -4,21 +4,6 @@ exports[`map config registry > keeps the same groups 1`] = `
 [
   {
     "expanded": false,
-    "id": "sp0_migration",
-    "label": "SP0 Migration",
-    "layers": [
-      "lausanne_pop_density-layer",
-      "lausanne_birth_rate-layer",
-      "lausanne_death_rate-layer",
-      "lausanne_inmigration_rate-layer",
-      "lausanne_outmigration_rate-layer",
-      "lausanne_immigration_rate-layer",
-      "lausanne_emigration_rate-layer",
-    ],
-    "multiple": false,
-  },
-  {
-    "expanded": false,
     "id": "sp2_mobility",
     "label": "SP2 Mobility",
     "layers": [
@@ -143,6 +128,21 @@ exports[`map config registry > keeps the same groups 1`] = `
       "waste_access_similarity_7-layer",
       "waste_access_similarity_8-layer",
       "waste_access_similarity_9-layer",
+    ],
+    "multiple": false,
+  },
+  {
+    "expanded": false,
+    "id": "sp0_migration",
+    "label": "SP0 Migration",
+    "layers": [
+      "lausanne_pop_density-layer",
+      "lausanne_birth_rate-layer",
+      "lausanne_death_rate-layer",
+      "lausanne_inmigration_rate-layer",
+      "lausanne_outmigration_rate-layer",
+      "lausanne_immigration_rate-layer",
+      "lausanne_emigration_rate-layer",
     ],
     "multiple": false,
   },
@@ -6361,14 +6361,6 @@ exports[`map config registry > keeps the same sources 1`] = `
     "url": "pmtiles:///geodata/vehicle_tracks.pmtiles",
   },
   {
-    "attribution": "https://www.bfs.admin.ch/",
-    "id": "lausanne_migration",
-    "label": "Lausanne Migration Data - SP0",
-    "minzoom": 5,
-    "type": "vector",
-    "url": "pmtiles:///geodata/lausanne_migration_2011_2023_2.pmtiles",
-  },
-  {
     "id": "corr_waste_pop",
     "label": "Population & Waste Correlation Data",
     "type": "vector",
@@ -6385,6 +6377,14 @@ exports[`map config registry > keeps the same sources 1`] = `
     "label": "Waste & Accessibility Correlation Data",
     "type": "vector",
     "url": "pmtiles:///geodata/lausanne_corr_waste_access.pmtiles",
+  },
+  {
+    "attribution": "https://www.bfs.admin.ch/",
+    "id": "lausanne_migration",
+    "label": "Lausanne Migration Data - SP0",
+    "minzoom": 5,
+    "type": "vector",
+    "url": "pmtiles:///geodata/lausanne_migration_2011_2023_2.pmtiles",
   },
   {
     "data": "/api/v1/routes/habitat-geojson",

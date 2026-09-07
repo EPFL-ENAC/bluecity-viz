@@ -60,6 +60,3 @@ export const biodiversityGroup = defineGroup({
     })
   ]
 })
-
-export const biodiversitySources: CustomSourceSpecification[] = [habitatSource]
-export const biodiversityLayers = biodiversityGroup.layers

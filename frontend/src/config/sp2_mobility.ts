@@ -256,6 +256,3 @@ export const sp2MobilityGroup = defineGroup({
     })
   ]
 })
-
-export const sp2MobilitySources: CustomSourceSpecification[] = [mobilitySource]
-export const sp2MobilityLayers = sp2MobilityGroup.layers

@@ -73,12 +73,6 @@ const wasteAccessCorrelationSource: CustomSourceSpecification = {
   url: `pmtiles://${baseUrl}/lausanne_corr_waste_access.pmtiles`
 }
 
-export const correlationSources: CustomSourceSpecification[] = [
-  wastePopCorrelationSource,
-  popAccessCorrelationSource,
-  wasteAccessCorrelationSource
-]
-
 /** The two measures every correlation file holds, one layer each. */
 type Measure = 'localcorr' | 'similarity'
 
@@ -232,14 +226,4 @@ export const correlationLayerGroups = [
   wastePopCorrelationGroup,
   popAccessCorrelationGroup,
   wasteAccessCorrelationGroup
-]
-
-export const wastePopCorrelationLayers = wastePopCorrelationGroup.layers
-export const popAccessCorrelationLayers = popAccessCorrelationGroup.layers
-export const wasteAccessCorrelationLayers = wasteAccessCorrelationGroup.layers
-
-export const allCorrelationLayers: MapLayerConfig[] = [
-  ...wastePopCorrelationLayers,
-  ...popAccessCorrelationLayers,
-  ...wasteAccessCorrelationLayers
 ]

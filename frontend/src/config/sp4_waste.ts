@@ -118,9 +118,3 @@ export const sp4WasteGroup = defineGroup({
     })
   ]
 })
-
-export const sp4WasteSources: CustomSourceSpecification[] = [
-  wasteRoutesSource,
-  wasteCentroidsSource
-]
-export const sp4WasteLayers = sp4WasteGroup.layers

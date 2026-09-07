@@ -96,6 +96,3 @@ export const sp7VehicleGroup = defineGroup({
     })
   ]
 })
-
-export const sp7VehicleSources: CustomSourceSpecification[] = [vehicleTracksSource]
-export const sp7VehicleLayers = sp7VehicleGroup.layers
