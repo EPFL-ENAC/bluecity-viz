@@ -73,7 +73,7 @@ case "$mode" in
     # errors and undefined names) through ruff, the only linter in its deps.
     # --no-fix: pyproject turns fixes on, and a land must not edit files.
     if [ "${WT_SKIP_CHECKS:-0}" != 1 ]; then
-      (cd frontend && npm run lint && npm run type-check)
+      (cd frontend && pnpm run lint && pnpm run type-check)
       (cd backend && uv run ruff check --no-fix --select E9,F63,F7,F82 app)
     fi
     git push origin "$BASE_BRANCH"
