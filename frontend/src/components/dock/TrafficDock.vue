@@ -141,11 +141,9 @@ async function calculateRoutes() {
 
       <div v-if="trafficStore.useCongestionModel" class="iterations">
         <div class="iterations__label">
-          Iterations ({{ trafficStore.congestionIterations }}) — ~{{
-            trafficStore.congestionIterations * 10
-          }}s
+          Iterations ({{ trafficStore.congestionIterations }})
         </div>
-        <BcSlider v-model="trafficStore.congestionIterations" :min="1" :max="5" :step="1" />
+        <BcSlider v-model="trafficStore.congestionIterations" :min="1" :max="3" :step="1" />
       </div>
 
       <BcRow
