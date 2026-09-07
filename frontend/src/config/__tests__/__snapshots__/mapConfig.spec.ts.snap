@@ -1203,6 +1203,29 @@ exports[`map config registry > keeps the same layers 1`] = `
     "unit": "status",
   },
   {
+    "encoding": {
+      "categories": [
+        {
+          "color": "#FF8C00",
+          "value": "Organic Waste",
+        },
+        {
+          "color": "#2E8B57",
+          "value": "Household Waste",
+        },
+        {
+          "color": "#8A2BE2",
+          "value": "Paper & Cardboard",
+        },
+        {
+          "color": "#1E90FF",
+          "value": "Glass",
+        },
+      ],
+      "defaultColor": "#757575",
+      "kind": "categorical",
+      "property": "type",
+    },
     "id": "lausanne_waste_routes",
     "info": "Waste collection routes in Lausanne with frequency counts (2023)",
     "label": "Waste Collection Routes",
@@ -1270,7 +1293,7 @@ exports[`map config registry > keeps the same layers 1`] = `
           6,
         ],
       },
-      "source": "lausanne_waste_routes",
+      "source": "waste_routes",
       "source-layer": "waste_routes",
       "type": "line",
     },
@@ -1284,6 +1307,29 @@ exports[`map config registry > keeps the same layers 1`] = `
     "unit": "count",
   },
   {
+    "encoding": {
+      "categories": [
+        {
+          "color": "#FF8C00",
+          "value": "Organic Waste",
+        },
+        {
+          "color": "#2E8B57",
+          "value": "Household Waste",
+        },
+        {
+          "color": "#8A2BE2",
+          "value": "Paper & Cardboard",
+        },
+        {
+          "color": "#1E90FF",
+          "value": "Glass",
+        },
+      ],
+      "defaultColor": "#757575",
+      "kind": "categorical",
+      "property": "type",
+    },
     "id": "lausanne_waste_centroids",
     "info": "Clusters of waste collection points in Lausanne by waste type (2023)",
     "label": "Waste Collection Clusters",
@@ -1327,7 +1373,7 @@ exports[`map config registry > keeps the same layers 1`] = `
         "circle-stroke-color": "#FFFFFF",
         "circle-stroke-width": 1,
       },
-      "source": "lausanne_waste_centroids",
+      "source": "waste_centroids",
       "source-layer": "waste_centroids",
       "type": "circle",
     },
