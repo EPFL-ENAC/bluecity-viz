@@ -1,5 +1,5 @@
 import type { LayerSpecification } from 'maplibre-gl'
-import type { MapLayerConfig } from '@/config/layerTypes'
+import type { Encoding, MapLayerConfig } from '@/config/layerTypes'
 
 export type LegendColor = {
   color: string
@@ -29,8 +29,39 @@ function colorPaintProperty(layer: LayerSpecification): unknown {
   )
 }
 
+/** A match (or a case) paints one colour per category, not a ramp. */
+function isCategoricalPaint(paintProperty: unknown): boolean {
+  return (
+    Array.isArray(paintProperty) && (paintProperty[0] === 'match' || paintProperty[0] === 'case')
+  )
+}
+
+/** The legend entries an encoding describes, no parsing needed. */
+export function legendEntriesFromEncoding(encoding: Encoding): LegendColor[] {
+  if (encoding.kind === 'sequential') {
+    return encoding.domain.map((value, index) => ({
+      color: encoding.scheme[index],
+      label: String(value)
+    }))
+  }
+
+  const entries: LegendColor[] = encoding.categories.map(({ value, color }) => ({
+    color,
+    variable: encoding.property,
+    label: String(value)
+  }))
+
+  // A default colour that is not just black stands for everything else.
+  if (encoding.defaultColor !== '#000000' && encoding.defaultColor !== 'transparent') {
+    entries.push({ color: encoding.defaultColor, label: 'Other' })
+  }
+
+  return entries
+}
+
 /**
- * Read the legend entries back from a layer paint expression.
+ * Read the legend entries back from a layer paint expression. Used for the
+ * layers that have no encoding, because their colour is not a plain ramp.
  * Returns null when the expression is not one we can read.
  */
 export function generateLegendColors(layer: LayerSpecification): LegendColor[] | null {
@@ -84,23 +115,37 @@ export function generateLegendColors(layer: LayerSpecification): LegendColor[] |
     return legendColors
   }
 
+  // A plain colour, a 'case' or an 'interpolate-hcl': nothing to show.
   return null
 }
 
-/** Build the legend of one dataset layer. */
+/**
+ * Build the legend of one dataset layer. The encoding is the truth when the
+ * layer has one, the paint expression is read back otherwise.
+ */
 export function datasetLegend(layer: MapLayerConfig): DatasetLegend {
-  const colors = generateLegendColors(layer.layer) || []
   const paintProperty = colorPaintProperty(layer.layer)
 
-  const isCategorical =
-    Array.isArray(paintProperty) && (paintProperty[0] === 'match' || paintProperty[0] === 'case')
+  const colors = layer.encoding
+    ? legendEntriesFromEncoding(layer.encoding)
+    : generateLegendColors(layer.layer) || []
+
+  const isCategorical = layer.encoding
+    ? layer.encoding.kind === 'categorical'
+    : isCategoricalPaint(paintProperty)
+
+  // Only a categorical legend needs the property, its checkboxes filter on it.
+  const variable = isCategorical
+    ? layer.encoding
+      ? layer.encoding.property
+      : ((paintProperty as unknown[])[1] as unknown[])[1]
+    : undefined
 
   return {
     ...layer,
     colors: isCategorical ? colors : colors.reverse(),
     isCategorical,
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    variable: (paintProperty as any)[1][1],
+    variable: variable as string | undefined,
     gradient: !isCategorical
       ? `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`
       : undefined,
@@ -126,6 +171,102 @@ export type TrafficLegend = {
   showZero?: boolean
 }
 
+/** Same constant as the store: below 10% the relative scale is linear. */
+const SYMLOG_LINEAR_LIMIT = 10
+
+/** From max down to min, the top of the ramp is the highest value. */
+const fromRange = (t: number, min: number, max: number) => max - t * (max - min)
+/** From max down to zero, for the scales that start at zero. */
+const fromMax = (t: number, _min: number, max: number) => max * (1 - t)
+
+const withSign = (value: number, text: string) => `${value >= 0 ? '+' : ''}${text}`
+/** Thousands as "1.2k", so the labels stay short. */
+const short = (value: number) =>
+  value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0)
+/** Same, for a value that can be negative. */
+const shortSigned = (value: number) =>
+  Math.abs(value) >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0)
+
+type TrafficLegendSpec = {
+  label: string
+  unit: string
+  showZero?: boolean
+  /** The value shown at position t, t goes from 0 (top) to 1 (bottom). */
+  valueAt: (t: number, min: number, max: number) => number
+  format: (value: number) => string
+  /** Last word on the labels, for the ends of the ramp. */
+  finalize?: (colors: LegendColor[], min: number, max: number) => void
+}
+
+const TRAFFIC_LEGENDS: Record<TrafficLegendMode, TrafficLegendSpec> = {
+  frequency: {
+    label: 'Edge Usage Frequency',
+    unit: 'Relative Usage',
+    valueAt: fromMax,
+    format: (value) => (value * 100).toFixed(1) + '%'
+  },
+
+  delta: {
+    label: 'Traffic Change',
+    unit: 'Vehicle Count Difference',
+    showZero: true,
+    valueAt: fromRange,
+    format: (value) => withSign(value, String(Math.round(value)))
+  },
+
+  delta_relative: {
+    label: 'Traffic Change (Relative)',
+    unit: `symlog scale  |  linear ≤ ±${SYMLOG_LINEAR_LIMIT}%`,
+    showZero: true,
+    // Undo the diverging symlog of the store, so the colours are spread
+    // evenly along the ramp. t=0 is +max, t=0.5 is zero, t=1 is -max.
+    valueAt: (t, _min, max) => {
+      const c = SYMLOG_LINEAR_LIMIT
+      const slMax = Math.log(1 + max / c) // max is absRelMax (positive)
+      return t <= 0.5
+        ? c * (Math.exp((1 - 2 * t) * slMax) - 1)
+        : -(c * (Math.exp((2 * t - 1) * slMax) - 1))
+    },
+    format: (value) => withSign(value, `${Math.round(value)}%`),
+    // Group the digits on the two ends, "+3 000%" reads better than "+3000%".
+    finalize: (colors, _min, max) => {
+      const fmtPct = (value: number) => withSign(value, `${Math.round(value).toLocaleString()}%`)
+      colors[0].label = fmtPct(max)
+      colors[colors.length - 1].label = fmtPct(-max)
+    }
+  },
+
+  co2: {
+    label: 'CO₂ Emissions',
+    unit: 'g CO₂/km per use',
+    valueAt: fromRange,
+    format: (value) => `${Math.round(value)} g/km`
+  },
+
+  co2_delta: {
+    label: 'CO₂ Emissions Change',
+    unit: 'Δ g CO₂/km (freq-weighted)',
+    showZero: true,
+    valueAt: fromRange,
+    format: (value) => withSign(value, `${value.toFixed(2)} g/km`)
+  },
+
+  betweenness: {
+    label: 'Betweenness Centrality',
+    unit: 'Norm. edge flow (veh/day)',
+    valueAt: fromMax,
+    format: short
+  },
+
+  betweenness_delta: {
+    label: 'Betweenness Change',
+    unit: 'Δ norm. edge flow (veh/day)',
+    showZero: true,
+    valueAt: fromRange,
+    format: (value) => withSign(value, shortSigned(value))
+  }
+}
+
 /** Build the traffic analysis legend for one visualization mode. */
 export function trafficLegend(
   mode: TrafficLegendMode,
@@ -133,165 +274,25 @@ export function trafficLegend(
   max: number,
   getColor: (value: number) => [number, number, number]
 ): TrafficLegend {
-  const colors: LegendColor[] = []
+  const spec = TRAFFIC_LEGENDS[mode] ?? TRAFFIC_LEGENDS.frequency
   const steps = 40
+  const colors: LegendColor[] = []
 
-  if (mode === 'delta') {
-    // Delta mode: actual min/max from the store (vehicle count differences)
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      // From max (positive, red) to min (negative, blue)
-      const value = max - t * (max - min)
-      const [r, g, b] = getColor(value)
-      const count = Math.round(value)
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: value >= 0 ? `+${count}` : `${count}`
-      })
-    }
+  for (let i = 0; i < steps; i++) {
+    const t = i / (steps - 1)
+    const value = spec.valueAt(t, min, max)
+    const [r, g, b] = getColor(value)
+    colors.push({ color: `rgb(${r}, ${g}, ${b})`, label: spec.format(value) })
+  }
 
-    return {
-      label: 'Traffic Change',
-      unit: 'Vehicle Count Difference',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false,
-      showZero: true
-    }
-  } else if (mode === 'co2_delta') {
-    // CO2 delta: co2_per_km x delta_frequency -> g/km
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      const value = max - t * (max - min)
-      const [r, g, b] = getColor(value)
-      const sign = value >= 0 ? '+' : ''
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: `${sign}${value.toFixed(2)} g/km`
-      })
-    }
+  if (spec.finalize) spec.finalize(colors, min, max)
 
-    return {
-      label: 'CO₂ Emissions Change',
-      unit: 'Δ g CO₂/km (freq-weighted)',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false,
-      showZero: true
-    }
-  } else if (mode === 'co2') {
-    // CO2: fixed scale [CO2_KM_MIN, CO2_KM_MAX]
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      const value = max - t * (max - min)
-      const [r, g, b] = getColor(value)
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: `${Math.round(value)} g/km`
-      })
-    }
-
-    return {
-      label: 'CO₂ Emissions',
-      unit: 'g CO₂/km per use',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false
-    }
-  } else if (mode === 'betweenness') {
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      const value = max * (1 - t)
-      const [r, g, b] = getColor(value)
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0)
-      })
-    }
-
-    return {
-      label: 'Betweenness Centrality',
-      unit: 'Norm. edge flow (veh/day)',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false
-    }
-  } else if (mode === 'betweenness_delta') {
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      const value = max - t * (max - min)
-      const [r, g, b] = getColor(value)
-      const sign = value >= 0 ? '+' : ''
-      const abs = Math.abs(value)
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: `${sign}${abs >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0)}`
-      })
-    }
-
-    return {
-      label: 'Betweenness Change',
-      unit: 'Δ norm. edge flow (veh/day)',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false,
-      showZero: true
-    }
-  } else if (mode === 'delta_relative') {
-    // Sample the gradient in symlog space so the ramp looks evenly spread.
-    // Same constant=10 as the store: linear within ±10%, log beyond.
-    const C = 10
-    const slMax = Math.log(1 + max / C) // max is absRelMax (positive)
-
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1) // t in [0, 1]
-      // Invert the diverging symlog transform to get the value at this position
-      const value =
-        t <= 0.5
-          ? C * (Math.exp((1 - 2 * t) * slMax) - 1) // positive half: t=0 -> max, t=0.5 -> 0
-          : -(C * (Math.exp((2 * t - 1) * slMax) - 1)) // negative half: t=0.5 -> 0, t=1 -> -max
-      const [r, g, b] = getColor(value)
-      const sign = value >= 0 ? '+' : ''
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: `${sign}${Math.round(value)}%`
-      })
-    }
-
-    // Nicer end labels (e.g. "+3 000%" instead of "+3000%")
-    const fmtPct = (v: number) => {
-      const sign = v >= 0 ? '+' : ''
-      return `${sign}${Math.round(v).toLocaleString()}%`
-    }
-    colors[0].label = fmtPct(max)
-    colors[colors.length - 1].label = fmtPct(-max)
-
-    return {
-      label: 'Traffic Change (Relative)',
-      unit: `symlog scale  |  linear ≤ ±${C}%`,
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false,
-      showZero: true
-    }
-  } else {
-    // Frequency: actual max frequency from the store
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      const value = max * (1 - t)
-      const [r, g, b] = getColor(value)
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: (value * 100).toFixed(1) + '%'
-      })
-    }
-
-    return {
-      label: 'Edge Usage Frequency',
-      unit: 'Relative Usage',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false
-    }
+  return {
+    label: spec.label,
+    unit: spec.unit,
+    colors,
+    gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
+    isCategorical: false,
+    ...(spec.showZero ? { showZero: true } : {})
   }
 }
