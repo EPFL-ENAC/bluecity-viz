@@ -100,11 +100,9 @@ export function createLayerManagement(
 
   // Update selected layers (for checkboxes/multiple selection)
   function updateSelectedLayers(newSelection: string[] | null) {
-    if (newSelection !== null) {
-      selectedLayers.value = [...newSelection]
-    } else {
-      selectedLayers.value.length = 0
-    }
+    // Replace the array, never empty it in place: the persistence watcher is
+    // not deep any more.
+    selectedLayers.value = newSelection !== null ? [...newSelection] : []
     // Update active investigation if one exists
     updateCurrentInvestigation()
   }

@@ -1,5 +1,7 @@
 import { computed, ref, type Ref } from 'vue'
-import type { Investigation, Project, TrafficAnalysisState } from './types'
+import { defaultTrafficInputs } from './persistence'
+import { copyResults, forgetResults } from './trafficResultsCache'
+import type { Investigation, Project, TrafficAnalysisInputs } from './types'
 
 export function createInvestigationManagement(
   projects: Ref<Project[]>,
@@ -9,8 +11,8 @@ export function createInvestigationManagement(
   updateAvailableResourceSources: (sourceIds: string[]) => void,
   updateActiveSources: (sourceIds: string[]) => void,
   updateSelectedLayers: (selection: string[] | null) => void,
-  getTrafficAnalysisState: () => TrafficAnalysisState,
-  applyTrafficAnalysisState: (state: TrafficAnalysisState) => void
+  getTrafficAnalysisInputs: () => TrafficAnalysisInputs,
+  applyTrafficAnalysisState: (inputs: TrafficAnalysisInputs, investigationId: string) => void
 ) {
   // Track if we're currently loading an investigation to prevent auto-updates
   const isLoadingInvestigation = ref(false)
@@ -59,10 +61,12 @@ export function createInvestigationManagement(
     updateActiveSources(investigation.selectedSources)
     updateSelectedLayers(investigation.selectedLayers)
 
-    // Apply traffic analysis state if it exists
-    if (investigation.trafficAnalysis) {
-      applyTrafficAnalysisState(investigation.trafficAnalysis)
-    }
+    // Always apply, with empty inputs when the investigation has none, so the
+    // previous investigation's traffic state does not stay on the map.
+    applyTrafficAnalysisState(
+      investigation.trafficAnalysis ?? defaultTrafficInputs(),
+      investigation.id
+    )
 
     // Clear loading flag
     isLoadingInvestigation.value = false
@@ -71,7 +75,7 @@ export function createInvestigationManagement(
     const project = projects.value.find((p) => p.id === projectId)
     if (!project) return
 
-    const trafficState = getTrafficAnalysisState()
+    const trafficState = getTrafficAnalysisInputs()
 
     const newInvestigation: Investigation = {
       id: `inv-${Date.now()}`,
@@ -81,6 +85,9 @@ export function createInvestigationManagement(
       createdAt: new Date(),
       trafficAnalysis: trafficState
     }
+
+    // Keep the results on screen for the copy we just made.
+    copyResults(activeInvestigationId.value, newInvestigation.id)
 
     project.investigations.push(newInvestigation)
     activeInvestigationId.value = newInvestigation.id
@@ -110,6 +117,8 @@ export function createInvestigationManagement(
       (inv) => inv.id === activeInvestigationId.value
     )
 
+    project.investigations.forEach((inv) => forgetResults(inv.id))
+
     // Remove the project
     projects.value.splice(index, 1)
 
@@ -130,6 +139,7 @@ export function createInvestigationManagement(
       const index = project.investigations.findIndex((inv) => inv.id === investigationId)
       if (index !== -1) {
         project.investigations.splice(index, 1)
+        forgetResults(investigationId)
 
         // If removing active investigation, switch to first available
         if (activeInvestigationId.value === investigationId) {
@@ -157,7 +167,7 @@ export function createInvestigationManagement(
     // Update the investigation with current state
     investigation.selectedSources = [...availableResourceSources.value]
     investigation.selectedLayers = [...selectedLayers.value]
-    investigation.trafficAnalysis = getTrafficAnalysisState()
+    investigation.trafficAnalysis = getTrafficAnalysisInputs()
   }
 
   return {
