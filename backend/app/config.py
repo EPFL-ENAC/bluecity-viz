@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     app_name: str = "BlueCity Traffic Analysis API"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
 
     # Graph settings
     graph_path: str = "data/lausanne.graphml"

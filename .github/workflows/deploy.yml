@@ -1,10 +1,12 @@
 # https://github.com/EPFL-ENAC/epfl-enac-build-push-deploy-action#readme
 name: deploy
 
+# prod deploys on a v*.*.* tag, dev deploys on the dev branch.
+# main is not listed on purpose: the reusable workflow maps no overlay to it,
+# so a push to main would build images and deploy nothing (green but useless).
 "on":
   push:
     branches:
-      - main
       - dev
     tags: ["v*.*.*"]
 
