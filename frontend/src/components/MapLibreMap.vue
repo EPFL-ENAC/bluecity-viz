@@ -10,7 +10,8 @@ import {
   loadTiles,
   setMapTheme,
   theme as basemapTheme,
-  wirePatterns
+  wirePatterns,
+  type BasemapTheme
 } from '@/utils/epflBasemap'
 
 import {
@@ -25,10 +26,11 @@ import {
   type SourceSpecification,
   type StyleSetterOptions,
   type StyleSpecification,
+  type TransformStyleFunction,
   addProtocol
 } from 'maplibre-gl'
 import type { LegendColor } from '@/utils/legendColor'
-import { computed, markRaw, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
+import { markRaw, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 
 import { Protocol } from 'pmtiles'
 import { useApiKeyStore } from '@/stores/apiKey'
@@ -93,18 +95,25 @@ let needsResync = false
 const LOADING_BAR_DELAY = 150
 let loadingTimer: number | undefined
 
-// Ink-on-paper theme of the Trait basemap, light and dark.
-const traitTheme = computed(() =>
-  themeStore.isDark
-    ? basemapTheme({ ink: '#E6E6E6', paper: '#141414', density: 0.8 })
-    : basemapTheme({ ink: '#141414', paper: '#ffffff', density: 0.8 })
-)
+// Ink-on-paper themes of the Trait basemap. Both are the same engine and the
+// same layers, only the colours change.
+const TRAIT_THEMES: Record<string, BasemapTheme> = {
+  trait: basemapTheme({ ink: '#141414', paper: '#ffffff', density: 0.8 }),
+  'trait-dark': basemapTheme({ ink: '#E6E6E6', paper: '#141414', density: 0.8 })
+}
 
-// Either a style URL (public/style/*.json) or a style built by the EPFL engine.
-const styleSpec = computed<string | StyleSpecification>(() => {
-  if (themeStore.isTrait) return buildStyle('contour', traitTheme.value)
-  return themeStore.theme
-})
+function isTraitKey(key: string): boolean {
+  return key.startsWith('trait')
+}
+
+function themeFor(key: string): BasemapTheme {
+  return TRAIT_THEMES[key] ?? TRAIT_THEMES.trait
+}
+
+/** Either a style URL (public/style/*.json) or a style built by the EPFL engine. */
+function styleFor(key: string): string | StyleSpecification {
+  return isTraitKey(key) ? buildStyle('contour', themeFor(key)) : key
+}
 
 // Use the map events composable
 const mapEventManager = useMapEvents(map as Ref<MapLibre | undefined>)
@@ -158,27 +167,15 @@ function ensureLayer(entry: MapLayerConfig): boolean {
   }
 }
 
-/** Layers the map shows right now, in config order. */
-function visibleConfigLayerIds(): string[] {
-  const mapInstance = map.value
-  if (!mapInstance) return []
-  return orderedLayerIds.filter(
-    (id) => mapInstance.getLayer(id) && mapInstance.getLayoutProperty(id, 'visibility') !== 'none'
-  )
-}
-
 async function initMap() {
   if (map.value) return
 
-  // The Trait style needs the OpenFreeMap tile URLs (memoised fetch). Build the
-  // first style here rather than reading styleSpec: that computed may already
-  // have been evaluated (and cached) before the tile URLs arrived.
+  // The Trait style needs the OpenFreeMap tile URLs (memoised fetch), so build
+  // the style only after they arrived.
   await loadTiles()
   if (map.value) return
 
-  const initialStyle: string | StyleSpecification = themeStore.isTrait
-    ? buildStyle('contour', traitTheme.value)
-    : themeStore.theme
+  const initialStyle = styleFor(themeStore.theme)
 
   const newMap = new MapLibre({
     container: container.value as HTMLDivElement,
@@ -212,7 +209,7 @@ async function initMap() {
   map.value = markRaw(newMap)
 
   // Trait textures are drawn on demand, once per map.
-  setMapTheme(newMap, traitTheme.value)
+  setMapTheme(newMap, themeFor(themeStore.theme))
   wirePatterns(newMap)
 
   newMap.addControl(new NavigationControl({ showCompass: false }), 'top-right')
@@ -421,25 +418,85 @@ defineExpose({
   getSourceTilesUrl
 })
 
+/**
+ * Copy the colours of one Trait theme onto the other. Same layers, same ids,
+ * so only the paint (and layout) values that really differ are written.
+ */
+function applyPaintDiff(
+  mapInstance: MapLibre,
+  previous: StyleSpecification,
+  next: StyleSpecification
+) {
+  const previousById = new Map(previous.layers.map((layer) => [layer.id, layer]))
+
+  for (const layer of next.layers) {
+    if (!mapInstance.getLayer(layer.id)) continue
+    const before = previousById.get(layer.id)
+
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const paint = ((layer as any).paint ?? {}) as Record<string, unknown>
+    const beforePaint = ((before as any)?.paint ?? {}) as Record<string, unknown>
+    for (const key of Object.keys({ ...beforePaint, ...paint })) {
+      if (JSON.stringify(paint[key]) !== JSON.stringify(beforePaint[key])) {
+        mapInstance.setPaintProperty(layer.id, key, paint[key])
+      }
+    }
+
+    const layout = ((layer as any).layout ?? {}) as Record<string, unknown>
+    const beforeLayout = ((before as any)?.layout ?? {}) as Record<string, unknown>
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    for (const key of Object.keys({ ...beforeLayout, ...layout })) {
+      if (JSON.stringify(layout[key]) !== JSON.stringify(beforeLayout[key])) {
+        mapInstance.setLayoutProperty(layer.id, key, layout[key])
+      }
+    }
+  }
+}
+
+const configSourceIds = new Set(mapConfig.sources.map((source) => source.id))
+
+/**
+ * setStyle drops everything the new style does not declare. Put our own
+ * dataset sources and layers back, with the filter and the visibility they
+ * had. Layers of other plugins (Deck.gl) are left alone, they re-add theirs.
+ */
+const carryDatasetLayers: TransformStyleFunction = (previous, next) => {
+  if (!previous) return next
+
+  const sources = { ...next.sources }
+  for (const [id, source] of Object.entries(previous.sources)) {
+    if (configSourceIds.has(id) && !sources[id]) sources[id] = source
+  }
+
+  return {
+    ...next,
+    sources,
+    layers: [...next.layers, ...previous.layers.filter((layer) => layerIndex.has(layer.id))]
+  }
+}
+
 watch(
-  () => styleSpec.value,
-  (styleSpec) => {
+  () => themeStore.theme,
+  (next, previous) => {
     const mapInstance = map.value
     if (!mapInstance) return
 
-    // Only the layers on the map have to come back after the style swap.
-    const wasVisible = visibleConfigLayerIds()
-
     // Drop the generated textures so they are redrawn with the new ink colour.
-    setMapTheme(mapInstance, traitTheme.value)
+    setMapTheme(mapInstance, themeFor(next))
     clearPatterns(mapInstance)
 
-    mapInstance.setStyle(styleSpec)
+    // Trait light to Trait dark: same style, other colours. No setStyle, so
+    // the dataset layers and their tiles are never touched.
+    if (isTraitKey(next) && isTraitKey(previous)) {
+      applyPaintDiff(
+        mapInstance,
+        buildStyle('contour', themeFor(previous)),
+        buildStyle('contour', themeFor(next))
+      )
+      return
+    }
 
-    mapInstance.once('styledata', () => {
-      if (!map.value) return
-      wasVisible.forEach((layerId) => setLayerVisibility(layerId, true))
-    })
+    mapInstance.setStyle(styleFor(next), { diff: true, transformStyle: carryDatasetLayers })
   }
 )
 </script>
