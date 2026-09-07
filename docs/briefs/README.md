@@ -23,6 +23,7 @@ worktrees from `origin/dev` and fires the brief in each `claude` pane.
 | S4 | `perf/backend-routing` | `s4-backend-routing.md` | routes.py, graph_service, routing, bpr, sampling |
 | S5 | `chore/frontend-tooling` | `s5-frontend-tooling.md` | package.json, vite, tsconfig, CI, dead files, docs |
 | S6 | `fix/backend-cvrp-quality` | `s6-backend-cvrp-quality.md` | cvrp_service, main.py, tests, backend Dockerfile |
+| S7 | `feat/od-pairs-ui` | `s7-od-pairs-ui.md` | frontend half of the OD pair count: GET /baseline, trips control in the dock, persistence. After S1 to S6 landed |
 | FINAL | `chore/tooling-upgrades` | `final-tooling-upgrades.md` | major version bumps, only after S1 to S6 landed |
 
 File ownership is written in each brief. Shared files have one owner; the other sessions
@@ -36,7 +37,13 @@ keep the public names that owner depends on.
 4. S1 (smallest frontend diff, fixes the `restoreState` contract).
 5. S2 (largest frontend diff, only one touching VisualizationsPanel).
 6. S3 (config and MapLibre, no one waits on it).
-7. FINAL, in a fresh worktree from the updated dev.
+7. S7 and FINAL, each in a fresh worktree from the updated dev. They touch different
+   files (S7: services, traffic store, dock, persistence; FINAL: tooling) and can run at
+   the same time. Land S7 first, FINAL rebases across it.
+
+S1 to S6 landed on dev on 2026-09-07 with `make wt-land BRANCH=... MODE=--local`. Use
+that mode: it merges with `--no-ff`, runs lint:check, type-check and ruff on the merged
+tree, and does not rebase, so a branch that merged `origin/dev` lands as it is.
 
 Tell each running session `git merge origin/dev` after every landing, so conflicts show up
 while the context is fresh.
