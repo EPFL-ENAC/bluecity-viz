@@ -10,7 +10,7 @@
       "name": "dev-chrome",
       "url": "http://localhost:5173",
       "webRoot": "${workspaceFolder}",
-      "preLaunchTask": "npm-dev",
+      "preLaunchTask": "npm-dev"
     }
   ]
 }
