@@ -1,7 +1,7 @@
 """Integration test for CVRPService.
 
 Run from backend/ directory:
-    uv run python test_cvrp.py
+    uv run python scripts/test_cvrp.py
 """
 
 import asyncio
@@ -14,13 +14,9 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 # ---------------------------------------------------------------------------
 # Resolve paths
 # ---------------------------------------------------------------------------
-BACKEND_DIR = Path(__file__).parent
+BACKEND_DIR = Path(__file__).resolve().parent.parent
 GRAPH_PATH = BACKEND_DIR / "data" / "lausanne.graphml"
-CENTROIDS_DIR = (
-    BACKEND_DIR
-    / "../../processing/SP04_Waste"
-    / "Waste collection points by types (density-based spatial clustering)"
-).resolve()
+CENTROIDS_DIR = BACKEND_DIR / "data"
 
 
 def check_prerequisites():
@@ -66,7 +62,6 @@ async def run_test():
         n_vehicles=3,
         vehicle_capacity=5000,
         max_runtime=5,
-        max_centroids=50,   # keep small for quick test
         load_unit="kg",
         edge_modifications=[],
     )
