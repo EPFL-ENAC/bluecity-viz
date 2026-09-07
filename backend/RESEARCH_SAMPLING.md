@@ -303,7 +303,7 @@ backend/app/
 Run the integration test:
 ```bash
 cd backend
-uv run python test_node_sampling.py
+uv run python scripts/test_node_sampling.py
 ```
 
 This tests:

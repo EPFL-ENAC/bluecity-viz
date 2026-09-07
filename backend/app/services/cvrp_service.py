@@ -1,15 +1,17 @@
 """CVRP service for waste collection route optimization."""
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
 import geopandas as gpd
 import igraph as ig
 import networkx as nx
+import numpy as np
 import osmnx as ox
 import pandas as pd
 import pyvrp
@@ -17,13 +19,23 @@ import pyvrp.stop
 from shapely import wkt
 from shapely.geometry import Point, Polygon
 
-from app.models.cvrp import CVRPEdgeLoad, CVRPRequest, CVRPRouteSegment, CVRPSolveResponse
+from app.models.cvrp import (
+    WASTE_TYPES,
+    CVRPEdgeLoad,
+    CVRPRequest,
+    CVRPRouteSegment,
+    CVRPSolveResponse,
+)
 from app.services.graph_helpers import apply_edge_modifications
+from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
 
 if TYPE_CHECKING:
     from app.services.graph_service import GraphService
 
 logger = logging.getLogger(__name__)
+
+# Distance used in the solver matrix when two locations are not connected.
+UNREACHABLE_DISTANCE = 999_999
 
 # Lausanne bounding polygon
 LAUSANNE_HULL_WKT = (
@@ -37,29 +49,6 @@ LAUSANNE_HULL_WKT = (
 # Depot location (city centre)
 DEPOT_LON = 6.597982
 DEPOT_LAT = 46.527867
-
-
-# ---------------------------------------------------------------------------
-# Graph utilities (extracted from notebook)
-# ---------------------------------------------------------------------------
-
-
-def _networkx_to_igraph_with_indices(
-    g: nx.MultiDiGraph,
-) -> Tuple[ig.Graph, Dict[str, dict]]:
-    """Convert networkx graph to igraph with bidirectional index mappings."""
-    e = ox.graph_to_gdfs(g, nodes=False, edges=True)
-    nx.set_edge_attributes(g, {idx: idx for idx in e.index}, name="nx_edge_id")
-    h = ig.Graph.from_networkx(g)
-
-    idx_maps = {
-        "node_nx_to_ig": {a: b for a, b in zip(h.vs()["_nx_name"], h.vs.indices)},
-        "node_ig_to_nx": {b: a for a, b in zip(h.vs()["_nx_name"], h.vs.indices)},
-        "edge_nx_to_ig": {a: b for a, b in zip(h.es()["nx_edge_id"], h.get_edgelist())},
-        "edge_ig_to_nx": {b: a for a, b in zip(h.es()["nx_edge_id"], h.get_edgelist())},
-    }
-
-    return h, idx_maps
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +68,7 @@ def _process_centroids(
 
     Args:
         graph: NetworkX MultiDiGraph
-        idx_maps: Index mappings from _networkx_to_igraph_with_indices
+        idx_maps: Index mappings from networkx_to_igraph_with_indices
         centroid_csv: Path to centroid CSV file
         waste_per_centroid: Waste per centroid in kg
         max_centroids: If set, subsample to at most this many rows before snapping
@@ -154,77 +143,99 @@ def _add_depot(
 # ---------------------------------------------------------------------------
 
 
+def _ordered_locations(node_df: pd.DataFrame) -> List[int]:
+    """Return igraph vertex ids in solver location order: depot first, then clients.
+
+    Clients keep the row order of ``node_df``. Every other function that maps a
+    solver location index to a graph node must go through this list, so the
+    distance matrix, the model and the rendered routes all agree.
+    """
+    depot_ig = int(node_df.loc[node_df["isdepot"], "node_ig"].values[0])
+    clients_ig = [int(n) for n in node_df.loc[~node_df["isdepot"], "node_ig"]]
+    return [depot_ig] + clients_ig
+
+
 def _create_distance_matrix(
     g_ig: ig.Graph,
+    ordered_ig: List[int],
+) -> Tuple[np.ndarray, Set[int]]:
+    """Build the integer distance matrix in location order.
+
+    Returns:
+        (od, inaccessible) where ``od[i][j]`` is the road distance in metres from
+        location ``i`` to location ``j`` (both indices into ``ordered_ig``), and
+        ``inaccessible`` holds the POSITIONS of clients that cannot be reached from
+        the depot, or cannot get back to it. Unreachable pairs get
+        ``UNREACHABLE_DISTANCE``.
+    """
+    raw = np.asarray(g_ig.distances(ordered_ig, ordered_ig, weights="length"), dtype=float)
+
+    unreachable = np.isinf(raw)
+    inaccessible = {
+        pos for pos in range(1, len(ordered_ig)) if unreachable[0, pos] or unreachable[pos, 0]
+    }
+
+    od = np.rint(raw)
+    od[unreachable] = UNREACHABLE_DISTANCE
+    return od.astype(np.int64), inaccessible
+
+
+def _build_problem_data(
     node_df: pd.DataFrame,
-) -> Tuple[List, List]:
-    """Create origin-destination distance matrix."""
-    unique_ig_nodes = list(set(node_df["node_ig"].tolist()))
-    od_distance = g_ig.distances(unique_ig_nodes, unique_ig_nodes, weights="length")
-
-    inaccessible_indices = [i for i, dist in enumerate(od_distance[0]) if dist == float("inf")]
-
-    return od_distance, inaccessible_indices
-
-
-def _create_cvrp_model(
-    node_df: pd.DataFrame,
-    inaccessible_indices: List,
-    od_distance: List,
+    od: np.ndarray,
+    inaccessible: Set[int],
     n_vehicles: int = 15,
     vehicle_capacity: int = 5000,
-) -> pyvrp.Model:
-    """Create PyVRP model."""
-    m = pyvrp.Model()
+) -> pyvrp.ProblemData:
+    """Create the PyVRP problem with a full distance matrix.
 
-    depot = m.add_depot(
-        x=node_df.loc[node_df["isdepot"], "x"].values[0],
-        y=node_df.loc[node_df["isdepot"], "y"].values[0],
-    )
+    Locations follow ``_ordered_locations``: index 0 is the depot, client ``k``
+    is at index ``k + 1``.
+    """
+    depot_row = node_df.loc[node_df["isdepot"]].iloc[0]
+    depot = pyvrp.Depot(x=float(depot_row["x"]), y=float(depot_row["y"]))
 
-    regular = m.add_profile(name="regular")
-    m.add_vehicle_type(
-        n_vehicles,
-        capacity=vehicle_capacity,
-        reload_depots=[depot],
-        max_reloads=10,
-        profile=regular,
-    )
-
-    for _, row in node_df.iterrows():
-        if not row["isdepot"]:
-            required = row["node_ig"] not in inaccessible_indices
-            m.add_client(
-                x=row["x"],
-                y=row["y"],
-                delivery=int(row["centroid_waste"]),
-                required=required,
+    clients = []
+    for pos, (_, row) in enumerate(node_df.loc[~node_df["isdepot"]].iterrows(), start=1):
+        clients.append(
+            pyvrp.Client(
+                x=float(row["x"]),
+                y=float(row["y"]),
+                delivery=[int(row["centroid_waste"])],
+                required=pos not in inaccessible,
             )
+        )
 
-    for frm_idx, frm in enumerate(m.locations):
-        for to_idx, to in enumerate(m.locations):
-            duration = od_distance[frm_idx][to_idx]
-            if duration == float("inf"):
-                duration = 999999
-            m.add_edge(frm, to, distance=duration)
+    vehicle_type = pyvrp.VehicleType(
+        num_available=n_vehicles,
+        capacity=[vehicle_capacity],
+        reload_depots=[0],
+        max_reloads=10,
+    )
 
-    return m
+    return pyvrp.ProblemData(
+        clients=clients,
+        depots=[depot],
+        vehicle_types=[vehicle_type],
+        distance_matrices=[od],
+        duration_matrices=[np.zeros_like(od)],
+    )
 
 
 def _solve_cvrp(
-    model: pyvrp.Model,
+    data: pyvrp.ProblemData,
     max_runtime: int = 5,
     no_improvement_iterations: int = 100,
     seed: int = 42,
 ) -> pyvrp.Result:
-    """Solve CVRP model."""
+    """Solve the CVRP problem."""
     stop_criteria = pyvrp.stop.MultipleCriteria(
         [
             pyvrp.stop.MaxRuntime(max_runtime),
             pyvrp.stop.NoImprovement(no_improvement_iterations),
         ]
     )
-    return model.solve(stop=stop_criteria, seed=seed)
+    return pyvrp.solve(data, stop=stop_criteria, seed=seed, display=False)
 
 
 # ---------------------------------------------------------------------------
@@ -313,15 +324,17 @@ def _calculate_load_progression(routes: List[Dict], node_df: pd.DataFrame) -> Li
 def _route_on_graph(
     routes: List[Dict],
     g_ig: ig.Graph,
-    node_df: pd.DataFrame,
+    ordered_ig: List[int],
     idx_maps: Dict,
+    od: np.ndarray,
 ) -> Dict:
-    """Route each trip segment on the actual street network."""
-    loc_to_ig = [node_df.loc[node_df["isdepot"], "node_ig"].values[0]]
-    for _, row in node_df.iterrows():
-        if not row.get("isdepot", False):
-            loc_to_ig.append(row["node_ig"])
+    """Route each trip segment on the actual street network.
 
+    ``ordered_ig`` and ``od`` come from ``_ordered_locations`` and
+    ``_create_distance_matrix``, so a segment's length is read from the same
+    matrix the solver used.
+    """
+    loc_to_ig = ordered_ig
     ig_to_nx = idx_maps["node_ig_to_nx"]
     graph_paths = []
     total_segments = 0
@@ -374,7 +387,7 @@ def _route_on_graph(
                         )
                     else:
                         path_nx = [ig_to_nx[n] for n in path_ig]
-                        path_length = g_ig.distances([from_ig], [to_ig], weights="length")[0][0]
+                        path_length = float(od[from_loc][to_loc])
                         successful += 1
                         graph_paths.append(
                             {
@@ -510,8 +523,6 @@ class CVRPService:
     _node_dfs: Dict[str, pd.DataFrame]
     _graph_service: Optional["GraphService"]
 
-    WASTE_TYPES = ("DI", "DV", "PC", "VE")
-
     def __init__(self) -> None:
         self._csv_paths = {}
         self._node_dfs = {}
@@ -534,10 +545,10 @@ class CVRPService:
             return
 
         # Build igraph + index maps (used for snapping)
-        _, idx_maps = _networkx_to_igraph_with_indices(graph)
+        _, idx_maps = networkx_to_igraph_with_indices(graph)
 
         loaded = 0
-        for waste_type in self.WASTE_TYPES:
+        for waste_type in WASTE_TYPES:
             csv_file = centroids_path / f"{waste_type}_final_clustered_centroids.csv"
             if not csv_file.exists():
                 logger.warning("Centroid CSV not found: %s", csv_file)
@@ -602,10 +613,12 @@ class CVRPService:
 
         t_start = time.perf_counter()
 
-        # Copy graph and apply edge modifications (pass empty caches — we discard the copy)
-        graph_copy = self._graph_service.graph.copy()
-        if request.edge_modifications:
-            apply_edge_modifications(graph_copy, {}, {}, request.edge_modifications)
+        # Copy the graph in a worker thread, under the routing lock when the graph
+        # service has one: recalculate mutates the shared graph in place and rolls
+        # it back later, so a copy taken in between would carry its edits.
+        lock = getattr(self._graph_service, "_recalc_lock", None) or contextlib.nullcontext()
+        async with lock:
+            graph_copy = await asyncio.to_thread(self._graph_service.graph.copy)
 
         # Use all pre-snapped centroids (base centroid_waste is count of centroids per node)
         node_df = self._node_dfs[waste_type].copy()
@@ -638,8 +651,13 @@ class CVRPService:
         request: CVRPRequest,
     ) -> dict:
         """Synchronous CVRP solve pipeline (runs in thread pool)."""
+        # Apply edge modifications to our private copy (pass empty caches, the copy
+        # is thrown away after the solve)
+        if request.edge_modifications:
+            apply_edge_modifications(graph, {}, {}, request.edge_modifications)
+
         # Build igraph from (possibly modified) graph
-        g_ig, idx_maps = _networkx_to_igraph_with_indices(graph)
+        g_ig, idx_maps = networkx_to_igraph_with_indices(graph)
 
         # Re-snap client nodes to the (possibly modified) graph
         # We can reuse existing node mappings since we only change edge weights/removal
@@ -652,18 +670,19 @@ class CVRPService:
         # Add depot
         node_df, _depot_ig = _add_depot(node_df, graph, idx_maps)
 
-        # Create distance matrix
-        od_distance, inaccessible_indices = _create_distance_matrix(g_ig, node_df)
+        # Distance matrix in solver location order (depot first, then clients)
+        ordered_ig = _ordered_locations(node_df)
+        od, inaccessible = _create_distance_matrix(g_ig, ordered_ig)
 
-        # Create and solve CVRP model
-        model = _create_cvrp_model(
+        # Create and solve CVRP problem
+        data = _build_problem_data(
             node_df,
-            inaccessible_indices,
-            od_distance,
+            od,
+            inaccessible,
             n_vehicles=request.n_vehicles,
             vehicle_capacity=request.vehicle_capacity,
         )
-        pyvrp_result = _solve_cvrp(model, max_runtime=request.max_runtime)
+        pyvrp_result = _solve_cvrp(data, max_runtime=request.max_runtime)
         solution = pyvrp_result.best
 
         n_routes = solution.num_routes()
@@ -673,7 +692,7 @@ class CVRPService:
         # Extract routes
         routes = _extract_routes_with_depots(solution)
         load_progression = _calculate_load_progression(routes, node_df)
-        routing_result = _route_on_graph(routes, g_ig, node_df, idx_maps)
+        routing_result = _route_on_graph(routes, g_ig, ordered_ig, idx_maps, od)
         edge_loads_result = _calculate_edge_loads(
             routing_result, load_progression, graph, unit=request.load_unit
         )

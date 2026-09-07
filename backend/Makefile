@@ -1,4 +1,6 @@
-.PHONY: help install dev test clean lint format
+.PHONY: help install dev run test clean lint format format-check
+
+SOURCES = app tests scripts
 
 # Per-checkout override: git worktrees export BACKEND_PORT from .env.worktree
 # (see docs/worktree-env/), the main checkout keeps 8000.
@@ -11,9 +13,10 @@ help:
 	@echo "  make install    - Install dependencies with uv"
 	@echo "  make dev        - Run development server with auto-reload"
 	@echo "  make run        - Run production server"
-	@echo "  make test       - Run test script"
-	@echo "  make lint       - Run flake8 linter"
-	@echo "  make format     - Format code with black"
+	@echo "  make test       - Run the pytest suite"
+	@echo "  make lint       - Lint with ruff"
+	@echo "  make format     - Format with ruff"
+	@echo "  make format-check - Check formatting without writing"
 	@echo "  make clean      - Remove cache and build files"
 
 install:
@@ -26,23 +29,16 @@ run:
 	uv run --directory . python -m uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT)
 
 test:
-	uv run --directory . python test_with_data.py
+	uv run pytest
 
 lint:
-	@if uv --version >/dev/null 2>&1; then \
-		uv run flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics; \
-		uv run flake8 app --count --exit-zero --max-complexity=15 --max-line-length=100 --statistics; \
-	else \
-		.venv/bin/flake8 app --count --select=E9,F63,F7,F82 --show-source --statistics; \
-		.venv/bin/flake8 app --count --exit-zero --max-complexity=15 --max-line-length=100 --statistics; \
-	fi
+	uv run ruff check --no-fix $(SOURCES)
 
 format:
-	@if uv --version >/dev/null 2>&1; then \
-		uv run black app; \
-	else \
-		.venv/bin/black app; \
-	fi
+	uv run ruff format $(SOURCES)
+
+format-check:
+	uv run ruff format --check $(SOURCES)
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
