@@ -13,7 +13,7 @@ import { edgeKey, useGraphEdges } from '@/composables/useGraphEdges'
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore, type EdgeUsageStats } from '@/stores/trafficAnalysis'
 import type { HullOutline } from '@/utils/geometry'
-import { computed, shallowRef } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 export type { EdgeTooltipData }
 
@@ -244,6 +244,11 @@ export function useDeckGLTrafficAnalysis() {
     hoveredEdge.value = null
     setTooltip(null)
   }
+
+  // The tooltip must not outlive the numbers it shows. A new calculation, a
+  // cleared result or a restored scenario replaces the stats, so drop what is
+  // on screen; the next pointer move fills it again.
+  watch(() => trafficStore.newEdgeUsage, clearHover)
 
   function setEdgeClickCallback(callback: (u: number, v: number, name?: string) => void): void {
     edgeClickCallback = callback
