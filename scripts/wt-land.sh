@@ -18,13 +18,18 @@ cd "$ROOT"
 for p in $PROTECTED_BRANCHES; do [ "$branch" != "$p" ] || die "refusing to land protected branch '$branch'"; done
 wt_path="$(worktree_path_for "$branch")"
 [ -n "$wt_path" ] || die "no worktree has '$branch' checked out (wt list)"
+drop_sandbox_stubs "$wt_path"
 [ -z "$(git -C "$wt_path" status --porcelain)" ] || die "$wt_path has uncommitted or untracked changes — commit or clean them first"
 
 git fetch origin
-# A branch created from a newer branch than the base (e.g. main while dev lags) would
+# A branch cut from a newer branch than the base (e.g. main while dev lags) would
 # drag every missing commit into its PR. Refuse rather than rebase 200 commits.
-git merge-base --is-ancestor "origin/$BASE_BRANCH" "$branch" \
-  || die "origin/$BASE_BRANCH is not an ancestor of $branch. Fast-forward $BASE_BRANCH first (e.g. git push origin main:$BASE_BRANCH), then re-run"
+# Check the point where the branch left main, not that the branch contains all of
+# origin/dev: any commit landed on dev after the branch was cut is normal, the
+# rebase below takes care of it.
+fork="$(git merge-base "$branch" origin/main)"
+git merge-base --is-ancestor "$fork" "origin/$BASE_BRANCH" \
+  || die "$branch holds commits of main that origin/$BASE_BRANCH lacks. Fast-forward $BASE_BRANCH first (e.g. git push origin main:$BASE_BRANCH), then re-run"
 
 echo "==> rebasing $branch onto origin/$BASE_BRANCH"
 git -C "$wt_path" rebase "origin/$BASE_BRANCH" || die "rebase stopped — resolve it in $wt_path, then re-run"

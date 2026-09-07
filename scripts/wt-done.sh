@@ -54,6 +54,7 @@ path="$(worktree_path_for "$branch")"
 [ -n "$path" ] || die "no worktree has '$branch' checked out (wt list)"
 SESSION="$(session_name "$branch")"
 
+drop_sandbox_stubs "$path"
 if [ "$force" = 0 ] && [ -n "$(git -C "$path" status --porcelain)" ]; then
   die "$path has uncommitted or untracked changes. Commit them (the branch keeps them), or --force to lose them"
 fi
