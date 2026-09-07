@@ -17,6 +17,7 @@ Delegates to:
 """
 
 import functools
+import gc
 import logging
 import random
 import threading
@@ -271,6 +272,11 @@ class GraphService:
             co2_group,
             betweenness=bc_group,
         )
+        # The graph, the mirror and the baseline live until the process ends.
+        # Freezing them out of the garbage collector removes a gen-2 scan of
+        # millions of objects, which used to freeze every request for 300 ms.
+        gc.collect()
+        gc.freeze()
         logger.info("[STARTUP] baseline ready, %d usage rows", len(self.baseline.usage_rows))
 
     def generate_random_pairs(

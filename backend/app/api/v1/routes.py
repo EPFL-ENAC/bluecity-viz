@@ -136,8 +136,13 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
             resample_destinations=request.resample_destinations,
             include_baseline=request.include_baseline,
         )
-        result.pop("_timing_raw", None)
-        return ORJSONResponse(result)
+        phases = result.pop("_timing_raw", {})
+        # Server-Timing shows the phases in the browser network panel, so the
+        # per-request [TIMING] log line can stay at DEBUG.
+        headers = {
+            "Server-Timing": ", ".join(f"{name};dur={ms:.1f}" for name, ms in phases.items())
+        }
+        return ORJSONResponse(result, headers=headers)
     except Exception as e:
         logger.error("Recalculate error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))

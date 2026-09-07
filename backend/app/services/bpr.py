@@ -25,10 +25,13 @@ logger = logging.getLogger(__name__)
 
 # Betweenness is computed in chunks of source nodes so a single igraph call
 # does not hold the GIL for too long. python-igraph never releases it, so an
-# uninterrupted call of 400 ms freezes every other request for 400 ms.
+# uninterrupted call of 500 ms freezes every other request for 500 ms.
 # Betweenness is a sum over (source, target) pairs, so chunking the sources
 # and adding the results gives exactly the same values.
-BC_SOURCE_CHUNK = 100
+# 50 sources per chunk measured best: 20 was 10 % slower overall without
+# cutting the worst latency spike, which comes from elsewhere (numpy and
+# orjson also hold the GIL).
+BC_SOURCE_CHUNK = 50
 
 
 def congested_travel_time(
