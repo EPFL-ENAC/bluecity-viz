@@ -214,8 +214,24 @@ function rowFor(key: string) {
         Click a street on the map to close it or set a speed limit. ⇧-click picks one direction.
       </p>
 
-      <!-- Where the diverted traffic ended up -->
-      <template v-if="absorbers.length">
+    </section>
+
+    <!-- The tool zone: the tabs and the body of the active one -->
+    <section
+      class="zone zone--tool"
+      :data-dim="dimmed === 'tool'"
+      :data-lit="dimmed === 'scenario'"
+      @pointerdown.capture="light('tool')"
+      @focusin="light('tool')"
+    >
+      <BcTabs v-model="scenarioStore.activeTab" :tabs="tabs" />
+
+      <RoutingTab v-if="scenarioStore.activeTab === 'routing'" />
+      <CvrpTab v-else @hover-route="(id) => emit('hover-route', id)" />
+
+      <!-- Where the diverted traffic ended up. These streets were not touched,
+           they are what the result says, so they belong to the tool. -->
+      <div v-if="absorbers.length" class="dock-section absorb">
         <div class="bc-micro absorb-head">Where the traffic went · top 3</div>
         <div
           v-for="row in absorbers"
@@ -238,22 +254,7 @@ function rowFor(key: string) {
             <span class="edge-row__delta">{{ deltaText(row.value) }}</span>
           </div>
         </div>
-      </template>
-
-    </section>
-
-    <!-- The tool zone: the tabs and the body of the active one -->
-    <section
-      class="zone zone--tool"
-      :data-dim="dimmed === 'tool'"
-      :data-lit="dimmed === 'scenario'"
-      @pointerdown.capture="light('tool')"
-      @focusin="light('tool')"
-    >
-      <BcTabs v-model="scenarioStore.activeTab" :tabs="tabs" />
-
-      <RoutingTab v-if="scenarioStore.activeTab === 'routing'" />
-      <CvrpTab v-else @hover-route="(id) => emit('hover-route', id)" />
+      </div>
     </section>
   </div>
 </template>
@@ -407,8 +408,12 @@ function rowFor(key: string) {
   white-space: nowrap;
 }
 
+/* last block of the dock, so no rule under it */
+.absorb {
+  border-bottom: 0;
+}
+
 .absorb-head {
-  margin-top: 14px;
   margin-bottom: 2px;
 }
 
