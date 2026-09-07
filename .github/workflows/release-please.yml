@@ -1,3 +1,9 @@
+# Opens a release PR on main from the conventional commits, then tags and
+# publishes the GitHub release when that PR is merged.
+# The version lives in .release-please-manifest.json; the config keeps
+# frontend/package.json and backend/pyproject.toml in sync with it.
+name: release-please
+
 on:
   push:
     branches:
@@ -7,18 +13,17 @@ permissions:
   contents: write
   pull-requests: write
 
-name: release-please
-
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v4
         with:
-          # this assumes that you have created a personal access token
-          # (PAT) and configured it as a GitHub action secret named
-          # `MY_RELEASE_PLEASE_TOKEN` (this secret name is not important).
-          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
-          # this is a built-in strategy in release-please, see "Action Inputs"
-          # for more options #https://github.com/googleapis/release-please-action?tab=readme-ov-file#release-types-supported
-          release-type: node
+          # RELEASE_PLEASE_TOKEN is a PAT (contents + pull-requests write).
+          # It is needed so the v*.*.* tag triggers deploy.yml: GitHub does not
+          # run workflows on events made with the default GITHUB_TOKEN.
+          # Falls back to GITHUB_TOKEN if the secret is missing, so the job
+          # still opens the release PR instead of failing.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
