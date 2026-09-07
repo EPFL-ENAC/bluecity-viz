@@ -865,6 +865,28 @@ exports[`map config registry > keeps the same layers 1`] = `
     "unit": "ratio",
   },
   {
+    "encoding": {
+      "domain": [
+        0,
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+      ],
+      "kind": "sequential",
+      "property": "value",
+      "scheme": [
+        "#0000ff",
+        "#0066ff",
+        "#00ccff",
+        "#00ffcc",
+        "#ffff00",
+        "#ff9900",
+        "#ff0000",
+      ],
+    },
     "id": "lausanne_temperature",
     "info": "Annual average temperature across Lausanne using 200m x 200m grid cells.",
     "label": "Temperature (Annual Average)",
@@ -915,6 +937,34 @@ exports[`map config registry > keeps the same layers 1`] = `
     "unit": "°C",
   },
   {
+    "encoding": {
+      "domain": [
+        0,
+        50,
+        51,
+        100,
+        101,
+        150,
+        151,
+        200,
+        201,
+        300,
+      ],
+      "kind": "sequential",
+      "property": "value",
+      "scheme": [
+        "#00e400",
+        "#00e400",
+        "#ffff00",
+        "#ffff00",
+        "#ff7e00",
+        "#ff7e00",
+        "#ff0000",
+        "#ff0000",
+        "#99004c",
+        "#99004c",
+      ],
+    },
     "id": "lausanne_aqi",
     "info": "Annual average air quality index across Lausanne using 200m x 200m grid cells.",
     "label": "Air Quality Index (Annual)",
@@ -971,6 +1021,33 @@ exports[`map config registry > keeps the same layers 1`] = `
     "unit": "AQI",
   },
   {
+    "encoding": {
+      "categories": [
+        {
+          "color": "#3ca0d3",
+          "value": "Fish",
+        },
+        {
+          "color": "#9c27b0",
+          "value": "Amphibian",
+        },
+        {
+          "color": "#d16b30",
+          "value": "Mammal",
+        },
+        {
+          "color": "#2e7d32",
+          "value": "Reptile",
+        },
+        {
+          "color": "#e91e63",
+          "value": "Bird",
+        },
+      ],
+      "defaultColor": "#aaaaaa",
+      "kind": "categorical",
+      "property": "Group",
+    },
     "id": "species_observations_by_group",
     "info": "Animal species observations in Lausanne area, colored by taxonomic group.",
     "label": "Species Observations (by Group)",
@@ -1014,7 +1091,7 @@ exports[`map config registry > keeps the same layers 1`] = `
         "circle-stroke-color": "#ffffff",
         "circle-stroke-width": 1,
       },
-      "source": "species_observations_by_group",
+      "source": "lausanne_species",
       "source-layer": "species_observations",
       "type": "circle",
     },
@@ -1029,6 +1106,41 @@ exports[`map config registry > keeps the same layers 1`] = `
     "unit": "group",
   },
   {
+    "encoding": {
+      "categories": [
+        {
+          "color": "#bd0026",
+          "value": "Critically Endangered",
+        },
+        {
+          "color": "#f03b20",
+          "value": "Endangered",
+        },
+        {
+          "color": "#fd8d3c",
+          "value": "Vulnerable",
+        },
+        {
+          "color": "#fecc5c",
+          "value": "Near Threatened",
+        },
+        {
+          "color": "#ffffb2",
+          "value": "Least Concern",
+        },
+        {
+          "color": "#999999",
+          "value": "Data Deficient",
+        },
+        {
+          "color": "#cccccc",
+          "value": "Not Evaluated",
+        },
+      ],
+      "defaultColor": "#cccccc",
+      "kind": "categorical",
+      "property": "Red List",
+    },
     "id": "species_observations_by_redlist",
     "info": "Animal species observations in Lausanne area, colored by conservation status (Red List category).",
     "label": "Species Observations (by Red List Status)",
@@ -1076,7 +1188,7 @@ exports[`map config registry > keeps the same layers 1`] = `
         "circle-stroke-color": "#ffffff",
         "circle-stroke-width": 1,
       },
-      "source": "species_observations_by_redlist",
+      "source": "lausanne_species",
       "source-layer": "species_observations",
       "type": "circle",
     },
