@@ -42,10 +42,25 @@ Trip destinations are sampled using a lognormal distribution based on travel tim
 
 The `SamplingConfig` model controls the sampling behavior:
 
-The number of pairs is the `OD_PAIRS` setting (`backend/app/config.py`),
-not a field of `SamplingConfig`. The number of origin draws follows from it:
+The number of pairs is a setting (`backend/app/config.py`), not a field of
+`SamplingConfig`. The number of origin draws follows from it:
 
-    origin draws = ceil(OD_PAIRS / n_destinations_per_origin)
+    origin draws = ceil(pairs / n_destinations_per_origin)
+
+Two settings, because the count is also a per-request choice:
+
+- `OD_PAIRS_MAX` (76,400) is sampled and routed once, at startup.
+- `OD_PAIRS` (20,000) is what a request gets when it does not say.
+  `POST /routes/recalculate` takes `od_pairs`, `GET /routes/baseline` takes
+  `?od_pairs=`, both capped at `OD_PAIRS_MAX`.
+
+**The sets are nested.** N pairs are the *first* N pairs of the set sampled
+at startup, so 20,000 is a subset of 76,400: more pairs means the same trips
+plus extra ones, never a different sample. Two results are comparable as long
+as they used the same N, and going from 20,000 to 76,400 only adds trips.
+This works because the origin draws are in random order, so a prefix is still
+a random sample of origins. The baseline for N is a slice of the route set,
+not a new routing.
 
 ```python
 class SamplingConfig(BaseModel):
@@ -81,9 +96,9 @@ class SamplingConfig(BaseModel):
     # Controls spread of trip distances
 ```
 
-### Default behaviour (76,400 OD pairs)
+### The set sampled at startup (76,400 OD pairs)
 
-With `OD_PAIRS=76400` and `n_destinations_per_origin=200`:
+With `OD_PAIRS_MAX=76400` and `n_destinations_per_origin=200`:
 1. 382 origin draws, weighted by node weight (uniform by default)
 2. Each draw samples 200 destinations with the lognormal travel-time weights
 3. About 76,200 pairs come out, from roughly 307 distinct origins
@@ -108,7 +123,10 @@ so the count is a product decision. Per-edge usage frequency compared to the
 | 5,000 | 0.857 | 59 | 4,975 |
 
 The first row is the set the old code produced. Fixing the sampler barely
-moves the map (0.99 correlation), so the default keeps the same size.
+moves the map (0.99 correlation).
+
+The default is 20,000: 0.96 correlation and 85 of the top 100 edges, for a
+congestion run about 4 times faster. The full set stays one request away.
 
 ### Tuning for Different Cities
 

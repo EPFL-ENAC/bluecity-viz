@@ -7,10 +7,11 @@ import traceback
 from typing import Callable, List, Optional
 
 import orjson
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
 
+from app.config import settings
 from app.models.route import (
     BaselineResponse,
     GraphData,
@@ -68,6 +69,8 @@ class GraphInfoResponse(BaseModel):
     edge_count: int
     sample_nodes: List[int]
     od_pairs: int = 0
+    od_pairs_default: int = 0
+    od_pairs_max: int = 0
     od_origins: int = 0
     n_destinations_per_origin: Optional[int] = None
 
@@ -135,6 +138,7 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
             congestion_iterations=request.congestion_iterations,
             resample_destinations=request.resample_destinations,
             include_baseline=request.include_baseline,
+            od_pairs=request.od_pairs,
         )
         phases = result.pop("_timing_raw", {})
         # Server-Timing shows the phases in the browser network panel, so the
@@ -153,16 +157,32 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
     response_model=None,
     responses={200: {"model": BaselineResponse}},
 )
-def get_baseline(request: Request):
+def get_baseline(
+    request: Request,
+    od_pairs: Optional[int] = Query(
+        None,
+        ge=1,
+        description="How many OD pairs. Defaults to the OD_PAIRS setting.",
+    ),
+):
     """
-    Edge usage of the unmodified network.
+    Edge usage of the unmodified network, for a given number of OD pairs.
 
-    It is the same for every client and does not change until the server
-    restarts, so it is served with an ETag. Fetch it once, then call
-    /recalculate with include_baseline=false.
+    It does not change until the server restarts, so it is served with an
+    ETag, one per pair count. Fetch it once, then call /recalculate with the
+    same od_pairs and include_baseline=false.
     """
+    if od_pairs is not None and od_pairs > settings.od_pairs_max:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"od_pairs must be at most {settings.od_pairs_max} "
+                f"(OD_PAIRS_MAX, the set sampled at startup)"
+            ),
+        )
     try:
-        data, etag = _cached_json("baseline", graph_service.baseline_payload)
+        n = min(od_pairs or settings.od_pairs, settings.od_pairs_max)
+        data, etag = _cached_json(f"baseline:{n}", lambda: graph_service.baseline_payload(n))
         return _json_or_304(request, data, etag, "no-cache")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

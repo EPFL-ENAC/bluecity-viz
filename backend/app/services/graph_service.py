@@ -62,7 +62,10 @@ ox_logger.setLevel(logging.INFO)
 # Route sets are a few hundred MB each at 76,400 pairs, so keep very few.
 ROUTE_CACHE_SIZE = 3
 # Betweenness costs about 450 ms and is the same for the same modifications.
+# It does not depend on the OD pairs, so its key does not carry N.
 BC_CACHE_SIZE = 16
+# One entry per OD pair count a client asks for.
+BASELINE_CACHE_SIZE = 8
 
 
 @dataclass
@@ -95,6 +98,7 @@ class GraphService:
         # Bounded caches. Both are pure memoisation: dropping an entry only
         # costs time, never correctness.
         self.route_cache: "OrderedDict[tuple, RouteSet]" = OrderedDict()
+        self._baseline_by_n: "OrderedDict[int, Baseline]" = OrderedDict()
         self._bc_cache: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
         # Guards the shared NetworkX graph, which CVRP copies and the sampling
         # code writes weight attributes to. Re-entrant so a locked method can
@@ -212,9 +216,13 @@ class GraphService:
             # main.py still passes count=500, which the old sampler ignored: the
             # real size was n_origins x n_destinations_per_origin. The size is a
             # setting now. Drop the argument in main.py when that file is free.
-            n_pairs = settings.od_pairs
+            n_pairs = settings.od_pairs_max
+            if settings.od_pairs > n_pairs:
+                raise ValueError(
+                    f"OD_PAIRS ({settings.od_pairs}) cannot be larger than OD_PAIRS_MAX ({n_pairs})"
+                )
             if count != n_pairs:
-                logger.info("[STARTUP] ignoring count=%s, using OD_PAIRS=%d", count, n_pairs)
+                logger.info("[STARTUP] ignoring count=%s, using OD_PAIRS_MAX=%d", count, n_pairs)
             with self.lock:
                 self.default_pairs, self.od_nodes = generate_research_based_pairs(
                     self.graph, n_pairs=n_pairs, config=config, seed=seed, return_nodes=True
@@ -227,6 +235,50 @@ class GraphService:
 
         logger.info("[STARTUP] %d OD pairs generated", len(self.default_pairs))
         self._build_baseline(config, seed)
+
+    def baseline_for(self, n_pairs: int) -> Baseline:
+        """Baseline restricted to the first n_pairs OD pairs.
+
+        The pair sets are nested, so this is a prefix of the full route set:
+        no rerouting, only counting again. Cached per N.
+        """
+        if self.baseline is None:
+            raise RuntimeError("Baseline not computed")
+        n = min(n_pairs, len(self.baseline.pairs))
+        if n >= len(self.baseline.pairs):
+            return self.baseline
+
+        cached = self._baseline_by_n.get(n)
+        if cached is not None:
+            self._baseline_by_n.move_to_end(n)
+            return cached
+
+        mirror = self.mirror
+        routes = self.baseline.routes.prefix(n)
+        counts = routes.edge_counts(mirror.n_edges)
+        counts_group = mirror.group_sum(counts)
+        small = Baseline(
+            pairs=self.baseline.pairs[:n],
+            routes=routes,
+            counts=counts,
+            counts_group=counts_group,
+            bc=self.baseline.bc,  # betweenness is a property of the graph, not of the OD set
+            bc_group=self.baseline.bc_group,
+            co2_per_km=self.baseline.co2_per_km,
+            co2_group=self.baseline.co2_group,
+        )
+        small.usage_rows = build_edge_usage_rows(
+            mirror,
+            counts_group,
+            routes.n_found,
+            self.baseline.co2_group,
+            betweenness=self.baseline.bc_group,
+        )
+        self._baseline_by_n[n] = small
+        while len(self._baseline_by_n) > BASELINE_CACHE_SIZE:
+            self._baseline_by_n.popitem(last=False)
+        logger.info("[BASELINE] built for %d pairs, %d rows", n, len(small.usage_rows))
+        return small
 
     def _build_baseline(self, config, seed: int) -> None:
         """Route the default pairs, compute betweenness and congested CO2."""
@@ -379,6 +431,7 @@ class GraphService:
         congestion_iterations: int = 1,
         resample_destinations: bool = False,
         include_baseline: bool = True,
+        od_pairs: Optional[int] = None,
     ) -> dict:
         """Recalculate routes after edge modifications and return usage statistics.
 
@@ -400,20 +453,23 @@ class GraphService:
         t_total = time.perf_counter()
         timing: dict = {}
 
-        pairs = pairs or self.default_pairs
-        if pairs is None:
-            raise RuntimeError("No pairs available")
         edge_modifications = edge_modifications or []
 
         with timed("cache_lookup", timing):
-            if pairs is self.default_pairs:
-                base = self.baseline
-                original = base.routes
-                original_counts_group = base.counts_group
-            else:
+            if pairs:
+                # The client gave its own pairs: N does not apply.
+                n_pairs = len(pairs)
                 original = self._route_set_for(pairs)
                 base = None
                 original_counts_group = mirror.group_sum(original.edge_counts(mirror.n_edges))
+            else:
+                if self.default_pairs is None:
+                    raise RuntimeError("No pairs available")
+                n_pairs = min(od_pairs or settings.od_pairs, len(self.default_pairs))
+                base = self.baseline_for(n_pairs)
+                pairs = base.pairs
+                original = base.routes
+                original_counts_group = base.counts_group
 
         with timed("apply_modifications", timing):
             (
@@ -509,6 +565,7 @@ class GraphService:
         )
 
         return {
+            "od_pairs": n_pairs,
             "applied_modifications": [m.model_dump() for m in applied],
             "original_edge_usage": original_rows,
             "new_edge_usage": new_rows,
@@ -668,14 +725,16 @@ class GraphService:
 
     # ── Graph data and utilities ──────────────────────────────────────────────
 
-    def baseline_payload(self) -> dict:
-        """The unmodified edge usage, as served by GET /routes/baseline."""
+    def baseline_payload(self, od_pairs: Optional[int] = None) -> dict:
+        """The unmodified edge usage for N pairs, as served by GET /routes/baseline."""
         if self.baseline is None:
             raise RuntimeError("Baseline not computed")
+        n = min(od_pairs or settings.od_pairs, len(self.baseline.pairs))
+        base = self.baseline_for(n)
         return {
-            "total_routes": self.baseline.routes.n_found,
-            "od_pairs": len(self.baseline.pairs),
-            "edge_usage": self.baseline.usage_rows,
+            "total_routes": base.routes.n_found,
+            "od_pairs": len(base.pairs),
+            "edge_usage": base.usage_rows,
         }
 
     def get_graph_info(self) -> dict:
@@ -687,6 +746,8 @@ class GraphService:
                 "edge_count": len(self.graph.edges),
                 "sample_nodes": list(self.graph.nodes())[:20],
                 "od_pairs": len(self.default_pairs) if self.default_pairs else 0,
+                "od_pairs_default": settings.od_pairs,
+                "od_pairs_max": settings.od_pairs_max,
                 "od_origins": len({p.origin for p in self.default_pairs})
                 if self.default_pairs
                 else 0,
@@ -708,6 +769,10 @@ class GraphService:
             return get_graph_data(self.graph)
 
     def clear_route_cache(self):
-        """Drop the memoised route sets and betweenness. The baseline stays."""
+        """Drop the memoised route sets and betweenness.
+
+        The baselines stay: they are the unmodified network, they only change
+        when the graph or the OD sample changes, which means a restart.
+        """
         self.route_cache.clear()
         self._bc_cache.clear()

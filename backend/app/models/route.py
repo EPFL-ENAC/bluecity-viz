@@ -2,7 +2,9 @@
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.config import settings
 
 # Re-export SamplingConfig from node_sampling_service for API use
 try:
@@ -39,7 +41,7 @@ class EdgeModification(BaseModel):
     )
 
     @model_validator(mode="after")
-    def check_speed(self):
+    def check_speed_kph(self):
         """A modify without a speed used to be accepted and then ignored."""
         if self.action == "modify" and self.speed_kph is None:
             raise ValueError("speed_kph is required when action is 'modify'")
@@ -104,6 +106,15 @@ class RecalculateRequest(BaseModel):
             "Volumes are averaged (MSA), so 2 iterations already converge."
         ),
     )
+    od_pairs: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "How many OD pairs to use. The sets are nested: N pairs are the first N "
+            "of the set sampled at startup, so a result at 20,000 is a subset of the "
+            "one at 76,400. Defaults to the OD_PAIRS setting."
+        ),
+    )
     include_baseline: bool = Field(
         default=True,
         description=(
@@ -117,6 +128,17 @@ class RecalculateRequest(BaseModel):
             "Resample trip destinations using travel times on the modified graph (elastic demand)"
         ),
     )
+
+    @field_validator("od_pairs")
+    @classmethod
+    def check_od_pairs(cls, value):
+        """Only the pairs sampled at startup exist, asking for more is an error."""
+        if value is not None and value > settings.od_pairs_max:
+            raise ValueError(
+                f"od_pairs must be at most {settings.od_pairs_max} "
+                f"(OD_PAIRS_MAX, the set sampled at startup)"
+            )
+        return value
 
 
 class RouteComparison(BaseModel):
@@ -247,10 +269,10 @@ class RecalculateResponse(BaseModel):
 
 
 class BaselineResponse(BaseModel):
-    """Edge usage of the unmodified network. Same for every client, until restart."""
+    """Edge usage of the unmodified network, for a given number of OD pairs."""
 
     total_routes: int = Field(..., description="Number of routed OD pairs")
-    od_pairs: int = Field(..., description="Number of OD pairs")
+    od_pairs: int = Field(..., description="Number of OD pairs used")
     edge_usage: List[EdgeUsageStats] = Field(..., description="Edge usage without modifications")
 
 

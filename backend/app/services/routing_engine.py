@@ -112,6 +112,27 @@ class RouteSet:
         )
         return np.bincount(picked, minlength=n_edges).astype(np.float64)
 
+    def prefix(self, n: int) -> "RouteSet":
+        """The first n routes, sharing the parent arrays (no copy).
+
+        Pairs are nested by construction: the set of n pairs is the first n of
+        the full sample, so this is the route set of that smaller run.
+        """
+        n = min(n, len(self))
+        end = int(self.offsets[n])
+        cut = lambda a: a[:n] if a is not None else None  # noqa: E731
+        return RouteSet(
+            origins=self.origins[:n],
+            destinations=self.destinations[:n],
+            edges=self.edges[:end],
+            offsets=self.offsets[: n + 1],
+            found=self.found[:n],
+            travel_time=cut(self.travel_time),
+            distance=cut(self.distance),
+            elevation_gain=cut(self.elevation_gain),
+            co2=cut(self.co2),
+        )
+
     def node_path(self, mirror, i: int) -> List[int]:
         """Rebuild the NetworkX node path of one route."""
         path_edges = self.edges[self.offsets[i] : self.offsets[i + 1]]
