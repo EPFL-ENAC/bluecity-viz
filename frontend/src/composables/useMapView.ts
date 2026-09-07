@@ -36,8 +36,12 @@ export function useMapView(): MapView {
     scenarioStore.activeTab === 'cvrp' ? cvrpStore.hasResult : trafficStore.hasCalculatedRoutes
   )
 
+  // Closing the workbench takes the overlay off the map, so nothing is shown
+  // and the legend has nothing to explain.
   const shown = computed<ShownResult>(() =>
-    scenarioStore.mapMode === 'result' && activeHasResult.value ? scenarioStore.activeTab : null
+    scenarioStore.isOpen && scenarioStore.mapMode === 'result' && activeHasResult.value
+      ? scenarioStore.activeTab
+      : null
   )
 
   // Nothing to compete with means nothing to dim: with no result the map can

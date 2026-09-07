@@ -18,7 +18,11 @@ function withCvrp() {
 }
 
 describe('useMapView', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    // every case below is about an open workbench unless it says otherwise
+    useScenarioStore().isOpen = true
+  })
 
   it('shows nothing and dims nothing before a run', () => {
     const view = useMapView()
@@ -52,6 +56,16 @@ describe('useMapView', () => {
     expect(view.shown.value).toBe('routing')
     scenario.activeTab = 'cvrp'
     expect(view.shown.value).toBe('cvrp')
+  })
+
+  it('shows nothing once the workbench is closed', () => {
+    withRouting()
+    const scenario = useScenarioStore()
+    scenario.mapMode = 'result'
+    const view = useMapView()
+    expect(view.shown.value).toBe('routing')
+    scenario.isOpen = false
+    expect(view.shown.value).toBeNull()
   })
 
   it('falls back to the scenario on a tab that has not run', () => {

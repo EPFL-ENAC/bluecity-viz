@@ -151,6 +151,10 @@ export function useGraphOverlay(
     const map = mapRef.value
     const source = graph.value
     if (!map || !source) return
+    // The workbench owns the graph, the scenario and the results. With it
+    // closed the map goes back to the basemap and the datasets, as it was
+    // before the workbench was ever opened.
+    if (!scenarioStore.isOpen) return
 
     // MapLibre refuses addSource / addLayer until the style JSON is parsed, and
     // it has no public "is the style parsed" flag: isStyleLoaded() also waits
@@ -621,6 +625,25 @@ export function useGraphOverlay(
 
   // Mount as soon as both the map and the network are there, in either order.
   watch([mapRef, graph], () => mount(), { immediate: true })
+
+  // Closing the workbench takes the whole overlay off the map, the scenario
+  // ink and the badges with it. The sources stay, so opening again does not
+  // re-fetch the 6 MB network.
+  watch(
+    () => scenarioStore.isOpen,
+    (open) => {
+      if (open) {
+        mount()
+        return
+      }
+      // Drop what the pointer was on, or reopening would draw a stale accent
+      // line until the mouse moves.
+      hoverFeatures = []
+      selectionFeatures = []
+      unmount()
+    },
+    { immediate: true }
+  )
 
   watch(() => scenarioStore.edgeModifications, redraw)
   // Only a change of ink treatment needs the layers rebuilt, not every switch
