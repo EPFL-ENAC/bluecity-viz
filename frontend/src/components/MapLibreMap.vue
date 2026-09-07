@@ -2,6 +2,7 @@
 import 'maplibre-gl/dist/maplibre-gl.css'
 import LoadingBar from '@/components/LoadingBar.vue'
 import { mapConfig } from '@/config/mapConfig'
+import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
 import { useMapEvents } from '@/composables/useMapEvents'
 import {
   buildStyle,
@@ -9,23 +10,27 @@ import {
   loadTiles,
   setMapTheme,
   theme as basemapTheme,
-  wirePatterns
+  wirePatterns,
+  type BasemapTheme
 } from '@/utils/epflBasemap'
 
 import {
   AttributionControl,
-  Map,
+  Map as MapLibre,
   NavigationControl,
   ScaleControl,
   VectorTileSource,
+  type AddLayerObject,
   type FilterSpecification,
   type LngLatLike,
+  type SourceSpecification,
   type StyleSetterOptions,
   type StyleSpecification,
+  type TransformStyleFunction,
   addProtocol
 } from 'maplibre-gl'
 import type { LegendColor } from '@/utils/legendColor'
-import { computed, onMounted, ref, watch, type Ref } from 'vue'
+import { markRaw, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 
 import { Protocol } from 'pmtiles'
 import { useApiKeyStore } from '@/stores/apiKey'
@@ -69,38 +74,110 @@ const props = withDefaults(
 
 const loading = ref(true)
 const container = ref<HTMLDivElement | null>(null)
-const map = ref<any | undefined>(undefined)
+// Shallow on purpose: Vue must not walk or proxy the MapLibre instance.
+const map = shallowRef<MapLibre | undefined>(undefined)
 const hasLoaded = ref(false)
 const protocol = new Protocol()
 
-// Ink-on-paper theme of the Trait basemap, light and dark.
-const traitTheme = computed(() =>
-  themeStore.isDark
-    ? basemapTheme({ ink: '#E6E6E6', paper: '#141414', density: 0.8 })
-    : basemapTheme({ ink: '#141414', paper: '#ffffff', density: 0.8 })
+// Dataset layers are added to the map the first time they are shown, so a
+// fresh load only fetches the tiles of the selected layers.
+const layerIndex = new Map<string, MapLayerConfig>(
+  mapConfig.layers.map((entry) => [entry.layer.id, entry])
 )
+// Config order is the z-order, we keep it whatever the activation order is.
+const orderedLayerIds = mapConfig.layers.map((entry) => entry.layer.id)
+const layerOrder = new Map<string, number>(orderedLayerIds.map((id, index) => [id, index]))
 
-// Either a style URL (public/style/*.json) or a style built by the EPFL engine.
-const styleSpec = computed<string | StyleSpecification>(() => {
-  if (themeStore.isTrait) return buildStyle('contour', traitTheme.value)
-  return themeStore.theme
-})
+// Set when MapLibre refuses an addLayer because a style is still loading.
+let needsResync = false
+
+// One cancellable timer for the loading bar, never a polling loop.
+const LOADING_BAR_DELAY = 150
+let loadingTimer: number | undefined
+
+// Ink-on-paper themes of the Trait basemap. Both are the same engine and the
+// same layers, only the colours change.
+const TRAIT_THEMES: Record<string, BasemapTheme> = {
+  trait: basemapTheme({ ink: '#141414', paper: '#ffffff', density: 0.8 }),
+  'trait-dark': basemapTheme({ ink: '#E6E6E6', paper: '#141414', density: 0.8 })
+}
+
+function isTraitKey(key: string): boolean {
+  return key.startsWith('trait')
+}
+
+function themeFor(key: string): BasemapTheme {
+  return TRAIT_THEMES[key] ?? TRAIT_THEMES.trait
+}
+
+/** Either a style URL (public/style/*.json) or a style built by the EPFL engine. */
+function styleFor(key: string): string | StyleSpecification {
+  return isTraitKey(key) ? buildStyle('contour', themeFor(key)) : key
+}
 
 // Use the map events composable
-const mapEventManager = useMapEvents(map as Ref<Map | undefined>)
+const mapEventManager = useMapEvents(map as Ref<MapLibre | undefined>)
 
 addProtocol('pmtiles', protocol.tile)
 
-async function initMap() {
-  // The Trait style needs the OpenFreeMap tile URLs (memoised fetch). Build the
-  // first style here rather than reading styleSpec: that computed may already
-  // have been evaluated (and cached) before the tile URLs arrived.
-  await loadTiles()
-  const initialStyle: string | StyleSpecification = themeStore.isTrait
-    ? buildStyle('contour', traitTheme.value)
-    : themeStore.theme
+/** Our own fields are not part of the MapLibre source spec. */
+function stripSource(source: CustomSourceSpecification): SourceSpecification {
+  const spec = { ...source } as Record<string, unknown>
+  delete spec.id
+  delete spec.label
+  return spec as unknown as SourceSpecification
+}
 
-  const newMap = new Map({
+/** Keep the config z-order: insert before the next layer already on the map. */
+function beforeIdFor(layerId: string): string | undefined {
+  const index = layerOrder.get(layerId)
+  if (index === undefined) return undefined
+  for (let i = index + 1; i < orderedLayerIds.length; i++) {
+    if (map.value?.getLayer(orderedLayerIds[i])) return orderedLayerIds[i]
+  }
+  return undefined
+}
+
+/**
+ * Add the source and the layer of one dataset entry, hidden, if they are not
+ * on the map yet. Several layers can share one source, it is added once.
+ */
+function ensureLayer(entry: MapLayerConfig): boolean {
+  const mapInstance = map.value
+  if (!mapInstance) return false
+
+  try {
+    if (!mapInstance.getSource(entry.source.id)) {
+      mapInstance.addSource(entry.source.id, stripSource(entry.source))
+    }
+    if (!mapInstance.getLayer(entry.layer.id)) {
+      const spec = {
+        ...entry.layer,
+        source: entry.source.id,
+        layout: { ...entry.layer.layout, visibility: 'none' }
+      } as AddLayerObject
+      mapInstance.addLayer(spec, beforeIdFor(entry.layer.id))
+      applyCategoryFilter(entry.layer.id)
+    }
+    return true
+  } catch {
+    // The style is still loading. Redo the whole sync once it is done.
+    needsResync = true
+    return false
+  }
+}
+
+async function initMap() {
+  if (map.value) return
+
+  // The Trait style needs the OpenFreeMap tile URLs (memoised fetch), so build
+  // the style only after they arrived.
+  await loadTiles()
+  if (map.value) return
+
+  const initialStyle = styleFor(themeStore.theme)
+
+  const newMap = new MapLibre({
     container: container.value as HTMLDivElement,
     style: initialStyle,
     center: props.center,
@@ -127,66 +204,57 @@ async function initMap() {
 
       return { url: url }
     }
-  }) as Map
+  })
 
-  map.value = newMap
-
-  const mapInstance = map.value as Map
+  map.value = markRaw(newMap)
 
   // Trait textures are drawn on demand, once per map.
-  setMapTheme(mapInstance, traitTheme.value)
-  wirePatterns(mapInstance)
+  setMapTheme(newMap, themeFor(themeStore.theme))
+  wirePatterns(newMap)
 
-  mapInstance.addControl(new NavigationControl({ showCompass: false }), 'top-right')
-  mapInstance.addControl(new ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-left')
-  mapInstance.addControl(new AttributionControl({ compact: true }), 'bottom-right')
+  newMap.addControl(new NavigationControl({ showCompass: false }), 'top-right')
+  newMap.addControl(new ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-left')
+  newMap.addControl(new AttributionControl({ compact: true }), 'bottom-right')
 
-  mapInstance.on('load', () => {
+  // Loading bar. 'dataloading' fires per tile, so wait a bit before showing
+  // the bar, and 'idle' fires once the map has nothing left to load.
+  newMap.on('dataloading', () => {
+    if (loadingTimer !== undefined) return
+    loadingTimer = window.setTimeout(() => {
+      loadingTimer = undefined
+      loading.value = true
+    }, LOADING_BAR_DELAY)
+  })
+
+  newMap.on('idle', () => {
+    if (loadingTimer !== undefined) {
+      window.clearTimeout(loadingTimer)
+      loadingTimer = undefined
+    }
+    loading.value = false
+  })
+
+  newMap.on('load', () => {
     if (!map.value) return
     hasLoaded.value = true
     loading.value = false
     map.value.resize()
 
-    // Add all sources dynamically (strip custom fields id/label before passing to MapLibre)
-    Object.entries(mapConfig.layers).forEach(([, { id, source, layer }]) => {
-      const { id: _id, label: _label, ...sourceSpec } = source as any
-      map.value?.addSource(id, sourceSpec)
-      map.value?.addLayer(layer)
-    })
-
-    function testTilesLoaded() {
-      if (map.value?.areTilesLoaded()) {
-        loading.value = false
-      } else {
-        loading.value = true
-        setTimeout(testTilesLoaded, 1000)
-      }
-    }
-
-    function handleDataEvent() {
-      if (map.value?.areTilesLoaded()) {
-        loading.value = false
-      } else {
-        testTilesLoaded()
-      }
-    }
-
-    // Attach popup listeners to each layer using our composable
-    // mapConfig.layers.forEach((layer) => attachPopupListeners(layer.layer.id, layer.label))
-
-    mapInstance.on('sourcedata', handleDataEvent)
-    mapInstance.on('sourcedataloading', handleDataEvent)
-
-    // filterSP0Period(layersStore.sp0Period)
-
+    // The selected layers are added here, by the parent sync.
     if (props.callbackLoaded) {
       props.callbackLoaded()
     }
   })
+
+  // A layer asked for while a style was loading is added on the next style event.
+  newMap.on('styledata', () => {
+    if (!needsResync || !hasLoaded.value) return
+    needsResync = false
+    if (props.callbackLoaded) props.callbackLoaded()
+  })
 }
 
 onMounted(() => {
-  addProtocol('pmtiles', protocol.tile)
   if (apiKeyStore.apiKey) {
     initMap()
   }
@@ -246,60 +314,75 @@ const getSourceTilesUrl = (sourceId: string) => {
   if (source && source.url) return source.url
   else return ''
 }
-const setLayerVisibility = (layerId: string, visibility: boolean) => {
-  const layerLabel = mapConfig.layers.find((layer) => layer.layer.id === layerId)?.label
-  if (visibility) mapEventManager.attachPopupListeners(layerId, layerLabel ?? '')
-  else mapEventManager.detachPopupListeners(layerId)
-  map.value?.setLayoutProperty(layerId, 'visibility', visibility ? 'visible' : 'none')
+
+/**
+ * Show or hide one dataset layer, adding it to the map on first use.
+ * Returns whether the map is in the asked state now.
+ */
+const setLayerVisibility = (layerId: string, visibility: boolean): boolean => {
+  const mapInstance = map.value
+  if (!mapInstance || !hasLoaded.value) return false
+
+  const entry = layerIndex.get(layerId)
+  if (!entry) return false
+
+  if (visibility) {
+    if (!ensureLayer(entry)) return false
+    if (mapInstance.getLayoutProperty(layerId, 'visibility') !== 'visible') {
+      mapInstance.setLayoutProperty(layerId, 'visibility', 'visible')
+    }
+    mapEventManager.attachPopupListeners(layerId, entry.label ?? '')
+    return true
+  }
+
+  // Nothing to hide when the layer was never added.
+  if (!mapInstance.getLayer(layerId)) return true
+
+  mapEventManager.detachPopupListeners(layerId)
+  if (mapInstance.getLayoutProperty(layerId, 'visibility') !== 'none') {
+    mapInstance.setLayoutProperty(layerId, 'visibility', 'none')
+  }
+  return true
 }
 
 const getPaintProperty = (layerId: string, name: string) => {
   if (hasLoaded.value) return map.value?.getPaintProperty(layerId, name)
 }
 
+/** Hide the categories the user unchecked in the legend. */
+function buildCategoryFilter(
+  variablesRecord: Record<string, string[]>
+): FilterSpecification | null {
+  let filter: FilterSpecification | null = null
+  for (const [variable, categories] of Object.entries(variablesRecord)) {
+    const categoriesListToFilter = [...categories]
+    filter =
+      categoriesListToFilter.length > 0
+        ? ([
+            '!',
+            ['in', ['get', variable], ['literal', categoriesListToFilter]]
+          ] as FilterSpecification)
+        : null
+  }
+  return filter
+}
+
+function applyCategoryFilter(layerId: string) {
+  const mapInstance = map.value
+  if (!mapInstance?.getLayer(layerId)) return
+  const variablesRecord = layersStore.filteredCategories[layerId]
+  if (!variablesRecord) return
+  mapInstance.setFilter(layerId, buildCategoryFilter(variablesRecord))
+}
+
 // Filter categorical layers by categories
 watch(
   () => layersStore.filteredCategories,
   (filteredCategories) => {
-    Object.entries(filteredCategories).forEach(([layerID, variablesRecord]) => {
-      Object.entries(variablesRecord).forEach(([variable, categories]) => {
-        const categoriesListToFilter = [...categories]
-
-        if (categoriesListToFilter.length > 0) {
-          const filter = [
-            '!',
-            ['in', ['get', variable], ['literal', categoriesListToFilter]]
-          ] as FilterSpecification
-          setFilter(layerID, filter)
-        } else if (categoriesListToFilter.length == 0) {
-          setFilter(layerID, null)
-        }
-      })
-    })
+    Object.keys(filteredCategories).forEach((layerId) => applyCategoryFilter(layerId))
   },
   { deep: true }
 )
-
-// function filterSP0Period(period: string) {
-//   const sp0Group = layersStore.layerGroups.find((group) => group.id === 'sp0_migration')
-
-//   if (!sp0Group) return
-//   sp0Group.layers
-//     .filter((layer) => {
-//       return layersStore.selectedLayers.includes(layer.layer.id)
-//     })
-//     .forEach((layer) => {
-//       const filter = ['==', ['get', 'year'], period] as FilterSpecification
-//       map.value?.setFilter(layer.layer.id, filter)
-//     })
-// }
-
-// // Filter SP0 migration layers by period
-// watch(
-//   () => [layersStore.sp0Period, layersStore.selectedLayers],
-//   ([newPeriod]) => filterSP0Period(newPeriod as string),
-//   { immediate: true }
-// )
 
 // Automatic pitch change when 3D layers are added or removed
 watch(
@@ -335,42 +418,86 @@ defineExpose({
   getSourceTilesUrl
 })
 
-watch(
-  () => styleSpec.value,
-  (styleSpec) => {
-    if (!map.value) return
+/**
+ * Copy the colours of one Trait theme onto the other. Same layers, same ids,
+ * so only the paint (and layout) values that really differ are written.
+ */
+function applyPaintDiff(
+  mapInstance: MapLibre,
+  previous: StyleSpecification,
+  next: StyleSpecification
+) {
+  const previousById = new Map(previous.layers.map((layer) => [layer.id, layer]))
 
-    // Store current layers state before style change
-    const currentLayersVisibility = mapConfig.layers.map(({ layer }) => ({
-      id: layer.id,
-      visible: map.value?.getLayoutProperty(layer.id, 'visibility') !== 'none'
-    }))
+  for (const layer of next.layers) {
+    if (!mapInstance.getLayer(layer.id)) continue
+    const before = previousById.get(layer.id)
+
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const paint = ((layer as any).paint ?? {}) as Record<string, unknown>
+    const beforePaint = ((before as any)?.paint ?? {}) as Record<string, unknown>
+    for (const key of Object.keys({ ...beforePaint, ...paint })) {
+      if (JSON.stringify(paint[key]) !== JSON.stringify(beforePaint[key])) {
+        mapInstance.setPaintProperty(layer.id, key, paint[key])
+      }
+    }
+
+    const layout = ((layer as any).layout ?? {}) as Record<string, unknown>
+    const beforeLayout = ((before as any)?.layout ?? {}) as Record<string, unknown>
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    for (const key of Object.keys({ ...beforeLayout, ...layout })) {
+      if (JSON.stringify(layout[key]) !== JSON.stringify(beforeLayout[key])) {
+        mapInstance.setLayoutProperty(layer.id, key, layout[key])
+      }
+    }
+  }
+}
+
+const configSourceIds = new Set(mapConfig.sources.map((source) => source.id))
+
+/**
+ * setStyle drops everything the new style does not declare. Put our own
+ * dataset sources and layers back, with the filter and the visibility they
+ * had. Layers of other plugins (Deck.gl) are left alone, they re-add theirs.
+ */
+const carryDatasetLayers: TransformStyleFunction = (previous, next) => {
+  if (!previous) return next
+
+  const sources = { ...next.sources }
+  for (const [id, source] of Object.entries(previous.sources)) {
+    if (configSourceIds.has(id) && !sources[id]) sources[id] = source
+  }
+
+  return {
+    ...next,
+    sources,
+    layers: [...next.layers, ...previous.layers.filter((layer) => layerIndex.has(layer.id))]
+  }
+}
+
+watch(
+  () => themeStore.theme,
+  (next, previous) => {
+    const mapInstance = map.value
+    if (!mapInstance) return
 
     // Drop the generated textures so they are redrawn with the new ink colour.
-    setMapTheme(map.value as Map, traitTheme.value)
-    clearPatterns(map.value as Map)
+    setMapTheme(mapInstance, themeFor(next))
+    clearPatterns(mapInstance)
 
-    // Set the new style
-    map.value.setStyle(styleSpec)
+    // Trait light to Trait dark: same style, other colours. No setStyle, so
+    // the dataset layers and their tiles are never touched.
+    if (isTraitKey(next) && isTraitKey(previous)) {
+      applyPaintDiff(
+        mapInstance,
+        buildStyle('contour', themeFor(previous)),
+        buildStyle('contour', themeFor(next))
+      )
+      return
+    }
 
-    // Re-add sources and layers after style loads
-    map.value.once('styledata', () => {
-      if (!map.value) return
-
-      // Re-add all sources and layers (strip custom fields id/label before passing to MapLibre)
-      Object.entries(mapConfig.layers).forEach(([, { id, source, layer }]) => {
-        const { id: _id, label: _label, ...sourceSpec } = source as any
-        if (!map.value?.getSource(id)) map.value?.addSource(id, sourceSpec)
-        if (!map.value?.getLayer(layer.id)) map.value?.addLayer(layer)
-      })
-
-      // Restore layer visibility
-      currentLayersVisibility.forEach(({ id, visible }) => {
-        setLayerVisibility(id, visible)
-      })
-    })
-  },
-  { immediate: true }
+    mapInstance.setStyle(styleFor(next), { diff: true, transformStyle: carryDatasetLayers })
+  }
 )
 </script>
 

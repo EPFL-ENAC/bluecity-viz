@@ -1,17 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { MapLayerConfig } from '@/config/layerTypes'
-import { type LayerSpecification } from 'maplibre-gl'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { useCVRPStore, getVehicleColor } from '@/stores/cvrp'
 import { interpolateViridis } from 'd3-scale-chromatic'
-
-type LegendColor = {
-  color: string
-  label: string
-  variable?: string
-}
+import {
+  datasetLegend,
+  trafficLegend as buildTrafficLegend,
+  type LegendColor,
+  type TrafficLegendMode
+} from '@/utils/legendColor'
 
 const props = defineProps<{
   layers: MapLayerConfig[]
@@ -21,114 +20,16 @@ const store = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
 
-/**
- * Generate legend colors for a given layer's paint property.
- * @param layer The MapLibre layer specification.
- * @returns An array of LegendColor or null if no color stops are found.
- */
-const generateLegendColors = (layer: LayerSpecification): LegendColor[] | null => {
-  if (layer.paint) {
-    // Handle fill-extrusion, line-color, or other paint properties
-    const paint = layer.paint as any
-    let paintProperty =
-      paint['fill-color'] ||
-      paint['line-color'] ||
-      paint['fill-extrusion-color'] ||
-      paint['circle-color'] ||
-      null
-
-    if (!paintProperty) return null
-
-    // Handle 'match' expressions for categorical data
-    if (Array.isArray(paintProperty) && paintProperty[0] === 'match') {
-      const variableProperty = paintProperty[1][1]
-      const stops = paintProperty.slice(2)
-      const defaultColor = stops.pop()
-      const legendColors: LegendColor[] = []
-
-      // Process pairs of value-color in match expression
-      for (let i = 0; i < stops.length; i += 2) {
-        const value = stops[i]
-        const color = stops[i + 1]
-
-        // Only include if we have both a label and a color
-        if (value !== undefined && color !== undefined) {
-          legendColors.push({
-            color: color as string,
-            variable: variableProperty,
-            label: Array.isArray(value) ? value.join(', ') : String(value)
-          })
-        }
-      }
-
-      // Add default value if it's a color
-      if (
-        typeof defaultColor === 'string' &&
-        defaultColor !== '#000000' &&
-        defaultColor !== 'transparent'
-      ) {
-        legendColors.push({ color: defaultColor, label: 'Other' })
-      }
-
-      return legendColors
-    }
-
-    // Handle 'interpolate' expressions for continuous data
-    if (
-      Array.isArray(paintProperty) &&
-      paintProperty[0] === 'interpolate' &&
-      paintProperty.length > 3
-    ) {
-      const stops = paintProperty.slice(3) // Skip 'interpolate', 'linear', and the base property
-      const legendColors: LegendColor[] = []
-
-      for (let i = 0; i < stops.length; i += 2) {
-        legendColors.push({ color: stops[i + 1] as string, label: stops[i].toString() })
-      }
-
-      return legendColors
-    }
-  }
-
-  return null
-}
-
-const generateOneLayerWithColors = (layer: MapLayerConfig) => {
-  const colors = generateLegendColors(layer.layer) || []
-  const paint = layer.layer.paint as any
-  const paintProperty =
-    paint['fill-color'] ||
-    paint['line-color'] ||
-    paint['fill-extrusion-color'] ||
-    paint['circle-color'] ||
-    null
-
-  // Check if the layer is categorical based on paint property expression
-  const isCategorical =
-    Array.isArray(paintProperty) && (paintProperty[0] === 'match' || paintProperty[0] === 'case')
-
-  return {
-    ...layer,
-    colors: isCategorical ? colors : colors.reverse(),
-    isCategorical,
-    variable: paintProperty[1][1],
-    gradient: !isCategorical
-      ? `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`
-      : undefined,
-    showZero: false
-  }
-}
-
 const generatedLayersWithColors = computed(() => {
   return props.layers
-    .map((layer: MapLayerConfig) => generateOneLayerWithColors(layer))
+    .map((layer: MapLayerConfig) => datasetLegend(layer))
     .filter((layer) => layer.colors && layer.colors.length > 0)
 })
 
 // Generate traffic analysis legend
 const trafficLegend = computed(() => {
-  // Force reactivity by accessing these values
-  const mode = trafficStore.activeVisualization // Use active visualization instead of legendMode
+  // Read these so the computed tracks them
+  const mode = trafficStore.activeVisualization
   const scale = trafficStore.colorScale
   const min = trafficStore.minValue
   const max = trafficStore.maxValue
@@ -137,171 +38,8 @@ const trafficLegend = computed(() => {
     return null
   }
 
-  const colors: LegendColor[] = []
-  const steps = 40
-
-  if (mode === 'delta') {
-    // Delta mode: show actual min/max values from store (values are vehicle count differences)
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      // Interpolate from max (positive, red) to min (negative, blue)
-      const value = max - t * (max - min)
-      const [r, g, b] = trafficStore.getColor(value)
-      const count = Math.round(value)
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: value >= 0 ? `+${count}` : `${count}`
-      })
-    }
-
-    return {
-      label: 'Traffic Change',
-      unit: 'Vehicle Count Difference',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false,
-      showZero: true
-    }
-  } else if (mode === 'co2_delta') {
-    // CO2 Delta mode: co2_per_km × delta_frequency → g/km
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      const value = max - t * (max - min)
-      const [r, g, b] = trafficStore.getColor(value)
-      const sign = value >= 0 ? '+' : ''
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: `${sign}${value.toFixed(2)} g/km`
-      })
-    }
-
-    return {
-      label: 'CO₂ Emissions Change',
-      unit: 'Δ g CO₂/km (freq-weighted)',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false,
-      showZero: true
-    }
-  } else if (mode === 'co2') {
-    // CO2 mode: fixed scale [CO2_KM_MIN, CO2_KM_MAX]
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      const value = max - t * (max - min)
-      const [r, g, b] = trafficStore.getColor(value)
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: `${Math.round(value)} g/km`
-      })
-    }
-
-    return {
-      label: 'CO₂ Emissions',
-      unit: 'g CO₂/km per use',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false
-    }
-  } else if (mode === 'betweenness') {
-    // Betweenness centrality mode
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      const value = max * (1 - t)
-      const [r, g, b] = trafficStore.getColor(value)
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0)
-      })
-    }
-
-    return {
-      label: 'Betweenness Centrality',
-      unit: 'Norm. edge flow (veh/day)',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false
-    }
-  } else if (mode === 'betweenness_delta') {
-    // Betweenness delta mode
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      const value = max - t * (max - min)
-      const [r, g, b] = trafficStore.getColor(value)
-      const sign = value >= 0 ? '+' : ''
-      const abs = Math.abs(value)
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: `${sign}${abs >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0)}`
-      })
-    }
-
-    return {
-      label: 'Betweenness Change',
-      unit: 'Δ norm. edge flow (veh/day)',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false,
-      showZero: true
-    }
-  } else if (mode === 'delta_relative') {
-    // Sample gradient in symlog-space so the colour ramp looks evenly distributed.
-    // Matches the constant=10 set in the store: linear within ±10%, log beyond.
-    const C = 10
-    const slMax = Math.log(1 + max / C) // max is absRelMax (positive)
-
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1) // t ∈ [0, 1]
-      // Invert the diverging-symlog transform to get the value at this visual position
-      const value =
-        t <= 0.5
-          ? C * (Math.exp((1 - 2 * t) * slMax) - 1) // positive half: t=0 → max, t=0.5 → 0
-          : -(C * (Math.exp((2 * t - 1) * slMax) - 1)) // negative half: t=0.5 → 0, t=1 → -max
-      const [r, g, b] = trafficStore.getColor(value)
-      const sign = value >= 0 ? '+' : ''
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: `${sign}${Math.round(value)}%`
-      })
-    }
-
-    // Format the extreme label nicely (e.g. "+3 000%" instead of "+3000%")
-    const fmtPct = (v: number) => {
-      const sign = v >= 0 ? '+' : ''
-      return `${sign}${Math.round(v).toLocaleString()}%`
-    }
-    colors[0].label = fmtPct(max)
-    colors[colors.length - 1].label = fmtPct(-max)
-
-    return {
-      label: 'Traffic Change (Relative)',
-      unit: `symlog scale  |  linear ≤ ±${C}%`,
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false,
-      showZero: true
-    }
-  } else {
-    // Frequency mode: show actual max frequency from store
-    for (let i = 0; i < steps; i++) {
-      const t = i / (steps - 1)
-      const value = max * (1 - t)
-      const [r, g, b] = trafficStore.getColor(value)
-      colors.push({
-        color: `rgb(${r}, ${g}, ${b})`,
-        label: (value * 100).toFixed(1) + '%'
-      })
-    }
-
-    return {
-      label: 'Edge Usage Frequency',
-      unit: 'Relative Usage',
-      colors,
-      gradient: `linear-gradient(to left, ${colors.map((c) => c.color).join(', ')})`,
-      isCategorical: false
-    }
-  }
+  return buildTrafficLegend(mode as TrafficLegendMode, min, max, trafficStore.getColor)
 })
-
 // Generate CVRP legend
 const cvrpLegend = computed(() => {
   if (!cvrpStore.isOpen || !cvrpStore.hasResult || !cvrpStore.lastResult) return null

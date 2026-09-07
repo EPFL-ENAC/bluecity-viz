@@ -1,50 +1,27 @@
-import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
-import { baseUrl } from '@/config/layerTypes'
+import type { FilterSpecification } from 'maplibre-gl'
+import { defineGroup, defineLayer } from '@/config/defineLayer'
 import type {
-  ColorSpecification,
-  DataDrivenPropertyValueSpecification,
-  LayerSpecification
-} from 'maplibre-gl'
+  CustomSourceSpecification,
+  MapLayerConfig,
+  SequentialEncoding
+} from '@/config/layerTypes'
+import { baseUrl } from '@/config/layerTypes'
 
-const localCorrColorScale: DataDrivenPropertyValueSpecification<ColorSpecification> = [
-  'interpolate',
-  ['linear'],
-  ['to-number', ['get', 'local_corr']],
-  -1,
-  '#d53e4f', // Strong negative correlation (dark red)
-  -0.66,
-  '#fc8d59', // Medium negative correlation (orange-red)
-  -0.33,
-  '#fee08b', // Slight negative correlation (yellow-orange)
-  0,
-  '#ffffbf', // No correlation (light yellow)
-  0.33,
-  '#e6f598', // Slight positive correlation (light green)
-  0.66,
-  '#99d594', // Medium positive correlation (medium green)
-  1,
-  '#3288bd' // Strong positive correlation (dark blue)
-]
+// Local Pearson correlation, red is negative, blue is positive.
+const LOCAL_CORR_ENCODING: SequentialEncoding = {
+  kind: 'sequential',
+  property: 'local_corr',
+  domain: [-1, -0.66, -0.33, 0, 0.33, 0.66, 1],
+  scheme: ['#d53e4f', '#fc8d59', '#fee08b', '#ffffbf', '#e6f598', '#99d594', '#3288bd']
+}
 
-const similarityColorScale: DataDrivenPropertyValueSpecification<ColorSpecification> = [
-  'interpolate',
-  ['linear'],
-  ['to-number', ['get', 'similarity']],
-  0,
-  '#002051', // Very dissimilar (dark blue)
-  0.2,
-  '#1f3e6e', // Strongly dissimilar (medium blue)
-  0.4,
-  '#575c6e', // Moderately dissimilar (blue-gray)
-  0.5,
-  '#7f7c75', // Neutral similarity (gray)
-  0.6,
-  '#a49d78', // Moderately similar (tan)
-  0.8,
-  '#d5c164', // Strongly similar (gold)
-  1,
-  '#fdea45' // Very similar (bright yellow)
-]
+// Similarity, dark blue is very different, yellow is very similar.
+const SIMILARITY_ENCODING: SequentialEncoding = {
+  kind: 'sequential',
+  property: 'similarity',
+  domain: [0, 0.2, 0.4, 0.5, 0.6, 0.8, 1],
+  scheme: ['#002051', '#1f3e6e', '#575c6e', '#7f7c75', '#a49d78', '#d5c164', '#fdea45']
+}
 
 // Accessibility attributes used in filenames and for filtering
 const accessAttributes = [
@@ -96,196 +73,157 @@ const wasteAccessCorrelationSource: CustomSourceSpecification = {
   url: `pmtiles://${baseUrl}/lausanne_corr_waste_access.pmtiles`
 }
 
-export const correlationSources: CustomSourceSpecification[] = [
-  wastePopCorrelationSource,
-  popAccessCorrelationSource,
-  wasteAccessCorrelationSource
-]
+/** The two measures every correlation file holds, one layer each. */
+type Measure = 'localcorr' | 'similarity'
 
-// Generate correlation layers - Population & Waste
-export const wastePopCorrelationLayers: MapLayerConfig[] = [
-  // Local Correlation (Pearson)
-  {
-    id: 'waste_pop_localcorr',
-    label: 'Population & Waste (Local Correlation)',
+const MEASURES = {
+  localcorr: {
+    title: 'Local Correlation',
     unit: 'correlation (-1 to 1)',
-    info: 'Local Pearson correlation between population density and waste collection routes. Blue = negative correlation, Red = positive correlation.',
-    source: wastePopCorrelationSource,
-    layer: {
-      id: 'waste_pop_localcorr-layer',
-      type: 'fill',
-      source: 'waste_pop_localcorr',
-      'source-layer': 'corr_waste_pop',
-      filter: ['==', ['get', 'measure_type'], 'localcorr'],
-      paint: {
-        'fill-color': localCorrColorScale,
-        'fill-opacity': 0.8,
-        'fill-outline-color': 'rgba(0,0,0,0.1)'
-      }
-    } as LayerSpecification
+    encoding: LOCAL_CORR_ENCODING,
+    info: (left: string, right: string) =>
+      `Local Pearson correlation between ${left} and ${right}. Blue = negative correlation, Red = positive correlation.`
   },
-  // Similarity
-  {
-    id: 'waste_pop_similarity',
-    label: 'Population & Waste (Similarity)',
+  similarity: {
+    title: 'Similarity',
     unit: 'similarity (0-1)',
-    info: 'Similarity between population density and waste collection routes. Blue = different, Red = similar.',
-    source: wastePopCorrelationSource,
-    layer: {
-      id: 'waste_pop_similarity-layer',
-      type: 'fill',
-      source: 'waste_pop_similarity',
-      'source-layer': 'corr_waste_pop',
-      filter: ['==', ['get', 'measure_type'], 'similarity'],
-      paint: {
-        'fill-color': similarityColorScale,
-        'fill-opacity': 0.8,
-        'fill-outline-color': 'rgba(0,0,0,0.1)'
-      }
-    } as LayerSpecification
+    encoding: SIMILARITY_ENCODING,
+    info: (left: string, right: string) =>
+      `Similarity between ${left} and ${right}. Blue = different, Red = similar.`
   }
-]
+} as const
 
-// Generate Population-Access correlation layers
-export const popAccessCorrelationLayers: MapLayerConfig[] = [
-  // Local Correlation layers
-  ...accessAttributes.map((attr, index) => ({
-    id: `pop_access_localcorr_${index}`,
-    label: `Population & ${accessLabels[index]} (Local Correlation)`,
-    unit: 'correlation (-1 to 1)',
-    info: `Local Pearson correlation between population density and ${accessLabels[
-      index
-    ].toLowerCase()}. Blue = negative correlation, Red = positive correlation.`,
-    source: popAccessCorrelationSource,
+/** All correlation layers share the same fill, only the filter changes. */
+function correlationLayer(options: {
+  id: string
+  measure: Measure
+  source: CustomSourceSpecification
+  sourceLayer: string
+  /** Names in the label, "Population & Waste (Similarity)". */
+  left: string
+  right: string
+  /** Names in the sentence, "between population density and ...". */
+  leftPhrase: string
+  rightPhrase: string
+  /** Layers of a whole file filter on the measure only. */
+  attribute?: string
+}): MapLayerConfig {
+  const measure = MEASURES[options.measure]
+  const measureFilter: FilterSpecification = ['==', ['get', 'measure_type'], options.measure]
+
+  return defineLayer({
+    id: options.id,
+    label: `${options.left} & ${options.right} (${measure.title})`,
+    unit: measure.unit,
+    info: measure.info(options.leftPhrase, options.rightPhrase),
+    source: options.source,
+    encoding: measure.encoding,
     layer: {
-      id: `pop_access_localcorr_${index}-layer`,
       type: 'fill',
-      source: `pop_access_localcorr_${index}`,
-      'source-layer': 'corr_pop_access',
-      filter: [
-        'all',
-        ['==', ['get', 'measure_type'], 'localcorr'],
-        ['==', ['get', 'access_attr'], attr]
-      ],
+      'source-layer': options.sourceLayer,
+      filter: options.attribute
+        ? ['all', measureFilter, ['==', ['get', 'access_attr'], options.attribute]]
+        : measureFilter,
       paint: {
-        'fill-color': localCorrColorScale,
         'fill-opacity': 0.8,
         'fill-outline-color': 'rgba(0,0,0,0.1)'
       }
-    } as LayerSpecification
-  })),
-  // Similarity layers
-  ...accessAttributes.map((attr, index) => ({
-    id: `pop_access_similarity_${index}`,
-    label: `Population & ${accessLabels[index]} (Similarity)`,
-    unit: 'similarity (0-1)',
-    info: `Similarity between population density and ${accessLabels[
-      index
-    ].toLowerCase()}. Blue = different, Red = similar.`,
-    source: popAccessCorrelationSource,
-    layer: {
-      id: `pop_access_similarity_${index}-layer`,
-      type: 'fill',
-      source: `pop_access_similarity_${index}`,
-      'source-layer': 'corr_pop_access',
-      filter: [
-        'all',
-        ['==', ['get', 'measure_type'], 'similarity'],
-        ['==', ['get', 'access_attr'], attr]
-      ],
-      paint: {
-        'fill-color': similarityColorScale,
-        'fill-opacity': 0.8,
-        'fill-outline-color': 'rgba(0,0,0,0.1)'
-      }
-    } as LayerSpecification
-  }))
-]
+    }
+  })
+}
 
-// Generate Waste-Access correlation layers
-export const wasteAccessCorrelationLayers: MapLayerConfig[] = [
-  // Local Correlation layers
-  ...accessAttributes.map((attr, index) => ({
-    id: `waste_access_localcorr_${index}`,
-    label: `Waste & ${accessLabels[index]} (Local Correlation)`,
-    unit: 'correlation (-1 to 1)',
-    info: `Local Pearson correlation between waste collection density and ${accessLabels[
-      index
-    ].toLowerCase()}. Blue = negative correlation, Red = positive correlation.`,
-    source: wasteAccessCorrelationSource,
-    layer: {
-      id: `waste_access_localcorr_${index}-layer`,
-      type: 'fill',
-      source: `waste_access_localcorr_${index}`,
-      'source-layer': 'corr_waste_access',
-      filter: [
-        'all',
-        ['==', ['get', 'measure_type'], 'localcorr'],
-        ['==', ['get', 'access_attr'], attr]
-      ],
-      paint: {
-        'fill-color': localCorrColorScale,
-        'fill-opacity': 0.8,
-        'fill-outline-color': 'rgba(0,0,0,0.1)'
-      }
-    } as LayerSpecification
-  })),
-  // Similarity layers
-  ...accessAttributes.map((attr, index) => ({
-    id: `waste_access_similarity_${index}`,
-    label: `Waste & ${accessLabels[index]} (Similarity)`,
-    unit: 'similarity (0-1)',
-    info: `Similarity between waste collection density and ${accessLabels[
-      index
-    ].toLowerCase()}. Blue = different, Red = similar.`,
-    source: wasteAccessCorrelationSource,
-    layer: {
-      id: `waste_access_similarity_${index}-layer`,
-      type: 'fill',
-      source: `waste_access_similarity_${index}`,
-      'source-layer': 'corr_waste_access',
-      filter: [
-        'all',
-        ['==', ['get', 'measure_type'], 'similarity'],
-        ['==', ['get', 'access_attr'], attr]
-      ],
-      paint: {
-        'fill-color': similarityColorScale,
-        'fill-opacity': 0.8,
-        'fill-outline-color': 'rgba(0,0,0,0.1)'
-      }
-    } as LayerSpecification
-  }))
-]
+/** One layer per accessibility attribute, for one measure. */
+function accessCorrelationLayers(options: {
+  prefix: string
+  measure: Measure
+  source: CustomSourceSpecification
+  sourceLayer: string
+  left: string
+  leftPhrase: string
+}): MapLayerConfig[] {
+  return accessAttributes.map((attribute, index) =>
+    correlationLayer({
+      id: `${options.prefix}_${options.measure}_${index}`,
+      measure: options.measure,
+      source: options.source,
+      sourceLayer: options.sourceLayer,
+      left: options.left,
+      right: accessLabels[index],
+      leftPhrase: options.leftPhrase,
+      rightPhrase: accessLabels[index].toLowerCase(),
+      attribute
+    })
+  )
+}
 
-// Combine all correlation layers
-export const allCorrelationLayers: MapLayerConfig[] = [
-  ...wastePopCorrelationLayers,
-  ...popAccessCorrelationLayers,
-  ...wasteAccessCorrelationLayers
-]
+export const wastePopCorrelationGroup = defineGroup({
+  id: 'correlation_waste_pop',
+  label: 'Population & Waste Correlation',
+  multiple: false,
+  layers: (['localcorr', 'similarity'] as Measure[]).map((measure) =>
+    correlationLayer({
+      id: `waste_pop_${measure}`,
+      measure,
+      source: wastePopCorrelationSource,
+      sourceLayer: 'corr_waste_pop',
+      left: 'Population',
+      right: 'Waste',
+      leftPhrase: 'population density',
+      rightPhrase: 'waste collection routes'
+    })
+  )
+})
 
-// Export layer groups for mapConfig.ts
+export const popAccessCorrelationGroup = defineGroup({
+  id: 'correlation_pop_access',
+  label: 'Population & Accessibility Correlation',
+  multiple: false,
+  layers: [
+    ...accessCorrelationLayers({
+      prefix: 'pop_access',
+      measure: 'localcorr',
+      source: popAccessCorrelationSource,
+      sourceLayer: 'corr_pop_access',
+      left: 'Population',
+      leftPhrase: 'population density'
+    }),
+    ...accessCorrelationLayers({
+      prefix: 'pop_access',
+      measure: 'similarity',
+      source: popAccessCorrelationSource,
+      sourceLayer: 'corr_pop_access',
+      left: 'Population',
+      leftPhrase: 'population density'
+    })
+  ]
+})
+
+export const wasteAccessCorrelationGroup = defineGroup({
+  id: 'correlation_waste_access',
+  label: 'Waste & Accessibility Correlation',
+  multiple: false,
+  layers: [
+    ...accessCorrelationLayers({
+      prefix: 'waste_access',
+      measure: 'localcorr',
+      source: wasteAccessCorrelationSource,
+      sourceLayer: 'corr_waste_access',
+      left: 'Waste',
+      leftPhrase: 'waste collection density'
+    }),
+    ...accessCorrelationLayers({
+      prefix: 'waste_access',
+      measure: 'similarity',
+      source: wasteAccessCorrelationSource,
+      sourceLayer: 'corr_waste_access',
+      left: 'Waste',
+      leftPhrase: 'waste collection density'
+    })
+  ]
+})
+
 export const correlationLayerGroups = [
-  {
-    id: 'correlation_waste_pop',
-    label: 'Population & Waste Correlation',
-    expanded: false,
-    multiple: false,
-    layers: wastePopCorrelationLayers
-  },
-  {
-    id: 'correlation_pop_access',
-    label: 'Population & Accessibility Correlation',
-    expanded: false,
-    multiple: false,
-    layers: popAccessCorrelationLayers
-  },
-  {
-    id: 'correlation_waste_access',
-    label: 'Waste & Accessibility Correlation',
-    expanded: false,
-    multiple: false,
-    layers: wasteAccessCorrelationLayers
-  }
+  wastePopCorrelationGroup,
+  popAccessCorrelationGroup,
+  wasteAccessCorrelationGroup
 ]

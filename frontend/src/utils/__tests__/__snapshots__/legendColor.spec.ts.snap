@@ -1,0 +1,3980 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`dataset legends > builds the same legend for every layer 1`] = `
+[
+  {
+    "colors": [
+      {
+        "color": "#d53e4f",
+        "label": "3525",
+      },
+      {
+        "color": "#fdae61",
+        "label": "2650",
+      },
+      {
+        "color": "#abdda4",
+        "label": "1800",
+      },
+      {
+        "color": "#66c2a5",
+        "label": "950",
+      },
+      {
+        "color": "#3288bd",
+        "label": "116",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #d53e4f, #fdae61, #abdda4, #66c2a5, #3288bd)",
+    "id": "access_food_shops_walk-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#d53e4f",
+        "label": "3485",
+      },
+      {
+        "color": "#fdae61",
+        "label": "2650",
+      },
+      {
+        "color": "#abdda4",
+        "label": "1800",
+      },
+      {
+        "color": "#66c2a5",
+        "label": "950",
+      },
+      {
+        "color": "#3288bd",
+        "label": "152",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #d53e4f, #fdae61, #abdda4, #66c2a5, #3288bd)",
+    "id": "access_recreation_pois_walk-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#d53e4f",
+        "label": "2081",
+      },
+      {
+        "color": "#fdae61",
+        "label": "1600",
+      },
+      {
+        "color": "#abdda4",
+        "label": "1100",
+      },
+      {
+        "color": "#66c2a5",
+        "label": "650",
+      },
+      {
+        "color": "#3288bd",
+        "label": "154",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #d53e4f, #fdae61, #abdda4, #66c2a5, #3288bd)",
+    "id": "access_school_ebike-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#d53e4f",
+        "label": "1325",
+      },
+      {
+        "color": "#fdae61",
+        "label": "1025",
+      },
+      {
+        "color": "#abdda4",
+        "label": "725",
+      },
+      {
+        "color": "#66c2a5",
+        "label": "425",
+      },
+      {
+        "color": "#3288bd",
+        "label": "128",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #d53e4f, #fdae61, #abdda4, #66c2a5, #3288bd)",
+    "id": "access_school_car_peak-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#ffcdd2",
+        "label": "1",
+      },
+      {
+        "color": "#f5f5f5",
+        "label": "0.9",
+      },
+      {
+        "color": "#c5cae9",
+        "label": "0.8",
+      },
+      {
+        "color": "#7986cb",
+        "label": "0.7",
+      },
+      {
+        "color": "#1a237e",
+        "label": "0.6",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #ffcdd2, #f5f5f5, #c5cae9, #7986cb, #1a237e)",
+    "id": "ratio_schools_ebike_bike-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#b71c1c",
+        "label": "3.62",
+      },
+      {
+        "color": "#e57373",
+        "label": "2.3",
+      },
+      {
+        "color": "#f5f5f5",
+        "label": "1",
+      },
+      {
+        "color": "#7986cb",
+        "label": "0.65",
+      },
+      {
+        "color": "#1a237e",
+        "label": "0.31",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #b71c1c, #e57373, #f5f5f5, #7986cb, #1a237e)",
+    "id": "ratio_schools_ebike_car-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "371330",
+      },
+      {
+        "color": "#66c2a5",
+        "label": "280000",
+      },
+      {
+        "color": "#abdda4",
+        "label": "185000",
+      },
+      {
+        "color": "#fdae61",
+        "label": "95000",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "2336",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #66c2a5, #abdda4, #fdae61, #d53e4f)",
+    "id": "access_jobs_ebike-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "376478",
+      },
+      {
+        "color": "#66c2a5",
+        "label": "285000",
+      },
+      {
+        "color": "#abdda4",
+        "label": "190000",
+      },
+      {
+        "color": "#fdae61",
+        "label": "95000",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "518",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #66c2a5, #abdda4, #fdae61, #d53e4f)",
+    "id": "access_jobs_transit-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "444832",
+      },
+      {
+        "color": "#66c2a5",
+        "label": "340000",
+      },
+      {
+        "color": "#abdda4",
+        "label": "235000",
+      },
+      {
+        "color": "#fdae61",
+        "label": "130000",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "28981",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #66c2a5, #abdda4, #fdae61, #d53e4f)",
+    "id": "access_jobs_car-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#1a237e",
+        "label": "1",
+      },
+      {
+        "color": "#c5cae9",
+        "label": "0.8",
+      },
+      {
+        "color": "#ffcdd2",
+        "label": "0.55",
+      },
+      {
+        "color": "#e57373",
+        "label": "0.3",
+      },
+      {
+        "color": "#b71c1c",
+        "label": "0.1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #1a237e, #c5cae9, #ffcdd2, #e57373, #b71c1c)",
+    "id": "ratio_jobs_transit_car-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#1a237e",
+        "label": "1.07",
+      },
+      {
+        "color": "#c5cae9",
+        "label": "0.8",
+      },
+      {
+        "color": "#ffcdd2",
+        "label": "0.55",
+      },
+      {
+        "color": "#e57373",
+        "label": "0.3",
+      },
+      {
+        "color": "#b71c1c",
+        "label": "0.1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #1a237e, #c5cae9, #ffcdd2, #e57373, #b71c1c)",
+    "id": "ratio_jobs_ebike_car-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#ff0000",
+        "label": "30",
+      },
+      {
+        "color": "#ff9900",
+        "label": "25",
+      },
+      {
+        "color": "#ffff00",
+        "label": "20",
+      },
+      {
+        "color": "#00ffcc",
+        "label": "15",
+      },
+      {
+        "color": "#00ccff",
+        "label": "10",
+      },
+      {
+        "color": "#0066ff",
+        "label": "5",
+      },
+      {
+        "color": "#0000ff",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #ff0000, #ff9900, #ffff00, #00ffcc, #00ccff, #0066ff, #0000ff)",
+    "id": "lausanne_temperature-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#99004c",
+        "label": "300",
+      },
+      {
+        "color": "#99004c",
+        "label": "201",
+      },
+      {
+        "color": "#ff0000",
+        "label": "200",
+      },
+      {
+        "color": "#ff0000",
+        "label": "151",
+      },
+      {
+        "color": "#ff7e00",
+        "label": "150",
+      },
+      {
+        "color": "#ff7e00",
+        "label": "101",
+      },
+      {
+        "color": "#ffff00",
+        "label": "100",
+      },
+      {
+        "color": "#ffff00",
+        "label": "51",
+      },
+      {
+        "color": "#00e400",
+        "label": "50",
+      },
+      {
+        "color": "#00e400",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #99004c, #99004c, #ff0000, #ff0000, #ff7e00, #ff7e00, #ffff00, #ffff00, #00e400, #00e400)",
+    "id": "lausanne_aqi-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3ca0d3",
+        "label": "Fish",
+        "variable": "Group",
+      },
+      {
+        "color": "#9c27b0",
+        "label": "Amphibian",
+        "variable": "Group",
+      },
+      {
+        "color": "#d16b30",
+        "label": "Mammal",
+        "variable": "Group",
+      },
+      {
+        "color": "#2e7d32",
+        "label": "Reptile",
+        "variable": "Group",
+      },
+      {
+        "color": "#e91e63",
+        "label": "Bird",
+        "variable": "Group",
+      },
+      {
+        "color": "#aaaaaa",
+        "label": "Other",
+      },
+    ],
+    "gradient": undefined,
+    "id": "species_observations_by_group-layer",
+    "isCategorical": true,
+    "showZero": false,
+    "variable": "Group",
+  },
+  {
+    "colors": [
+      {
+        "color": "#bd0026",
+        "label": "Critically Endangered",
+        "variable": "Red List",
+      },
+      {
+        "color": "#f03b20",
+        "label": "Endangered",
+        "variable": "Red List",
+      },
+      {
+        "color": "#fd8d3c",
+        "label": "Vulnerable",
+        "variable": "Red List",
+      },
+      {
+        "color": "#fecc5c",
+        "label": "Near Threatened",
+        "variable": "Red List",
+      },
+      {
+        "color": "#ffffb2",
+        "label": "Least Concern",
+        "variable": "Red List",
+      },
+      {
+        "color": "#999999",
+        "label": "Data Deficient",
+        "variable": "Red List",
+      },
+      {
+        "color": "#cccccc",
+        "label": "Not Evaluated",
+        "variable": "Red List",
+      },
+      {
+        "color": "#cccccc",
+        "label": "Other",
+      },
+    ],
+    "gradient": undefined,
+    "id": "species_observations_by_redlist-layer",
+    "isCategorical": true,
+    "showZero": false,
+    "variable": "Red List",
+  },
+  {
+    "colors": [
+      {
+        "color": "#FF8C00",
+        "label": "Organic Waste",
+        "variable": "type",
+      },
+      {
+        "color": "#2E8B57",
+        "label": "Household Waste",
+        "variable": "type",
+      },
+      {
+        "color": "#8A2BE2",
+        "label": "Paper & Cardboard",
+        "variable": "type",
+      },
+      {
+        "color": "#1E90FF",
+        "label": "Glass",
+        "variable": "type",
+      },
+      {
+        "color": "#757575",
+        "label": "Other",
+      },
+    ],
+    "gradient": undefined,
+    "id": "lausanne_waste_routes-layer",
+    "isCategorical": true,
+    "showZero": false,
+    "variable": "type",
+  },
+  {
+    "colors": [
+      {
+        "color": "#FF8C00",
+        "label": "Organic Waste",
+        "variable": "type",
+      },
+      {
+        "color": "#2E8B57",
+        "label": "Household Waste",
+        "variable": "type",
+      },
+      {
+        "color": "#8A2BE2",
+        "label": "Paper & Cardboard",
+        "variable": "type",
+      },
+      {
+        "color": "#1E90FF",
+        "label": "Glass",
+        "variable": "type",
+      },
+      {
+        "color": "#757575",
+        "label": "Other",
+      },
+    ],
+    "gradient": undefined,
+    "id": "lausanne_waste_centroids-layer",
+    "isCategorical": true,
+    "showZero": false,
+    "variable": "type",
+  },
+  {
+    "colors": [
+      {
+        "color": "#440154",
+        "label": "Before 1919",
+        "variable": "Era",
+      },
+      {
+        "color": "#481f70",
+        "label": "1920 – 1945",
+        "variable": "Era",
+      },
+      {
+        "color": "#443983",
+        "label": "1946 – 1960",
+        "variable": "Era",
+      },
+      {
+        "color": "#3b528b",
+        "label": "1961 – 1970",
+        "variable": "Era",
+      },
+      {
+        "color": "#31688e",
+        "label": "1971 – 1980",
+        "variable": "Era",
+      },
+      {
+        "color": "#287c8e",
+        "label": "1981 – 1985",
+        "variable": "Era",
+      },
+      {
+        "color": "#21918c",
+        "label": "1986 – 1990",
+        "variable": "Era",
+      },
+      {
+        "color": "#20a486",
+        "label": "1991 – 1995",
+        "variable": "Era",
+      },
+      {
+        "color": "#35b779",
+        "label": "1996 – 2000",
+        "variable": "Era",
+      },
+      {
+        "color": "#5ec962",
+        "label": "2001 – 2005",
+        "variable": "Era",
+      },
+      {
+        "color": "#90d743",
+        "label": "2006 - 2010",
+        "variable": "Era",
+      },
+      {
+        "color": "#c8e020",
+        "label": "2011 – 2015",
+        "variable": "Era",
+      },
+      {
+        "color": "#fde725",
+        "label": "After 2015",
+        "variable": "Era",
+      },
+      {
+        "color": "#bdbdbd",
+        "label": "Other",
+      },
+    ],
+    "gradient": undefined,
+    "id": "buildings_by_era-layer",
+    "isCategorical": true,
+    "showZero": false,
+    "variable": "Era",
+  },
+  {
+    "colors": [
+      {
+        "color": "#2196F3",
+        "label": "Housing",
+        "variable": "Function",
+      },
+      {
+        "color": "#4CAF50",
+        "label": "Business",
+        "variable": "Function",
+      },
+      {
+        "color": "#FF9800",
+        "label": "Industry",
+        "variable": "Function",
+      },
+      {
+        "color": "#F44336",
+        "label": "Health",
+        "variable": "Function",
+      },
+      {
+        "color": "#9C27B0",
+        "label": "Culture",
+        "variable": "Function",
+      },
+      {
+        "color": "#757575",
+        "label": "Other",
+      },
+    ],
+    "gradient": undefined,
+    "id": "buildings_by_function-layer",
+    "isCategorical": true,
+    "showZero": false,
+    "variable": "Function",
+  },
+  {
+    "colors": [
+      {
+        "color": "#0d47a1",
+        "label": "Housing before 1919",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#1565c0",
+        "label": "Housing 1920 - 1945",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#1976d2",
+        "label": "Housing 1946 - 1960",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#1e88e5",
+        "label": "Housing 1961 - 1980",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#42a5f5",
+        "label": "Housing 1981 - 1990",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#90caf9",
+        "label": "Housing 1991 - 2015",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#bbdefb",
+        "label": "Housing after 2015",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#673ab7",
+        "label": "Housing high",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#2e7d32",
+        "label": "Bus Large",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#66bb6a",
+        "label": "Bus Small",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#e65100",
+        "label": "Ind Large",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#ff9800",
+        "label": "Ind Small",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#b71c1c",
+        "label": "Heal Large",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#ef5350",
+        "label": "Heal Small",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#6a1b9a",
+        "label": "Cult before 1919",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#9c27b0",
+        "label": "Cult 1920 - 1990",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#e1bee7",
+        "label": "Cult 1991 - 2024",
+        "variable": "Archetype",
+      },
+      {
+        "color": "#bdbdbd",
+        "label": "Other",
+      },
+    ],
+    "gradient": undefined,
+    "id": "buildings_by_archetype-layer",
+    "isCategorical": true,
+    "showZero": false,
+    "variable": "Archetype",
+  },
+  {
+    "colors": [],
+    "gradient": "linear-gradient(to left, )",
+    "id": "buildings_outline-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [],
+    "gradient": "linear-gradient(to left, )",
+    "id": "vehicle_tracks-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fde725",
+        "label": "31",
+      },
+      {
+        "color": "#5dc963",
+        "label": "30",
+      },
+      {
+        "color": "#21908d",
+        "label": "20",
+      },
+      {
+        "color": "#3b528b",
+        "label": "10",
+      },
+      {
+        "color": "#440154",
+        "label": "1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fde725, #5dc963, #21908d, #3b528b, #440154)",
+    "id": "vehicle_tracks_by_date-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_pop_localcorr-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_pop_similarity-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "pop_access_localcorr_0-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "pop_access_localcorr_1-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "pop_access_localcorr_2-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "pop_access_localcorr_3-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "pop_access_localcorr_4-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "pop_access_localcorr_5-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "pop_access_localcorr_6-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "pop_access_localcorr_7-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "pop_access_localcorr_8-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "pop_access_localcorr_9-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "pop_access_similarity_0-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "pop_access_similarity_1-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "pop_access_similarity_2-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "pop_access_similarity_3-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "pop_access_similarity_4-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "pop_access_similarity_5-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "pop_access_similarity_6-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "pop_access_similarity_7-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "pop_access_similarity_8-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "pop_access_similarity_9-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_access_localcorr_0-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_access_localcorr_1-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_access_localcorr_2-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_access_localcorr_3-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_access_localcorr_4-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_access_localcorr_5-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_access_localcorr_6-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_access_localcorr_7-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_access_localcorr_8-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3288bd",
+        "label": "1",
+      },
+      {
+        "color": "#99d594",
+        "label": "0.66",
+      },
+      {
+        "color": "#e6f598",
+        "label": "0.33",
+      },
+      {
+        "color": "#ffffbf",
+        "label": "0",
+      },
+      {
+        "color": "#fee08b",
+        "label": "-0.33",
+      },
+      {
+        "color": "#fc8d59",
+        "label": "-0.66",
+      },
+      {
+        "color": "#d53e4f",
+        "label": "-1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3288bd, #99d594, #e6f598, #ffffbf, #fee08b, #fc8d59, #d53e4f)",
+    "id": "waste_access_localcorr_9-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_access_similarity_0-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_access_similarity_1-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_access_similarity_2-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_access_similarity_3-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_access_similarity_4-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_access_similarity_5-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_access_similarity_6-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_access_similarity_7-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_access_similarity_8-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#fdea45",
+        "label": "1",
+      },
+      {
+        "color": "#d5c164",
+        "label": "0.8",
+      },
+      {
+        "color": "#a49d78",
+        "label": "0.6",
+      },
+      {
+        "color": "#7f7c75",
+        "label": "0.5",
+      },
+      {
+        "color": "#575c6e",
+        "label": "0.4",
+      },
+      {
+        "color": "#1f3e6e",
+        "label": "0.2",
+      },
+      {
+        "color": "#002051",
+        "label": "0",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #fdea45, #d5c164, #a49d78, #7f7c75, #575c6e, #1f3e6e, #002051)",
+    "id": "waste_access_similarity_9-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#0d47a1",
+        "label": "1140",
+      },
+      {
+        "color": "#1976d2",
+        "label": "800",
+      },
+      {
+        "color": "#42a5f5",
+        "label": "600",
+      },
+      {
+        "color": "#90caf9",
+        "label": "400",
+      },
+      {
+        "color": "#e3f2fd",
+        "label": "200",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #0d47a1, #1976d2, #42a5f5, #90caf9, #e3f2fd)",
+    "id": "lausanne_pop_density-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#1b5e20",
+        "label": "41",
+      },
+      {
+        "color": "#388e3c",
+        "label": "30",
+      },
+      {
+        "color": "#66bb6a",
+        "label": "20",
+      },
+      {
+        "color": "#a5d6a7",
+        "label": "10",
+      },
+      {
+        "color": "#e8f5e9",
+        "label": "3",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #1b5e20, #388e3c, #66bb6a, #a5d6a7, #e8f5e9)",
+    "id": "lausanne_birth_rate-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#b71c1c",
+        "label": "109",
+      },
+      {
+        "color": "#c62828",
+        "label": "75",
+      },
+      {
+        "color": "#e57373",
+        "label": "50",
+      },
+      {
+        "color": "#ef9a9a",
+        "label": "25",
+      },
+      {
+        "color": "#ffebee",
+        "label": "1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #b71c1c, #c62828, #e57373, #ef9a9a, #ffebee)",
+    "id": "lausanne_death_rate-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#4a148c",
+        "label": "505",
+      },
+      {
+        "color": "#7b1fa2",
+        "label": "375",
+      },
+      {
+        "color": "#ab47bc",
+        "label": "250",
+      },
+      {
+        "color": "#ce93d8",
+        "label": "125",
+      },
+      {
+        "color": "#f3e5f5",
+        "label": "20",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #4a148c, #7b1fa2, #ab47bc, #ce93d8, #f3e5f5)",
+    "id": "lausanne_inmigration_rate-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#e65100",
+        "label": "337",
+      },
+      {
+        "color": "#f57c00",
+        "label": "250",
+      },
+      {
+        "color": "#ffa726",
+        "label": "180",
+      },
+      {
+        "color": "#ffcc80",
+        "label": "110",
+      },
+      {
+        "color": "#fff3e0",
+        "label": "40",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #e65100, #f57c00, #ffa726, #ffcc80, #fff3e0)",
+    "id": "lausanne_outmigration_rate-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#004d40",
+        "label": "1014",
+      },
+      {
+        "color": "#00796b",
+        "label": "750",
+      },
+      {
+        "color": "#26a69a",
+        "label": "500",
+      },
+      {
+        "color": "#80cbc4",
+        "label": "250",
+      },
+      {
+        "color": "#e0f2f1",
+        "label": "2",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #004d40, #00796b, #26a69a, #80cbc4, #e0f2f1)",
+    "id": "lausanne_immigration_rate-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#3e2723",
+        "label": "798",
+      },
+      {
+        "color": "#5d4037",
+        "label": "600",
+      },
+      {
+        "color": "#8d6e63",
+        "label": "400",
+      },
+      {
+        "color": "#bcaaa4",
+        "label": "200",
+      },
+      {
+        "color": "#efebe9",
+        "label": "2",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #3e2723, #5d4037, #8d6e63, #bcaaa4, #efebe9)",
+    "id": "lausanne_emigration_rate-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+  {
+    "colors": [
+      {
+        "color": "#0b4a09",
+        "label": "100",
+      },
+      {
+        "color": "#1a7d17",
+        "label": "50",
+      },
+      {
+        "color": "#3db038",
+        "label": "20",
+      },
+      {
+        "color": "#8ed68a",
+        "label": "5",
+      },
+      {
+        "color": "#d5f0d0",
+        "label": "1",
+      },
+    ],
+    "gradient": "linear-gradient(to left, #0b4a09, #1a7d17, #3db038, #8ed68a, #d5f0d0)",
+    "id": "habitat_density-layer",
+    "isCategorical": false,
+    "showZero": false,
+    "variable": undefined,
+  },
+]
+`;
+
+exports[`traffic legend > builds the betweenness legend 1`] = `
+{
+  "colors": [
+    {
+      "color": "rgb(120, 0, 0)",
+      "label": "120",
+    },
+    {
+      "color": "rgb(117, 0, 0)",
+      "label": "117",
+    },
+    {
+      "color": "rgb(114, 0, 0)",
+      "label": "114",
+    },
+    {
+      "color": "rgb(111, 0, 0)",
+      "label": "111",
+    },
+    {
+      "color": "rgb(108, 0, 0)",
+      "label": "108",
+    },
+    {
+      "color": "rgb(105, 0, 0)",
+      "label": "105",
+    },
+    {
+      "color": "rgb(102, 0, 0)",
+      "label": "102",
+    },
+    {
+      "color": "rgb(98, 0, 0)",
+      "label": "98",
+    },
+    {
+      "color": "rgb(95, 0, 0)",
+      "label": "95",
+    },
+    {
+      "color": "rgb(92, 0, 0)",
+      "label": "92",
+    },
+    {
+      "color": "rgb(89, 0, 0)",
+      "label": "89",
+    },
+    {
+      "color": "rgb(86, 0, 0)",
+      "label": "86",
+    },
+    {
+      "color": "rgb(83, 0, 0)",
+      "label": "83",
+    },
+    {
+      "color": "rgb(80, 0, 0)",
+      "label": "80",
+    },
+    {
+      "color": "rgb(77, 0, 0)",
+      "label": "77",
+    },
+    {
+      "color": "rgb(74, 0, 0)",
+      "label": "74",
+    },
+    {
+      "color": "rgb(71, 0, 0)",
+      "label": "71",
+    },
+    {
+      "color": "rgb(68, 0, 0)",
+      "label": "68",
+    },
+    {
+      "color": "rgb(65, 0, 0)",
+      "label": "65",
+    },
+    {
+      "color": "rgb(62, 0, 0)",
+      "label": "62",
+    },
+    {
+      "color": "rgb(58, 0, 0)",
+      "label": "58",
+    },
+    {
+      "color": "rgb(55, 0, 0)",
+      "label": "55",
+    },
+    {
+      "color": "rgb(52, 0, 0)",
+      "label": "52",
+    },
+    {
+      "color": "rgb(49, 0, 0)",
+      "label": "49",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "46",
+    },
+    {
+      "color": "rgb(43, 0, 0)",
+      "label": "43",
+    },
+    {
+      "color": "rgb(40, 0, 0)",
+      "label": "40",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "37",
+    },
+    {
+      "color": "rgb(34, 0, 0)",
+      "label": "34",
+    },
+    {
+      "color": "rgb(31, 0, 0)",
+      "label": "31",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "28",
+    },
+    {
+      "color": "rgb(25, 0, 0)",
+      "label": "25",
+    },
+    {
+      "color": "rgb(22, 0, 0)",
+      "label": "22",
+    },
+    {
+      "color": "rgb(18, 0, 0)",
+      "label": "18",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "15",
+    },
+    {
+      "color": "rgb(12, 0, 0)",
+      "label": "12",
+    },
+    {
+      "color": "rgb(9, 0, 0)",
+      "label": "9",
+    },
+    {
+      "color": "rgb(6, 0, 0)",
+      "label": "6",
+    },
+    {
+      "color": "rgb(3, 0, 0)",
+      "label": "3",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0",
+    },
+  ],
+  "gradient": "linear-gradient(to left, rgb(120, 0, 0), rgb(117, 0, 0), rgb(114, 0, 0), rgb(111, 0, 0), rgb(108, 0, 0), rgb(105, 0, 0), rgb(102, 0, 0), rgb(98, 0, 0), rgb(95, 0, 0), rgb(92, 0, 0), rgb(89, 0, 0), rgb(86, 0, 0), rgb(83, 0, 0), rgb(80, 0, 0), rgb(77, 0, 0), rgb(74, 0, 0), rgb(71, 0, 0), rgb(68, 0, 0), rgb(65, 0, 0), rgb(62, 0, 0), rgb(58, 0, 0), rgb(55, 0, 0), rgb(52, 0, 0), rgb(49, 0, 0), rgb(46, 0, 0), rgb(43, 0, 0), rgb(40, 0, 0), rgb(37, 0, 0), rgb(34, 0, 0), rgb(31, 0, 0), rgb(28, 0, 0), rgb(25, 0, 0), rgb(22, 0, 0), rgb(18, 0, 0), rgb(15, 0, 0), rgb(12, 0, 0), rgb(9, 0, 0), rgb(6, 0, 0), rgb(3, 0, 0), rgb(0, 0, 0))",
+  "isCategorical": false,
+  "label": "Betweenness Centrality",
+  "unit": "Norm. edge flow (veh/day)",
+}
+`;
+
+exports[`traffic legend > builds the betweenness_delta legend 1`] = `
+{
+  "colors": [
+    {
+      "color": "rgb(120, 0, 0)",
+      "label": "+120",
+    },
+    {
+      "color": "rgb(116, 0, 0)",
+      "label": "+116",
+    },
+    {
+      "color": "rgb(111, 0, 0)",
+      "label": "+111",
+    },
+    {
+      "color": "rgb(107, 0, 0)",
+      "label": "+107",
+    },
+    {
+      "color": "rgb(103, 0, 0)",
+      "label": "+103",
+    },
+    {
+      "color": "rgb(98, 0, 0)",
+      "label": "+98",
+    },
+    {
+      "color": "rgb(94, 0, 0)",
+      "label": "+94",
+    },
+    {
+      "color": "rgb(89, 0, 0)",
+      "label": "+89",
+    },
+    {
+      "color": "rgb(85, 0, 0)",
+      "label": "+85",
+    },
+    {
+      "color": "rgb(81, 0, 0)",
+      "label": "+81",
+    },
+    {
+      "color": "rgb(76, 0, 0)",
+      "label": "+76",
+    },
+    {
+      "color": "rgb(72, 0, 0)",
+      "label": "+72",
+    },
+    {
+      "color": "rgb(68, 0, 0)",
+      "label": "+68",
+    },
+    {
+      "color": "rgb(63, 0, 0)",
+      "label": "+63",
+    },
+    {
+      "color": "rgb(59, 0, 0)",
+      "label": "+59",
+    },
+    {
+      "color": "rgb(55, 0, 0)",
+      "label": "+55",
+    },
+    {
+      "color": "rgb(50, 0, 0)",
+      "label": "+50",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "+46",
+    },
+    {
+      "color": "rgb(42, 0, 0)",
+      "label": "+42",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "+37",
+    },
+    {
+      "color": "rgb(33, 0, 0)",
+      "label": "+33",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "+28",
+    },
+    {
+      "color": "rgb(24, 0, 0)",
+      "label": "+24",
+    },
+    {
+      "color": "rgb(20, 0, 0)",
+      "label": "+20",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "+15",
+    },
+    {
+      "color": "rgb(11, 0, 0)",
+      "label": "+11",
+    },
+    {
+      "color": "rgb(7, 0, 0)",
+      "label": "+7",
+    },
+    {
+      "color": "rgb(2, 0, 0)",
+      "label": "+2",
+    },
+    {
+      "color": "rgb(2, 0, 0)",
+      "label": "-2",
+    },
+    {
+      "color": "rgb(6, 0, 0)",
+      "label": "-6",
+    },
+    {
+      "color": "rgb(11, 0, 0)",
+      "label": "-11",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "-15",
+    },
+    {
+      "color": "rgb(19, 0, 0)",
+      "label": "-19",
+    },
+    {
+      "color": "rgb(24, 0, 0)",
+      "label": "-24",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "-28",
+    },
+    {
+      "color": "rgb(33, 0, 0)",
+      "label": "-33",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "-37",
+    },
+    {
+      "color": "rgb(41, 0, 0)",
+      "label": "-41",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "-46",
+    },
+    {
+      "color": "rgb(50, 0, 0)",
+      "label": "-50",
+    },
+  ],
+  "gradient": "linear-gradient(to left, rgb(120, 0, 0), rgb(116, 0, 0), rgb(111, 0, 0), rgb(107, 0, 0), rgb(103, 0, 0), rgb(98, 0, 0), rgb(94, 0, 0), rgb(89, 0, 0), rgb(85, 0, 0), rgb(81, 0, 0), rgb(76, 0, 0), rgb(72, 0, 0), rgb(68, 0, 0), rgb(63, 0, 0), rgb(59, 0, 0), rgb(55, 0, 0), rgb(50, 0, 0), rgb(46, 0, 0), rgb(42, 0, 0), rgb(37, 0, 0), rgb(33, 0, 0), rgb(28, 0, 0), rgb(24, 0, 0), rgb(20, 0, 0), rgb(15, 0, 0), rgb(11, 0, 0), rgb(7, 0, 0), rgb(2, 0, 0), rgb(2, 0, 0), rgb(6, 0, 0), rgb(11, 0, 0), rgb(15, 0, 0), rgb(19, 0, 0), rgb(24, 0, 0), rgb(28, 0, 0), rgb(33, 0, 0), rgb(37, 0, 0), rgb(41, 0, 0), rgb(46, 0, 0), rgb(50, 0, 0))",
+  "isCategorical": false,
+  "label": "Betweenness Change",
+  "showZero": true,
+  "unit": "Δ norm. edge flow (veh/day)",
+}
+`;
+
+exports[`traffic legend > builds the co2 legend 1`] = `
+{
+  "colors": [
+    {
+      "color": "rgb(120, 0, 0)",
+      "label": "120 g/km",
+    },
+    {
+      "color": "rgb(116, 0, 0)",
+      "label": "116 g/km",
+    },
+    {
+      "color": "rgb(111, 0, 0)",
+      "label": "111 g/km",
+    },
+    {
+      "color": "rgb(107, 0, 0)",
+      "label": "107 g/km",
+    },
+    {
+      "color": "rgb(103, 0, 0)",
+      "label": "103 g/km",
+    },
+    {
+      "color": "rgb(98, 0, 0)",
+      "label": "98 g/km",
+    },
+    {
+      "color": "rgb(94, 0, 0)",
+      "label": "94 g/km",
+    },
+    {
+      "color": "rgb(89, 0, 0)",
+      "label": "89 g/km",
+    },
+    {
+      "color": "rgb(85, 0, 0)",
+      "label": "85 g/km",
+    },
+    {
+      "color": "rgb(81, 0, 0)",
+      "label": "81 g/km",
+    },
+    {
+      "color": "rgb(76, 0, 0)",
+      "label": "76 g/km",
+    },
+    {
+      "color": "rgb(72, 0, 0)",
+      "label": "72 g/km",
+    },
+    {
+      "color": "rgb(68, 0, 0)",
+      "label": "68 g/km",
+    },
+    {
+      "color": "rgb(63, 0, 0)",
+      "label": "63 g/km",
+    },
+    {
+      "color": "rgb(59, 0, 0)",
+      "label": "59 g/km",
+    },
+    {
+      "color": "rgb(55, 0, 0)",
+      "label": "55 g/km",
+    },
+    {
+      "color": "rgb(50, 0, 0)",
+      "label": "50 g/km",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "46 g/km",
+    },
+    {
+      "color": "rgb(42, 0, 0)",
+      "label": "42 g/km",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "37 g/km",
+    },
+    {
+      "color": "rgb(33, 0, 0)",
+      "label": "33 g/km",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "28 g/km",
+    },
+    {
+      "color": "rgb(24, 0, 0)",
+      "label": "24 g/km",
+    },
+    {
+      "color": "rgb(20, 0, 0)",
+      "label": "20 g/km",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "15 g/km",
+    },
+    {
+      "color": "rgb(11, 0, 0)",
+      "label": "11 g/km",
+    },
+    {
+      "color": "rgb(7, 0, 0)",
+      "label": "7 g/km",
+    },
+    {
+      "color": "rgb(2, 0, 0)",
+      "label": "2 g/km",
+    },
+    {
+      "color": "rgb(2, 0, 0)",
+      "label": "-2 g/km",
+    },
+    {
+      "color": "rgb(6, 0, 0)",
+      "label": "-6 g/km",
+    },
+    {
+      "color": "rgb(11, 0, 0)",
+      "label": "-11 g/km",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "-15 g/km",
+    },
+    {
+      "color": "rgb(19, 0, 0)",
+      "label": "-19 g/km",
+    },
+    {
+      "color": "rgb(24, 0, 0)",
+      "label": "-24 g/km",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "-28 g/km",
+    },
+    {
+      "color": "rgb(33, 0, 0)",
+      "label": "-33 g/km",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "-37 g/km",
+    },
+    {
+      "color": "rgb(41, 0, 0)",
+      "label": "-41 g/km",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "-46 g/km",
+    },
+    {
+      "color": "rgb(50, 0, 0)",
+      "label": "-50 g/km",
+    },
+  ],
+  "gradient": "linear-gradient(to left, rgb(120, 0, 0), rgb(116, 0, 0), rgb(111, 0, 0), rgb(107, 0, 0), rgb(103, 0, 0), rgb(98, 0, 0), rgb(94, 0, 0), rgb(89, 0, 0), rgb(85, 0, 0), rgb(81, 0, 0), rgb(76, 0, 0), rgb(72, 0, 0), rgb(68, 0, 0), rgb(63, 0, 0), rgb(59, 0, 0), rgb(55, 0, 0), rgb(50, 0, 0), rgb(46, 0, 0), rgb(42, 0, 0), rgb(37, 0, 0), rgb(33, 0, 0), rgb(28, 0, 0), rgb(24, 0, 0), rgb(20, 0, 0), rgb(15, 0, 0), rgb(11, 0, 0), rgb(7, 0, 0), rgb(2, 0, 0), rgb(2, 0, 0), rgb(6, 0, 0), rgb(11, 0, 0), rgb(15, 0, 0), rgb(19, 0, 0), rgb(24, 0, 0), rgb(28, 0, 0), rgb(33, 0, 0), rgb(37, 0, 0), rgb(41, 0, 0), rgb(46, 0, 0), rgb(50, 0, 0))",
+  "isCategorical": false,
+  "label": "CO₂ Emissions",
+  "unit": "g CO₂/km per use",
+}
+`;
+
+exports[`traffic legend > builds the co2_delta legend 1`] = `
+{
+  "colors": [
+    {
+      "color": "rgb(120, 0, 0)",
+      "label": "+120.00 g/km",
+    },
+    {
+      "color": "rgb(116, 0, 0)",
+      "label": "+115.64 g/km",
+    },
+    {
+      "color": "rgb(111, 0, 0)",
+      "label": "+111.28 g/km",
+    },
+    {
+      "color": "rgb(107, 0, 0)",
+      "label": "+106.92 g/km",
+    },
+    {
+      "color": "rgb(103, 0, 0)",
+      "label": "+102.56 g/km",
+    },
+    {
+      "color": "rgb(98, 0, 0)",
+      "label": "+98.21 g/km",
+    },
+    {
+      "color": "rgb(94, 0, 0)",
+      "label": "+93.85 g/km",
+    },
+    {
+      "color": "rgb(89, 0, 0)",
+      "label": "+89.49 g/km",
+    },
+    {
+      "color": "rgb(85, 0, 0)",
+      "label": "+85.13 g/km",
+    },
+    {
+      "color": "rgb(81, 0, 0)",
+      "label": "+80.77 g/km",
+    },
+    {
+      "color": "rgb(76, 0, 0)",
+      "label": "+76.41 g/km",
+    },
+    {
+      "color": "rgb(72, 0, 0)",
+      "label": "+72.05 g/km",
+    },
+    {
+      "color": "rgb(68, 0, 0)",
+      "label": "+67.69 g/km",
+    },
+    {
+      "color": "rgb(63, 0, 0)",
+      "label": "+63.33 g/km",
+    },
+    {
+      "color": "rgb(59, 0, 0)",
+      "label": "+58.97 g/km",
+    },
+    {
+      "color": "rgb(55, 0, 0)",
+      "label": "+54.62 g/km",
+    },
+    {
+      "color": "rgb(50, 0, 0)",
+      "label": "+50.26 g/km",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "+45.90 g/km",
+    },
+    {
+      "color": "rgb(42, 0, 0)",
+      "label": "+41.54 g/km",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "+37.18 g/km",
+    },
+    {
+      "color": "rgb(33, 0, 0)",
+      "label": "+32.82 g/km",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "+28.46 g/km",
+    },
+    {
+      "color": "rgb(24, 0, 0)",
+      "label": "+24.10 g/km",
+    },
+    {
+      "color": "rgb(20, 0, 0)",
+      "label": "+19.74 g/km",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "+15.38 g/km",
+    },
+    {
+      "color": "rgb(11, 0, 0)",
+      "label": "+11.03 g/km",
+    },
+    {
+      "color": "rgb(7, 0, 0)",
+      "label": "+6.67 g/km",
+    },
+    {
+      "color": "rgb(2, 0, 0)",
+      "label": "+2.31 g/km",
+    },
+    {
+      "color": "rgb(2, 0, 0)",
+      "label": "-2.05 g/km",
+    },
+    {
+      "color": "rgb(6, 0, 0)",
+      "label": "-6.41 g/km",
+    },
+    {
+      "color": "rgb(11, 0, 0)",
+      "label": "-10.77 g/km",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "-15.13 g/km",
+    },
+    {
+      "color": "rgb(19, 0, 0)",
+      "label": "-19.49 g/km",
+    },
+    {
+      "color": "rgb(24, 0, 0)",
+      "label": "-23.85 g/km",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "-28.21 g/km",
+    },
+    {
+      "color": "rgb(33, 0, 0)",
+      "label": "-32.56 g/km",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "-36.92 g/km",
+    },
+    {
+      "color": "rgb(41, 0, 0)",
+      "label": "-41.28 g/km",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "-45.64 g/km",
+    },
+    {
+      "color": "rgb(50, 0, 0)",
+      "label": "-50.00 g/km",
+    },
+  ],
+  "gradient": "linear-gradient(to left, rgb(120, 0, 0), rgb(116, 0, 0), rgb(111, 0, 0), rgb(107, 0, 0), rgb(103, 0, 0), rgb(98, 0, 0), rgb(94, 0, 0), rgb(89, 0, 0), rgb(85, 0, 0), rgb(81, 0, 0), rgb(76, 0, 0), rgb(72, 0, 0), rgb(68, 0, 0), rgb(63, 0, 0), rgb(59, 0, 0), rgb(55, 0, 0), rgb(50, 0, 0), rgb(46, 0, 0), rgb(42, 0, 0), rgb(37, 0, 0), rgb(33, 0, 0), rgb(28, 0, 0), rgb(24, 0, 0), rgb(20, 0, 0), rgb(15, 0, 0), rgb(11, 0, 0), rgb(7, 0, 0), rgb(2, 0, 0), rgb(2, 0, 0), rgb(6, 0, 0), rgb(11, 0, 0), rgb(15, 0, 0), rgb(19, 0, 0), rgb(24, 0, 0), rgb(28, 0, 0), rgb(33, 0, 0), rgb(37, 0, 0), rgb(41, 0, 0), rgb(46, 0, 0), rgb(50, 0, 0))",
+  "isCategorical": false,
+  "label": "CO₂ Emissions Change",
+  "showZero": true,
+  "unit": "Δ g CO₂/km (freq-weighted)",
+}
+`;
+
+exports[`traffic legend > builds the delta legend 1`] = `
+{
+  "colors": [
+    {
+      "color": "rgb(120, 0, 0)",
+      "label": "+120",
+    },
+    {
+      "color": "rgb(116, 0, 0)",
+      "label": "+116",
+    },
+    {
+      "color": "rgb(111, 0, 0)",
+      "label": "+111",
+    },
+    {
+      "color": "rgb(107, 0, 0)",
+      "label": "+107",
+    },
+    {
+      "color": "rgb(103, 0, 0)",
+      "label": "+103",
+    },
+    {
+      "color": "rgb(98, 0, 0)",
+      "label": "+98",
+    },
+    {
+      "color": "rgb(94, 0, 0)",
+      "label": "+94",
+    },
+    {
+      "color": "rgb(89, 0, 0)",
+      "label": "+89",
+    },
+    {
+      "color": "rgb(85, 0, 0)",
+      "label": "+85",
+    },
+    {
+      "color": "rgb(81, 0, 0)",
+      "label": "+81",
+    },
+    {
+      "color": "rgb(76, 0, 0)",
+      "label": "+76",
+    },
+    {
+      "color": "rgb(72, 0, 0)",
+      "label": "+72",
+    },
+    {
+      "color": "rgb(68, 0, 0)",
+      "label": "+68",
+    },
+    {
+      "color": "rgb(63, 0, 0)",
+      "label": "+63",
+    },
+    {
+      "color": "rgb(59, 0, 0)",
+      "label": "+59",
+    },
+    {
+      "color": "rgb(55, 0, 0)",
+      "label": "+55",
+    },
+    {
+      "color": "rgb(50, 0, 0)",
+      "label": "+50",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "+46",
+    },
+    {
+      "color": "rgb(42, 0, 0)",
+      "label": "+42",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "+37",
+    },
+    {
+      "color": "rgb(33, 0, 0)",
+      "label": "+33",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "+28",
+    },
+    {
+      "color": "rgb(24, 0, 0)",
+      "label": "+24",
+    },
+    {
+      "color": "rgb(20, 0, 0)",
+      "label": "+20",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "+15",
+    },
+    {
+      "color": "rgb(11, 0, 0)",
+      "label": "+11",
+    },
+    {
+      "color": "rgb(7, 0, 0)",
+      "label": "+7",
+    },
+    {
+      "color": "rgb(2, 0, 0)",
+      "label": "+2",
+    },
+    {
+      "color": "rgb(2, 0, 0)",
+      "label": "-2",
+    },
+    {
+      "color": "rgb(6, 0, 0)",
+      "label": "-6",
+    },
+    {
+      "color": "rgb(11, 0, 0)",
+      "label": "-11",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "-15",
+    },
+    {
+      "color": "rgb(19, 0, 0)",
+      "label": "-19",
+    },
+    {
+      "color": "rgb(24, 0, 0)",
+      "label": "-24",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "-28",
+    },
+    {
+      "color": "rgb(33, 0, 0)",
+      "label": "-33",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "-37",
+    },
+    {
+      "color": "rgb(41, 0, 0)",
+      "label": "-41",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "-46",
+    },
+    {
+      "color": "rgb(50, 0, 0)",
+      "label": "-50",
+    },
+  ],
+  "gradient": "linear-gradient(to left, rgb(120, 0, 0), rgb(116, 0, 0), rgb(111, 0, 0), rgb(107, 0, 0), rgb(103, 0, 0), rgb(98, 0, 0), rgb(94, 0, 0), rgb(89, 0, 0), rgb(85, 0, 0), rgb(81, 0, 0), rgb(76, 0, 0), rgb(72, 0, 0), rgb(68, 0, 0), rgb(63, 0, 0), rgb(59, 0, 0), rgb(55, 0, 0), rgb(50, 0, 0), rgb(46, 0, 0), rgb(42, 0, 0), rgb(37, 0, 0), rgb(33, 0, 0), rgb(28, 0, 0), rgb(24, 0, 0), rgb(20, 0, 0), rgb(15, 0, 0), rgb(11, 0, 0), rgb(7, 0, 0), rgb(2, 0, 0), rgb(2, 0, 0), rgb(6, 0, 0), rgb(11, 0, 0), rgb(15, 0, 0), rgb(19, 0, 0), rgb(24, 0, 0), rgb(28, 0, 0), rgb(33, 0, 0), rgb(37, 0, 0), rgb(41, 0, 0), rgb(46, 0, 0), rgb(50, 0, 0))",
+  "isCategorical": false,
+  "label": "Traffic Change",
+  "showZero": true,
+  "unit": "Vehicle Count Difference",
+}
+`;
+
+exports[`traffic legend > builds the delta_relative legend 1`] = `
+{
+  "colors": [
+    {
+      "color": "rgb(120, 0, 0)",
+      "label": "+120%",
+    },
+    {
+      "color": "rgb(104, 0, 0)",
+      "label": "+104%",
+    },
+    {
+      "color": "rgb(90, 0, 0)",
+      "label": "+90%",
+    },
+    {
+      "color": "rgb(78, 0, 0)",
+      "label": "+78%",
+    },
+    {
+      "color": "rgb(67, 0, 0)",
+      "label": "+67%",
+    },
+    {
+      "color": "rgb(57, 0, 0)",
+      "label": "+57%",
+    },
+    {
+      "color": "rgb(49, 0, 0)",
+      "label": "+49%",
+    },
+    {
+      "color": "rgb(42, 0, 0)",
+      "label": "+42%",
+    },
+    {
+      "color": "rgb(35, 0, 0)",
+      "label": "+35%",
+    },
+    {
+      "color": "rgb(30, 0, 0)",
+      "label": "+30%",
+    },
+    {
+      "color": "rgb(25, 0, 0)",
+      "label": "+25%",
+    },
+    {
+      "color": "rgb(21, 0, 0)",
+      "label": "+21%",
+    },
+    {
+      "color": "rgb(17, 0, 0)",
+      "label": "+17%",
+    },
+    {
+      "color": "rgb(14, 0, 0)",
+      "label": "+14%",
+    },
+    {
+      "color": "rgb(11, 0, 0)",
+      "label": "+11%",
+    },
+    {
+      "color": "rgb(8, 0, 0)",
+      "label": "+8%",
+    },
+    {
+      "color": "rgb(6, 0, 0)",
+      "label": "+6%",
+    },
+    {
+      "color": "rgb(4, 0, 0)",
+      "label": "+4%",
+    },
+    {
+      "color": "rgb(2, 0, 0)",
+      "label": "+2%",
+    },
+    {
+      "color": "rgb(1, 0, 0)",
+      "label": "+1%",
+    },
+    {
+      "color": "rgb(1, 0, 0)",
+      "label": "-1%",
+    },
+    {
+      "color": "rgb(2, 0, 0)",
+      "label": "-2%",
+    },
+    {
+      "color": "rgb(4, 0, 0)",
+      "label": "-4%",
+    },
+    {
+      "color": "rgb(6, 0, 0)",
+      "label": "-6%",
+    },
+    {
+      "color": "rgb(8, 0, 0)",
+      "label": "-8%",
+    },
+    {
+      "color": "rgb(11, 0, 0)",
+      "label": "-11%",
+    },
+    {
+      "color": "rgb(14, 0, 0)",
+      "label": "-14%",
+    },
+    {
+      "color": "rgb(17, 0, 0)",
+      "label": "-17%",
+    },
+    {
+      "color": "rgb(21, 0, 0)",
+      "label": "-21%",
+    },
+    {
+      "color": "rgb(25, 0, 0)",
+      "label": "-25%",
+    },
+    {
+      "color": "rgb(30, 0, 0)",
+      "label": "-30%",
+    },
+    {
+      "color": "rgb(35, 0, 0)",
+      "label": "-35%",
+    },
+    {
+      "color": "rgb(42, 0, 0)",
+      "label": "-42%",
+    },
+    {
+      "color": "rgb(49, 0, 0)",
+      "label": "-49%",
+    },
+    {
+      "color": "rgb(57, 0, 0)",
+      "label": "-57%",
+    },
+    {
+      "color": "rgb(67, 0, 0)",
+      "label": "-67%",
+    },
+    {
+      "color": "rgb(78, 0, 0)",
+      "label": "-78%",
+    },
+    {
+      "color": "rgb(90, 0, 0)",
+      "label": "-90%",
+    },
+    {
+      "color": "rgb(104, 0, 0)",
+      "label": "-104%",
+    },
+    {
+      "color": "rgb(120, 0, 0)",
+      "label": "-120%",
+    },
+  ],
+  "gradient": "linear-gradient(to left, rgb(120, 0, 0), rgb(104, 0, 0), rgb(90, 0, 0), rgb(78, 0, 0), rgb(67, 0, 0), rgb(57, 0, 0), rgb(49, 0, 0), rgb(42, 0, 0), rgb(35, 0, 0), rgb(30, 0, 0), rgb(25, 0, 0), rgb(21, 0, 0), rgb(17, 0, 0), rgb(14, 0, 0), rgb(11, 0, 0), rgb(8, 0, 0), rgb(6, 0, 0), rgb(4, 0, 0), rgb(2, 0, 0), rgb(1, 0, 0), rgb(1, 0, 0), rgb(2, 0, 0), rgb(4, 0, 0), rgb(6, 0, 0), rgb(8, 0, 0), rgb(11, 0, 0), rgb(14, 0, 0), rgb(17, 0, 0), rgb(21, 0, 0), rgb(25, 0, 0), rgb(30, 0, 0), rgb(35, 0, 0), rgb(42, 0, 0), rgb(49, 0, 0), rgb(57, 0, 0), rgb(67, 0, 0), rgb(78, 0, 0), rgb(90, 0, 0), rgb(104, 0, 0), rgb(120, 0, 0))",
+  "isCategorical": false,
+  "label": "Traffic Change (Relative)",
+  "showZero": true,
+  "unit": "symlog scale  |  linear ≤ ±10%",
+}
+`;
+
+exports[`traffic legend > builds the frequency legend 1`] = `
+{
+  "colors": [
+    {
+      "color": "rgb(120, 0, 0)",
+      "label": "12000.0%",
+    },
+    {
+      "color": "rgb(117, 0, 0)",
+      "label": "11692.3%",
+    },
+    {
+      "color": "rgb(114, 0, 0)",
+      "label": "11384.6%",
+    },
+    {
+      "color": "rgb(111, 0, 0)",
+      "label": "11076.9%",
+    },
+    {
+      "color": "rgb(108, 0, 0)",
+      "label": "10769.2%",
+    },
+    {
+      "color": "rgb(105, 0, 0)",
+      "label": "10461.5%",
+    },
+    {
+      "color": "rgb(102, 0, 0)",
+      "label": "10153.8%",
+    },
+    {
+      "color": "rgb(98, 0, 0)",
+      "label": "9846.2%",
+    },
+    {
+      "color": "rgb(95, 0, 0)",
+      "label": "9538.5%",
+    },
+    {
+      "color": "rgb(92, 0, 0)",
+      "label": "9230.8%",
+    },
+    {
+      "color": "rgb(89, 0, 0)",
+      "label": "8923.1%",
+    },
+    {
+      "color": "rgb(86, 0, 0)",
+      "label": "8615.4%",
+    },
+    {
+      "color": "rgb(83, 0, 0)",
+      "label": "8307.7%",
+    },
+    {
+      "color": "rgb(80, 0, 0)",
+      "label": "8000.0%",
+    },
+    {
+      "color": "rgb(77, 0, 0)",
+      "label": "7692.3%",
+    },
+    {
+      "color": "rgb(74, 0, 0)",
+      "label": "7384.6%",
+    },
+    {
+      "color": "rgb(71, 0, 0)",
+      "label": "7076.9%",
+    },
+    {
+      "color": "rgb(68, 0, 0)",
+      "label": "6769.2%",
+    },
+    {
+      "color": "rgb(65, 0, 0)",
+      "label": "6461.5%",
+    },
+    {
+      "color": "rgb(62, 0, 0)",
+      "label": "6153.8%",
+    },
+    {
+      "color": "rgb(58, 0, 0)",
+      "label": "5846.2%",
+    },
+    {
+      "color": "rgb(55, 0, 0)",
+      "label": "5538.5%",
+    },
+    {
+      "color": "rgb(52, 0, 0)",
+      "label": "5230.8%",
+    },
+    {
+      "color": "rgb(49, 0, 0)",
+      "label": "4923.1%",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "4615.4%",
+    },
+    {
+      "color": "rgb(43, 0, 0)",
+      "label": "4307.7%",
+    },
+    {
+      "color": "rgb(40, 0, 0)",
+      "label": "4000.0%",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "3692.3%",
+    },
+    {
+      "color": "rgb(34, 0, 0)",
+      "label": "3384.6%",
+    },
+    {
+      "color": "rgb(31, 0, 0)",
+      "label": "3076.9%",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "2769.2%",
+    },
+    {
+      "color": "rgb(25, 0, 0)",
+      "label": "2461.5%",
+    },
+    {
+      "color": "rgb(22, 0, 0)",
+      "label": "2153.8%",
+    },
+    {
+      "color": "rgb(18, 0, 0)",
+      "label": "1846.2%",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "1538.5%",
+    },
+    {
+      "color": "rgb(12, 0, 0)",
+      "label": "1230.8%",
+    },
+    {
+      "color": "rgb(9, 0, 0)",
+      "label": "923.1%",
+    },
+    {
+      "color": "rgb(6, 0, 0)",
+      "label": "615.4%",
+    },
+    {
+      "color": "rgb(3, 0, 0)",
+      "label": "307.7%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+  ],
+  "gradient": "linear-gradient(to left, rgb(120, 0, 0), rgb(117, 0, 0), rgb(114, 0, 0), rgb(111, 0, 0), rgb(108, 0, 0), rgb(105, 0, 0), rgb(102, 0, 0), rgb(98, 0, 0), rgb(95, 0, 0), rgb(92, 0, 0), rgb(89, 0, 0), rgb(86, 0, 0), rgb(83, 0, 0), rgb(80, 0, 0), rgb(77, 0, 0), rgb(74, 0, 0), rgb(71, 0, 0), rgb(68, 0, 0), rgb(65, 0, 0), rgb(62, 0, 0), rgb(58, 0, 0), rgb(55, 0, 0), rgb(52, 0, 0), rgb(49, 0, 0), rgb(46, 0, 0), rgb(43, 0, 0), rgb(40, 0, 0), rgb(37, 0, 0), rgb(34, 0, 0), rgb(31, 0, 0), rgb(28, 0, 0), rgb(25, 0, 0), rgb(22, 0, 0), rgb(18, 0, 0), rgb(15, 0, 0), rgb(12, 0, 0), rgb(9, 0, 0), rgb(6, 0, 0), rgb(3, 0, 0), rgb(0, 0, 0))",
+  "isCategorical": false,
+  "label": "Edge Usage Frequency",
+  "unit": "Relative Usage",
+}
+`;
+
+exports[`traffic legend > builds the same legend with a zero range 1`] = `
+{
+  "colors": [
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0.0%",
+    },
+  ],
+  "gradient": "linear-gradient(to left, rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0), rgb(0, 0, 0))",
+  "isCategorical": false,
+  "label": "Edge Usage Frequency",
+  "unit": "Relative Usage",
+}
+`;
