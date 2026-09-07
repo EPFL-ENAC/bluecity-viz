@@ -70,3 +70,16 @@ load_env_worktree() {
 worktree_path_for() {
   git -C "$ROOT" worktree list --porcelain | awk -v b="refs/heads/$1" '/^worktree /{p=$2} $0=="branch "b{print p}'
 }
+# Claude's sandbox bind-mounts its deny list over a worktree and leaves the mount
+# points behind as 0-byte files and empty dirs (.bashrc, .idea, .claude/hooks,
+# backend/.mcp.json, ...). git lists them as untracked, so they block a land or
+# a wt-done. Drop them: empty and untracked, nothing is lost (git never keeps an
+# empty dir anyway). Run it from the host, inside the sandbox they are mounts.
+drop_sandbox_stubs() {
+  local wt=$1 f
+  while IFS= read -r f; do
+    if [ -f "$wt/$f" ] && [ ! -s "$wt/$f" ]; then rm -f "$wt/$f" && echo "dropped sandbox stub $f"; fi
+  done < <(git -C "$wt" ls-files --others --exclude-standard)
+  find "$wt" -mindepth 1 -maxdepth 3 -type d -empty \
+    -not -path "$wt/.git*" -not -path "*/node_modules/*" -not -path "*/.venv/*" -delete 2>/dev/null || true
+}
