@@ -68,6 +68,8 @@ class GraphInfoResponse(BaseModel):
     edge_count: int
     sample_nodes: List[int]
     od_pairs: int = 0
+    od_origins: int = 0
+    n_destinations_per_origin: Optional[int] = None
 
 
 @router.get("/graph-info", response_model=GraphInfoResponse)

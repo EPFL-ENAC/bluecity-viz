@@ -30,6 +30,7 @@ import anyio.to_thread
 import numpy as np
 import osmnx as ox
 
+from app.config import settings
 from app.models.route import (
     EdgeModification,
     ImpactStatistics,
@@ -207,10 +208,15 @@ class GraphService:
         if sampling_method == "research":
             from app.services.node_sampling_service import generate_research_based_pairs
 
-            logger.info("[STARTUP] research-based sampling, %d OD pairs asked", count)
+            # main.py still passes count=500, which the old sampler ignored: the
+            # real size was n_origins x n_destinations_per_origin. The size is a
+            # setting now. Drop the argument in main.py when that file is free.
+            n_pairs = settings.od_pairs
+            if count != n_pairs:
+                logger.info("[STARTUP] ignoring count=%s, using OD_PAIRS=%d", count, n_pairs)
             with self.lock:
                 self.default_pairs, self.od_nodes = generate_research_based_pairs(
-                    self.graph, n_pairs=count, config=config, seed=seed, return_nodes=True
+                    self.graph, n_pairs=n_pairs, config=config, seed=seed, return_nodes=True
                 )
         else:
             logger.info("[STARTUP] simple random sampling, %d OD pairs", count)
@@ -675,6 +681,12 @@ class GraphService:
                 "edge_count": len(self.graph.edges),
                 "sample_nodes": list(self.graph.nodes())[:20],
                 "od_pairs": len(self.default_pairs) if self.default_pairs else 0,
+                "od_origins": len({p.origin for p in self.default_pairs})
+                if self.default_pairs
+                else 0,
+                "n_destinations_per_origin": (
+                    self.sampling_config.n_destinations_per_origin if self.sampling_config else None
+                ),
             }
 
     def get_edge_geometries(self, limit: Optional[int] = None) -> List[dict]:

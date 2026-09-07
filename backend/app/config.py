@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     graph_path: str = "data/lausanne.graphml"
     default_weight: str = "travel_time"
 
+    # Number of OD pairs routed at startup. Every frequency, betweenness and
+    # CO2 value a user sees comes from this set, so changing it changes the
+    # results. The default is what the code produced before the count was a
+    # real setting (382 origin draws x 200 destinations).
+    od_pairs: int = 76_400
+
     # CVRP settings
     # Directory containing *_final_clustered_centroids.csv files.
     cvrp_centroids_dir: str = "data"
