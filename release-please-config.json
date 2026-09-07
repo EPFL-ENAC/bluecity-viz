@@ -4,6 +4,7 @@
   "packages": {
     ".": {
       "package-name": "bluecity-viz",
+      "include-component-in-tag": false,
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         {
