@@ -6,9 +6,8 @@ import BcRow from '@/components/ui/BcRow.vue'
 import ShareDialog from '@/components/dialogs/ShareDialog.vue'
 import DeleteDialog from '@/components/dialogs/DeleteDialog.vue'
 
-// Use the layers store
+// Use the layers store. initializeInvestigations() is called once by HomeView.
 const layersStore = useLayersStore()
-layersStore.initializeInvestigations()
 
 // Share functionality
 const showShareDialog = ref(false)
