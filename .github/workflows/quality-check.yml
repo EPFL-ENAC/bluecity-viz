@@ -16,6 +16,9 @@ jobs:
 
       - name: Check commit messages
         uses: wagoid/commitlint-github-action@v6
+        with:
+          # commits inside a merged branch were linted on their own PR
+          firstParent: true
 
   frontend-quality:
     runs-on: ubuntu-latest
