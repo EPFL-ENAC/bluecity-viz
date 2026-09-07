@@ -6,12 +6,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from app.models.route import (
-    EdgeModification,
-    GraphData,
-    GraphEdge,
-    PathGeometry,
-)
+from app.models.route import EdgeModification, PathGeometry
 from app.services.co2_calculator import CO2Calculator
 
 logger = logging.getLogger(__name__)
@@ -374,20 +369,48 @@ def restore_edge_modifications(
 # ── Graph Serialization ───────────────────────────────────────────────────────
 
 
+def edge_coordinates(graph, u, v, data) -> List[List[float]]:
+    """Coordinates of an edge, rounded to 6 decimals (about 10 cm)."""
+    if "geometry" in data:
+        return [[round(lon, 6), round(lat, 6)] for lon, lat in data["geometry"].coords]
+    return [
+        [round(graph.nodes[u]["x"], 6), round(graph.nodes[u]["y"], 6)],
+        [round(graph.nodes[v]["x"], 6), round(graph.nodes[v]["y"], 6)],
+    ]
+
+
+def habitat_geojson(graph) -> dict:
+    """Habitat density per edge as a GeoJSON FeatureCollection."""
+    features = []
+    for u, v, data in graph.edges(data=True):
+        habitat = float(data.get("habitat_area_m2", 0.0) or 0.0)
+        if habitat <= 0:
+            continue
+        length = float(data.get("length", 1.0) or 1.0)
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": edge_coordinates(graph, u, v, data),
+                },
+                "properties": {
+                    "u": int(u),
+                    "v": int(v),
+                    "habitat_density_m2_per_m": round(habitat / length if length > 0 else 0.0, 4),
+                },
+            }
+        )
+    return {"type": "FeatureCollection", "features": features}
+
+
 def get_edge_geometries(graph, limit: Optional[int] = None) -> List[dict]:
     """Get edge geometries and attributes for Deck.gl visualization."""
     edges = []
     for i, (u, v, data) in enumerate(graph.edges(data=True)):
         if limit and i >= limit:
             break
-        coords = (
-            [[lon, lat] for lon, lat in data["geometry"].coords]
-            if "geometry" in data
-            else [
-                [graph.nodes[u]["x"], graph.nodes[u]["y"]],
-                [graph.nodes[v]["x"], graph.nodes[v]["y"]],
-            ]
-        )
+        coords = edge_coordinates(graph, u, v, data)
         name_raw = data.get("name")
         name = (
             (name_raw[0] if name_raw else None)
@@ -413,18 +436,11 @@ def get_edge_geometries(graph, limit: Optional[int] = None) -> List[dict]:
     return edges
 
 
-def get_graph_data(graph) -> GraphData:
-    """Get complete graph data for visualization."""
+def get_graph_data(graph) -> dict:
+    """Get complete graph data for visualization, as plain dicts."""
     edges = []
     for u, v, d in graph.edges(data=True):
-        coords = (
-            [[lon, lat] for lon, lat in d["geometry"].coords]
-            if "geometry" in d
-            else [
-                [graph.nodes[u]["x"], graph.nodes[u]["y"]],
-                [graph.nodes[v]["x"], graph.nodes[v]["y"]],
-            ]
-        )
+        coords = edge_coordinates(graph, u, v, d)
         name_raw = d.get("name")
         name = (
             " - ".join(str(n) for n in name_raw if n)
@@ -433,22 +449,22 @@ def get_graph_data(graph) -> GraphData:
         )
         highway_raw = d.get("highway", "Unknown")
         edges.append(
-            GraphEdge(
-                u=u,
-                v=v,
-                geometry=PathGeometry(coordinates=coords),
-                name=name,
-                highway=(highway_raw[0] if isinstance(highway_raw, list) else highway_raw),
-                speed_kph=d.get("speed_kph"),
-                length=d.get("length"),
-                travel_time=d.get("travel_time"),
-                bus_route_count=int(d.get("bus_route_count", 0) or 0),
-                bus_route_refs=str(d.get("bus_route_refs", "") or ""),
-                habitat_area_m2=float(d.get("habitat_area_m2", 0.0) or 0.0),
-            )
+            {
+                "u": int(u),
+                "v": int(v),
+                "geometry": {"coordinates": coords},
+                "name": name,
+                "highway": (highway_raw[0] if isinstance(highway_raw, list) else highway_raw),
+                "speed_kph": d.get("speed_kph"),
+                "length": d.get("length"),
+                "travel_time": d.get("travel_time"),
+                "bus_route_count": int(d.get("bus_route_count", 0) or 0),
+                "bus_route_refs": str(d.get("bus_route_refs", "") or ""),
+                "habitat_area_m2": float(d.get("habitat_area_m2", 0.0) or 0.0),
+            }
         )
-    return GraphData(
-        edges=edges,
-        node_count=len(graph.nodes),
-        edge_count=len(graph.edges),
-    )
+    return {
+        "edges": edges,
+        "node_count": len(graph.nodes),
+        "edge_count": len(graph.edges),
+    }
