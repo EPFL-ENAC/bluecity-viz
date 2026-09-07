@@ -23,6 +23,11 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 30
+    ignore:
+      # the node types follow the node runtime (frontend/.nvmrc, Dockerfile).
+      # we bump them by hand when we move node, not before.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # one PR for all the small stuff, majors stay on their own
       frontend-minor:
@@ -45,6 +50,13 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 30
+    ignore:
+      # 0.14 reworked the model API (Location, index-based Depot/Client,
+      # activities instead of trips) and cvrp_service.py breaks on it.
+      # The bound in pyproject.toml is not enough: dependabot just raises
+      # it. Drop this entry once someone does the migration.
+      - dependency-name: "pyvrp"
+        versions: [">=0.14"]
     groups:
       backend-minor:
         update-types:

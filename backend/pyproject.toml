@@ -1,6 +1,6 @@
 [project]
 name = "bluecity-backend"
-version = "0.1.0"
+version = "0.2.0"
 description = "FastAPI backend for traffic analysis and route optimization"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -19,7 +19,10 @@ dependencies = [
     "shapely>=2.0.0",
     "scipy>=1.11.0",
     "igraph>=1.0.0",
-    "pyvrp>=0.13.3",
+    # 0.14 reworked the model API (Location, index-based Depot/Client,
+    # activities instead of trips). Migration of cvrp_service.py is a
+    # separate job, so we stay under it for now.
+    "pyvrp>=0.13.3,<0.14",
     "scikit-learn>=1.8.0",
     "orjson>=3.12.0",
 ]

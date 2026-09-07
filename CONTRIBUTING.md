@@ -9,7 +9,7 @@ quick start.
 
 ## Setup
 
-You need Node 22 (see `frontend/.nvmrc`), pnpm, Python 3.12 with
+You need Node 24 (see `frontend/.nvmrc`), pnpm, Python 3.12 with
 [uv](https://docs.astral.sh/uv/), and GNU Make.
 
 ```bash
