@@ -176,7 +176,8 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
         oneway,
         at: pathMidpoint(edge.coordinates),
         cls,
-        speed: edge.speed_kph
+        speed: edge.speed_kph,
+        bus: (edge.bus_route_count ?? 0) > 0
       })
     } else {
       // the other direction of a street we have already seen
@@ -184,6 +185,7 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
       if (!forward && street.bwdId === undefined) street.bwdId = index
       street.oneway = street.fwdId === undefined || street.bwdId === undefined
       if (!street.name && name) street.name = name
+      if ((edge.bus_route_count ?? 0) > 0) street.bus = true
     }
 
     if (name) {

@@ -21,9 +21,16 @@ describe('graphLegendRows', () => {
     expect(rows[2].label).toBe('Speed limit · arrows = direction')
   })
 
-  it('says the same in result mode', () => {
-    const scenario = graphLegendRows({ mode: 'scenario', hasModifications: true })
-    const result = graphLegendRows({ mode: 'result', hasModifications: true })
-    expect(result).toEqual(scenario)
+  it('says what the shape means in result mode, where colour owns the stroke', () => {
+    const rows = graphLegendRows({ mode: 'result', hasModifications: true })
+    expect(rows.map((row) => row.mark)).toEqual([
+      'hairline',
+      'dashed',
+      'arrows',
+      'accent',
+      'lanes'
+    ])
+    expect(rows[1].label).toBe('Closed · no traffic')
+    expect(rows[2].label).toBe('Speed limit · ink arrows on colour')
   })
 })

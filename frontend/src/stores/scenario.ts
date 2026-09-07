@@ -37,6 +37,8 @@ export interface Street {
   at: [number, number]
   cls: number
   speed?: number
+  /** at least one bus line uses it, for the "bus routes only" filter */
+  bus: boolean
 }
 
 export interface EdgeRef {
@@ -177,6 +179,8 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   function setEditMode(on: boolean): void {
     editMode.value = on
+    // Editing is done on the scenario, not on a result read in colour.
+    if (on) mapMode.value = 'scenario'
     if (!on) selected.value = null
   }
 

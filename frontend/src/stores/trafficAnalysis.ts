@@ -1,4 +1,5 @@
 import { fetchBaseline, fetchGraphInfo, type ImpactStatistics } from '@/services/trafficAnalysis'
+import { streetTotals, type StreetTotals } from '@/composables/useResultStates'
 import { useScenarioStore } from '@/stores/scenario'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleDivergingSymlog, scaleSequential } from 'd3-scale'
@@ -140,6 +141,16 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const resultScenarioHash = ref<string | null>(null)
 
   const hasCalculatedRoutes = computed(() => originalEdgeUsage.value.length > 0)
+
+  /**
+   * The result per street, both directions summed. The map colours from it and
+   * the dock lists from it, so the sum runs once per result, not once per view.
+   */
+  const resultTotals = computed<StreetTotals[]>(() => {
+    const streets = useScenarioStore().streets
+    if (newEdgeUsage.value.length === 0 || streets.size === 0) return []
+    return streetTotals(newEdgeUsage.value, streets)
+  })
 
   /**
    * True when the graph was edited after this result was computed. The result
@@ -355,6 +366,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     // Delta is the interesting view when the routes moved, otherwise frequency
     activeVisualization.value = scales.delta ? 'delta' : 'frequency'
 
+    // A fresh result is what the user asked for, so show it.
+    useScenarioStore().mapMode = 'result'
+
     updateActiveColorScale()
   }
 
@@ -366,6 +380,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     scales = emptyScales()
     activeVisualization.value = 'none'
     filterBusRoutes.value = false
+    resultScenarioHash.value = null
+    // Nothing left to read in colour, back to the scenario.
+    useScenarioStore().mapMode = 'scenario'
     updateActiveColorScale()
   }
 
@@ -558,6 +575,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
     // Computed
     hasCalculatedRoutes,
+    resultTotals,
     resultScenarioHash,
     isStale,
     availableVisualizations,

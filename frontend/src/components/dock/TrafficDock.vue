@@ -8,6 +8,7 @@ import { recalculateRoutes } from '@/services/trafficAnalysis'
 import { useLayersStore } from '@/stores/layers'
 import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { topAbsorbers, valueOf } from '@/composables/useResultStates'
 import { computed, onMounted, ref } from 'vue'
 
 const layersStore = useLayersStore()
@@ -83,6 +84,68 @@ function edgeBadge(action: string) {
 // ↔ both directions, → or ← one lane of the street.
 const DIR_GLYPH: Record<string, string> = { both: '↔', fwd: '→', bwd: '←' }
 
+// Once a result exists the rows carry a Δ bar in the same colour as the map.
+const totalsByKey = computed(() => {
+  const map = new Map<string, (typeof trafficStore.resultTotals)[number]>()
+  for (const row of trafficStore.resultTotals) map.set(row.key, row)
+  return map
+})
+
+const showDelta = computed(
+  () => trafficStore.hasCalculatedRoutes && trafficStore.activeVisualization !== 'none'
+)
+
+/** The widest value on screen, so the bars share one scale. */
+const barMax = computed(() => {
+  let max = 0
+  for (const row of [...modifiedRows.value, ...absorbers.value]) {
+    max = Math.max(max, Math.abs(row.value))
+  }
+  return max || 1
+})
+
+interface DeltaRow {
+  key: string
+  value: number
+  color: string
+}
+
+function deltaRow(key: string): DeltaRow | null {
+  const totals = totalsByKey.value.get(key)
+  if (!totals || !showDelta.value) return null
+  const value = valueOf(totals, trafficStore.activeVisualization as never)
+  const [r, g, b] = trafficStore.getColor(value)
+  return { key, value, color: `rgb(${r},${g},${b})` }
+}
+
+const modifiedRows = computed<DeltaRow[]>(() =>
+  scenarioStore.list.map((edge) => deltaRow(edge.key)).filter((row): row is DeltaRow => !!row)
+)
+
+/** Where the traffic went: the untouched streets that gained the most. */
+const absorbers = computed(() => {
+  if (!showDelta.value) return []
+  const modified = new Set(scenarioStore.edgeModifications.keys())
+  return topAbsorbers(trafficStore.resultTotals, modified).map((row) => {
+    const value = valueOf(row, trafficStore.activeVisualization as never)
+    const [r, g, b] = trafficStore.getColor(value)
+    return { key: row.key, name: row.name, value, color: `rgb(${r},${g},${b})` }
+  })
+})
+
+function barWidth(value: number): string {
+  return `${Math.min(100, (Math.abs(value) / barMax.value) * 100)}%`
+}
+
+function deltaText(value: number): string {
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${Math.round(value).toLocaleString('fr-CH').replace(/[\u202f\u00a0\u2009]/g, ' ')}`
+}
+
+function rowFor(key: string) {
+  return modifiedRows.value.find((row) => row.key === key) ?? null
+}
+
 async function calculateRoutes() {
   const odPairs = chosenOdPairs()
   const trips = odPairs ? ` on ${formatTrips(odPairs)} trips` : ''
@@ -117,7 +180,8 @@ async function calculateRoutes() {
       baseline.rows,
       result.new_edge_usage,
       result.impact_statistics,
-      result.od_pairs
+      result.od_pairs,
+      scenarioStore.hash
     )
   } catch (error) {
     console.error('Failed to calculate routes:', error)
@@ -147,7 +211,14 @@ async function calculateRoutes() {
         </button>
       </div>
 
-      <div v-for="edge in scenarioStore.list" :key="edge.key" class="edge-row">
+      <div
+        v-for="edge in scenarioStore.list"
+        :key="edge.key"
+        class="edge-row"
+        :data-lit="scenarioStore.hovered?.key === edge.key"
+        @mouseenter="scenarioStore.hover({ key: edge.key, dir: edge.dir })"
+        @mouseleave="scenarioStore.hover(null)"
+      >
         <span class="edge-row__badge">{{ edgeBadge(edge.action) }}</span>
         <span class="edge-row__name">{{ edge.name }}</span>
         <span class="edge-row__dir">{{ DIR_GLYPH[edge.dir] }}</span>
@@ -158,11 +229,48 @@ async function calculateRoutes() {
         >
           <BcIcon name="x" />
         </button>
+
+        <div v-if="rowFor(edge.key)" class="edge-row__meta">
+          <span class="edge-row__bar">
+            <span
+              class="edge-row__bar-fill"
+              :style="{
+                width: barWidth(rowFor(edge.key)!.value),
+                background: rowFor(edge.key)!.color
+              }"
+            ></span>
+          </span>
+          <span class="edge-row__delta">{{ deltaText(rowFor(edge.key)!.value) }}</span>
+        </div>
       </div>
 
       <p v-if="scenarioStore.count === 0" class="bc-empty edge-empty">
         Turn on Edit graph, then click an edge on the map.
       </p>
+
+      <!-- Where the diverted traffic ended up -->
+      <template v-if="absorbers.length">
+        <div class="bc-micro absorb-head">Where the traffic went · top 3</div>
+        <div
+          v-for="row in absorbers"
+          :key="row.key"
+          class="edge-row edge-row--absorb"
+          :data-lit="scenarioStore.hovered?.key === row.key"
+          @mouseenter="scenarioStore.hover({ key: row.key, dir: 'both' })"
+          @mouseleave="scenarioStore.hover(null)"
+        >
+          <span class="edge-row__name">{{ row.name || 'Unnamed street' }}</span>
+          <div class="edge-row__meta">
+            <span class="edge-row__bar">
+              <span
+                class="edge-row__bar-fill"
+                :style="{ width: barWidth(row.value), background: row.color }"
+              ></span>
+            </span>
+            <span class="edge-row__delta">{{ deltaText(row.value) }}</span>
+          </div>
+        </div>
+      </template>
 
       <button
         class="edit-graph"
@@ -353,6 +461,50 @@ async function calculateRoutes() {
   padding: 7px 0;
   border-top: 1px solid var(--bc-line);
   font-size: var(--bc-fs-body);
+}
+
+.edge-row[data-lit='true'] {
+  background: var(--bc-hover);
+  box-shadow: -3px 0 0 0 var(--bc-accent);
+}
+
+/* absorbers carry no badge, so the name takes the whole first line */
+.edge-row--absorb {
+  grid-template-columns: 1fr;
+}
+
+/* the Δ bar goes on a second line, full width */
+.edge-row__meta {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.edge-row__bar {
+  flex: 1;
+  height: 3px;
+  background: var(--bc-line);
+  min-width: 0;
+}
+
+.edge-row__bar-fill {
+  display: block;
+  height: 100%;
+}
+
+.edge-row__delta {
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--bc-grey);
+  white-space: nowrap;
+}
+
+.absorb-head {
+  margin-top: 14px;
+  margin-bottom: 2px;
 }
 
 .edge-row__badge {

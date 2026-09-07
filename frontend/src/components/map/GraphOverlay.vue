@@ -2,6 +2,7 @@
 import EdgeHoverCard, { type HoverCardData } from '@/components/map/EdgeHoverCard.vue'
 import EdgePopover from '@/components/map/EdgePopover.vue'
 import EditChip from '@/components/map/EditChip.vue'
+import ModeToggle from '@/components/map/ModeToggle.vue'
 import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useGraphOverlay, type EdgeHover } from '@/composables/useGraphOverlay'
 import { useScenarioStore, type ScenarioAction, type ScenarioDir } from '@/stores/scenario'
@@ -189,6 +190,7 @@ onUnmounted(() => {
 <template>
   <div class="graph-overlay">
     <EditChip v-if="scenarioStore.editMode" />
+    <ModeToggle v-else />
 
     <EdgeHoverCard ref="hoverCard" :data="hoverData" />
 

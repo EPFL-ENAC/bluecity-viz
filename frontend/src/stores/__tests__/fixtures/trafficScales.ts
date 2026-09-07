@@ -178,6 +178,7 @@ export const EXPECTED_PUBLIC_KEYS = [
   'restoreState',
   'resultOdPairs',
   'resultScenarioHash',
+  'resultTotals',
   'setActiveVisualization',
   'setEdgeUsage',
   'setNodePairs',

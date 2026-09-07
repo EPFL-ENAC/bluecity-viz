@@ -46,6 +46,8 @@ const trafficLegend = computed(() => {
   const min = trafficStore.minValue
   const max = trafficStore.maxValue
 
+  // The ramp explains the colour on the map, so it goes with the colour.
+  if (scenarioStore.mapMode !== 'result') return null
   if (!trafficStore.isOpen || mode === 'none' || !scale) {
     return null
   }

@@ -1,6 +1,8 @@
+import { valueOf } from '@/composables/useResultStates'
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
 import { streetKey, useScenarioStore, type ScenarioDir } from '@/stores/scenario'
 import { useThemeStore } from '@/stores/theme'
+import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import {
   addGraphImages,
   applyModifications,
@@ -10,7 +12,8 @@ import {
   drawFor,
   emptyBadges,
   GRAPH_SOURCE,
-  graphLayerIds
+  graphLayerIds,
+  idFilter
 } from '@/utils/bluecityGraph'
 import { GRAPH_COLORS } from '@/utils/epflBasemap'
 import { buildGraphSource, pickLane, type GraphSource } from '@/utils/graphSource'
@@ -47,6 +50,7 @@ export function useGraphOverlay(
 ) {
   const scenarioStore = useScenarioStore()
   const themeStore = useThemeStore()
+  const trafficStore = useTrafficAnalysisStore()
 
   const colors = computed(() => (themeStore.isDark ? GRAPH_COLORS.dark : GRAPH_COLORS.light))
 
@@ -54,6 +58,8 @@ export function useGraphOverlay(
   let hoverIds: number[] = []
   let selectedIds: number[] = []
   let ghostIds: number[] = []
+  // the streets currently carrying a result colour
+  let resultIds: number[] = []
   // Which map instance carries our layers, so a new map remounts instead of
   // writing feature state into a style that no longer holds the source.
   let mountedOn: MapLibreMap | null = null
@@ -120,6 +126,7 @@ export function useGraphOverlay(
 
     mountedOn = map
     redraw()
+    applyResult()
   }
 
   /** Wait for the style to move on, then mount again. */
@@ -164,6 +171,52 @@ export function useGraphOverlay(
     }
 
     applyModifications(map, draw, scenarioStore.mapMode)
+  }
+
+  /**
+   * Paint the routing result on the graph.
+   *
+   * One colour per street, on the centreline, both directions summed. The
+   * colour rides feature-state, so a mode switch is one pass and the 6 MB
+   * source is never touched.
+   */
+  function applyResult(): void {
+    const map = mapRef.value
+    if (!map || mountedOn !== map || !graph.value) return
+
+    for (const id of resultIds) {
+      map.removeFeatureState({ source: GRAPH_SOURCE, id }, 'c')
+    }
+    resultIds = []
+
+    const mode = trafficStore.activeVisualization
+    const show =
+      scenarioStore.mapMode === 'result' && mode !== 'none' && trafficStore.hasCalculatedRoutes
+
+    if (!show) {
+      setDataFilter(map, [])
+      return
+    }
+
+    const onlyBus = trafficStore.filterBusRoutes
+    for (const row of trafficStore.resultTotals) {
+      if (onlyBus && !row.bus) continue
+      const [r, g, b] = trafficStore.getColor(valueOf(row, mode))
+      map.setFeatureState({ source: GRAPH_SOURCE, id: row.id }, { c: `rgb(${r},${g},${b})` })
+      resultIds.push(row.id)
+    }
+
+    setDataFilter(map, resultIds)
+    // A stale result answers an old question, so it is shown but faded.
+    const opacity = trafficStore.isStale ? 0.4 : 1
+    map.setPaintProperty('bc-data', 'line-opacity', opacity)
+    map.setPaintProperty('bc-data-casing', 'line-opacity', opacity * 0.9)
+  }
+
+  function setDataFilter(map: MapLibreMap, ids: number[]): void {
+    const filter = idFilter(ids)
+    if (map.getLayer('bc-data')) map.setFilter('bc-data', filter)
+    if (map.getLayer('bc-data-casing')) map.setFilter('bc-data-casing', filter)
   }
 
   function applyHover(): void {
@@ -361,6 +414,15 @@ export function useGraphOverlay(
       mount()
     }
   )
+  watch(
+    () => [
+      trafficStore.resultTotals,
+      trafficStore.activeVisualization,
+      trafficStore.filterBusRoutes,
+      trafficStore.isStale
+    ],
+    applyResult
+  )
   watch(() => scenarioStore.hovered, applyHover)
   watch(() => scenarioStore.selected, applySelection)
   watch(colors, () => {
@@ -368,7 +430,7 @@ export function useGraphOverlay(
     mount()
   })
 
-  return { mount, unmount, redraw, attach, detach, hitAt }
+  return { mount, unmount, redraw, applyResult, attach, detach, hitAt }
 }
 
 /** Build the source once the network is loaded. */
