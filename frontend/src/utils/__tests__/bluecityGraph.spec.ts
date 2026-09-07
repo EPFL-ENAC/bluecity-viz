@@ -35,6 +35,7 @@ function street(lo: number, hi: number, over: Partial<Street> = {}): Street {
     oneway: false,
     at: [6.6, 46.5],
     cls: 1,
+    bus: false,
     ...over
   }
 }

@@ -13,7 +13,8 @@ function street(lo: number, hi: number, oneway = false): Street {
     bwdId: oneway ? undefined : 1,
     oneway,
     at: [6.6, 46.5],
-    cls: 1
+    cls: 1,
+    bus: false
   }
 }
 

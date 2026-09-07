@@ -273,7 +273,6 @@ describe('traffic analysis store', () => {
 
     store.restoreState({
       isOpen: true,
-      edgeModifications: [],
       originalEdgeUsage: usage,
       newEdgeUsage: usage,
       activeVisualization: 'frequency',
