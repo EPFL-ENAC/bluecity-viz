@@ -366,6 +366,7 @@ class GraphService:
         use_congestion: bool = False,
         congestion_iterations: int = 1,
         resample_destinations: bool = False,
+        include_baseline: bool = True,
     ) -> dict:
         """Recalculate routes after edge modifications and return usage statistics.
 
@@ -464,17 +465,20 @@ class GraphService:
             co2_group = mirror.group_max(co2_per_km)
             total_routes = original.n_found
 
-            original_rows = (
-                base.usage_rows
-                if base is not None
-                else build_edge_usage_rows(
+            if not include_baseline:
+                # The baseline never changes. A client that already has it from
+                # GET /routes/baseline saves about 1 MB per request.
+                original_rows = []
+            elif base is not None:
+                original_rows = base.usage_rows
+            else:
+                original_rows = build_edge_usage_rows(
                     mirror,
                     original_counts_group,
                     total_routes,
                     co2_group,
                     betweenness=self.baseline.bc_group,
                 )
-            )
             new_rows = build_edge_usage_rows(
                 mirror,
                 new_counts_group,
@@ -651,6 +655,16 @@ class GraphService:
         )
 
     # ── Graph data and utilities ──────────────────────────────────────────────
+
+    def baseline_payload(self) -> dict:
+        """The unmodified edge usage, as served by GET /routes/baseline."""
+        if self.baseline is None:
+            raise RuntimeError("Baseline not computed")
+        return {
+            "total_routes": self.baseline.routes.n_found,
+            "od_pairs": len(self.baseline.pairs),
+            "edge_usage": self.baseline.usage_rows,
+        }
 
     def get_graph_info(self) -> dict:
         if not self.graph:

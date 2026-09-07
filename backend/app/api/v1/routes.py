@@ -12,6 +12,7 @@ from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
 
 from app.models.route import (
+    BaselineResponse,
     GraphData,
     NodePair,
     RandomPairsRequest,
@@ -131,11 +132,32 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
             use_congestion=request.use_congestion,
             congestion_iterations=request.congestion_iterations,
             resample_destinations=request.resample_destinations,
+            include_baseline=request.include_baseline,
         )
         result.pop("_timing_raw", None)
         return ORJSONResponse(result)
     except Exception as e:
         logger.error("Recalculate error: %s\n%s", e, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/baseline",
+    response_model=None,
+    responses={200: {"model": BaselineResponse}},
+)
+def get_baseline(request: Request):
+    """
+    Edge usage of the unmodified network.
+
+    It is the same for every client and does not change until the server
+    restarts, so it is served with an ETag. Fetch it once, then call
+    /recalculate with include_baseline=false.
+    """
+    try:
+        data, etag = _cached_json("baseline", graph_service.baseline_payload)
+        return _json_or_304(request, data, etag, "no-cache")
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 

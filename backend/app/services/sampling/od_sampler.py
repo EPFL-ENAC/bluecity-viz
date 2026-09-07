@@ -113,9 +113,7 @@ def resample_od_destinations(
     origin_ig_ids = [nx_to_ig[nx] for nx in valid_origin_nx]
 
     # Compute travel-time matrix: origins × candidates
-    t_matrix = mirror.h.distances(
-        source=origin_ig_ids, target=candidate_ig_ids, weights=weights
-    )
+    t_matrix = mirror.h.distances(source=origin_ig_ids, target=candidate_ig_ids, weights=weights)
 
     rng = np.random.RandomState()
     new_pairs: List = []

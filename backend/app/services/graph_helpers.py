@@ -176,20 +176,25 @@ def build_edge_usage_rows(
     bc = np.round(betweenness[used], 2) if betweenness is not None else None
     d_bc = np.round(delta_betweenness[used], 2) if delta_betweenness is not None else None
 
-    rows = [
-        {
+    # Keys whose value would be null are left out. The frontend reads every
+    # optional field with `?? 0`, and 3 nulls per row cost about 400 kB.
+    rows = []
+    for i in range(len(used)):
+        row = {
             "u": int(us[i]),
             "v": int(vs[i]),
             "count": int(cnt[i]),
             "frequency": float(freq_r[i]),
-            "delta_count": int(delta_cnt[i]) if delta_cnt is not None else None,
-            "delta_frequency": float(delta_freq[i]) if delta_freq is not None else None,
             "co2_per_km": float(co2[i]),
-            "betweenness_centrality": float(bc[i]) if bc is not None else None,
-            "delta_betweenness": float(d_bc[i]) if d_bc is not None else None,
         }
-        for i in range(len(used))
-    ]
+        if delta_cnt is not None:
+            row["delta_count"] = int(delta_cnt[i])
+            row["delta_frequency"] = float(delta_freq[i])
+        if bc is not None:
+            row["betweenness_centrality"] = float(bc[i])
+        if d_bc is not None:
+            row["delta_betweenness"] = float(d_bc[i])
+        rows.append(row)
 
     logger.debug(
         "[TIMING] edge usage rows | %d rows | %.1f ms", len(rows), (time.perf_counter() - t0) * 1000
