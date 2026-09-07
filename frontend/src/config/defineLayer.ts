@@ -1,15 +1,15 @@
 import type {
-  ColorSpecification,
-  DataDrivenPropertyValueSpecification,
-  LayerSpecification
-} from 'maplibre-gl'
-import type {
   CustomSourceSpecification,
   DatasetLayerInput,
   Encoding,
   LayerGroup,
   MapLayerConfig
 } from '@/config/layerTypes'
+import type {
+  ColorSpecification,
+  DataDrivenPropertyValueSpecification,
+  LayerSpecification
+} from 'maplibre-gl'
 
 /** The paint key that carries the colour, per layer type. */
 const COLOR_KEYS = {

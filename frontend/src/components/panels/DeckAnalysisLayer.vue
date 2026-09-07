@@ -6,7 +6,7 @@ import { useDeckGLCVRP } from '@/composables/useDeckGLCVRP'
 import { useDeckGLTrafficAnalysis } from '@/composables/useDeckGLTrafficAnalysis'
 import { useCVRPStore } from '@/stores/cvrp'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { computed, onMounted, onUnmounted, watch, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 // Everything deck.gl lives here, and this component is only mounted once a
 // tool is opened. That is what keeps the 6 MB road network, and the deck.gl

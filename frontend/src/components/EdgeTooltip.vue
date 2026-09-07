@@ -85,93 +85,96 @@ function formatBCDelta(bc?: number): string {
   <!-- always in the dom, so move() can position it before the content shows -->
   <div v-show="data" ref="root" class="edge-tooltip">
     <template v-if="data">
-    <!-- Edge Name -->
-    <div class="tooltip-header">
-      {{ data.name }}
-    </div>
+      <!-- Edge Name -->
+      <div class="tooltip-header">
+        {{ data.name }}
+      </div>
 
-    <!-- Basic Edge Info -->
-    <div class="tooltip-section">
-      <div class="tooltip-row">
-        <span class="label">Type:</span>
-        <span class="value">{{ formatHighway(data.highway) }}</span>
+      <!-- Basic Edge Info -->
+      <div class="tooltip-section">
+        <div class="tooltip-row">
+          <span class="label">Type:</span>
+          <span class="value">{{ formatHighway(data.highway) }}</span>
+        </div>
+        <div v-if="data.length" class="tooltip-row">
+          <span class="label">Length:</span>
+          <span class="value">{{ formatLength(data.length) }}</span>
+        </div>
+        <div v-if="data.travel_time" class="tooltip-row">
+          <span class="label">Travel time:</span>
+          <span class="value">{{ formatTime(data.travel_time) }}</span>
+        </div>
+        <div v-if="data.speed_kph" class="tooltip-row">
+          <span class="label">Speed:</span>
+          <span class="value">{{ data.speed_kph }} km/h</span>
+        </div>
+        <div v-if="data.bus_route_refs" class="tooltip-row bus-routes-row">
+          <span class="label">Bus lines:</span>
+          <span class="value bus-refs">{{ data.bus_route_refs }}</span>
+        </div>
       </div>
-      <div v-if="data.length" class="tooltip-row">
-        <span class="label">Length:</span>
-        <span class="value">{{ formatLength(data.length) }}</span>
-      </div>
-      <div v-if="data.travel_time" class="tooltip-row">
-        <span class="label">Travel time:</span>
-        <span class="value">{{ formatTime(data.travel_time) }}</span>
-      </div>
-      <div v-if="data.speed_kph" class="tooltip-row">
-        <span class="label">Speed:</span>
-        <span class="value">{{ data.speed_kph }} km/h</span>
-      </div>
-      <div v-if="data.bus_route_refs" class="tooltip-row bus-routes-row">
-        <span class="label">Bus lines:</span>
-        <span class="value bus-refs">{{ data.bus_route_refs }}</span>
-      </div>
-    </div>
 
-    <!-- Route Stats (if available) -->
-    <div v-if="data.frequency !== undefined || data.count !== undefined" class="tooltip-section">
-      <div class="bc-micro section-title">Route Statistics</div>
-      <div v-if="data.count !== undefined" class="tooltip-row">
-        <span class="label">Usage count:</span>
-        <span class="value">{{ data.count }}</span>
+      <!-- Route Stats (if available) -->
+      <div v-if="data.frequency !== undefined || data.count !== undefined" class="tooltip-section">
+        <div class="bc-micro section-title">Route Statistics</div>
+        <div v-if="data.count !== undefined" class="tooltip-row">
+          <span class="label">Usage count:</span>
+          <span class="value">{{ data.count }}</span>
+        </div>
+        <div v-if="data.frequency !== undefined" class="tooltip-row">
+          <span class="label">Frequency:</span>
+          <span class="value">{{ formatFrequency(data.frequency) }}</span>
+        </div>
+        <div v-if="data.delta_count !== undefined && data.delta_count !== 0" class="tooltip-row">
+          <span class="label">Usage change:</span>
+          <span
+            class="value"
+            :class="{ positive: data.delta_count > 0, negative: data.delta_count < 0 }"
+          >
+            {{ formatDelta(data.delta_count) }}
+          </span>
+        </div>
       </div>
-      <div v-if="data.frequency !== undefined" class="tooltip-row">
-        <span class="label">Frequency:</span>
-        <span class="value">{{ formatFrequency(data.frequency) }}</span>
-      </div>
-      <div v-if="data.delta_count !== undefined && data.delta_count !== 0" class="tooltip-row">
-        <span class="label">Usage change:</span>
-        <span
-          class="value"
-          :class="{ positive: data.delta_count > 0, negative: data.delta_count < 0 }"
-        >
-          {{ formatDelta(data.delta_count) }}
-        </span>
-      </div>
-    </div>
 
-    <!-- CO2 Stats (if available) -->
-    <div v-if="data.co2_per_km || data.co2_total || data.co2_delta" class="tooltip-section">
-      <div class="bc-micro section-title">CO₂ Emissions</div>
-      <div v-if="data.co2_per_km" class="tooltip-row">
-        <span class="label">Per km:</span>
-        <span class="value">{{ formatCO2(data.co2_per_km) }}</span>
+      <!-- CO2 Stats (if available) -->
+      <div v-if="data.co2_per_km || data.co2_total || data.co2_delta" class="tooltip-section">
+        <div class="bc-micro section-title">CO₂ Emissions</div>
+        <div v-if="data.co2_per_km" class="tooltip-row">
+          <span class="label">Per km:</span>
+          <span class="value">{{ formatCO2(data.co2_per_km) }}</span>
+        </div>
+        <div v-if="data.co2_total" class="tooltip-row">
+          <span class="label">Total:</span>
+          <span class="value">{{ formatCO2(data.co2_total) }}</span>
+        </div>
+        <div v-if="data.co2_delta && data.co2_delta !== 0" class="tooltip-row">
+          <span class="label">Change:</span>
+          <span
+            class="value"
+            :class="{ positive: data.co2_delta > 0, negative: data.co2_delta < 0 }"
+          >
+            {{ formatCO2Delta(data.co2_delta) }}
+          </span>
+        </div>
       </div>
-      <div v-if="data.co2_total" class="tooltip-row">
-        <span class="label">Total:</span>
-        <span class="value">{{ formatCO2(data.co2_total) }}</span>
-      </div>
-      <div v-if="data.co2_delta && data.co2_delta !== 0" class="tooltip-row">
-        <span class="label">Change:</span>
-        <span class="value" :class="{ positive: data.co2_delta > 0, negative: data.co2_delta < 0 }">
-          {{ formatCO2Delta(data.co2_delta) }}
-        </span>
-      </div>
-    </div>
 
-    <!-- Betweenness Centrality (if available) -->
-    <div v-if="data.betweenness_centrality" class="tooltip-section">
-      <div class="bc-micro section-title">Betweenness Centrality</div>
-      <div class="tooltip-row">
-        <span class="label">BC:</span>
-        <span class="value">{{ formatBC(data.betweenness_centrality) }}</span>
+      <!-- Betweenness Centrality (if available) -->
+      <div v-if="data.betweenness_centrality" class="tooltip-section">
+        <div class="bc-micro section-title">Betweenness Centrality</div>
+        <div class="tooltip-row">
+          <span class="label">BC:</span>
+          <span class="value">{{ formatBC(data.betweenness_centrality) }}</span>
+        </div>
+        <div v-if="data.delta_betweenness && data.delta_betweenness !== 0" class="tooltip-row">
+          <span class="label">Change:</span>
+          <span
+            class="value"
+            :class="{ positive: data.delta_betweenness > 0, negative: data.delta_betweenness < 0 }"
+          >
+            {{ formatBCDelta(data.delta_betweenness) }}
+          </span>
+        </div>
       </div>
-      <div v-if="data.delta_betweenness && data.delta_betweenness !== 0" class="tooltip-row">
-        <span class="label">Change:</span>
-        <span
-          class="value"
-          :class="{ positive: data.delta_betweenness > 0, negative: data.delta_betweenness < 0 }"
-        >
-          {{ formatBCDelta(data.delta_betweenness) }}
-        </span>
-      </div>
-    </div>
     </template>
   </div>
 </template>

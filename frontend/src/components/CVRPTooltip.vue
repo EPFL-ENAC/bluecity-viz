@@ -31,25 +31,25 @@ defineExpose({ move })
 <template>
   <div v-show="data" ref="root" class="cvrp-tooltip">
     <template v-if="data">
-    <div class="tooltip-header">
-      <span class="vehicle-dot" :style="{ background: dotColor }" />
-      Vehicle {{ data.routeId + 1 }}
-    </div>
+      <div class="tooltip-header">
+        <span class="vehicle-dot" :style="{ background: dotColor }" />
+        Vehicle {{ data.routeId + 1 }}
+      </div>
 
-    <div class="tooltip-section">
-      <div class="tooltip-row">
-        <span class="label">Current load:</span>
-        <span class="value">{{ formatLoad(data.loadKg) }}</span>
+      <div class="tooltip-section">
+        <div class="tooltip-row">
+          <span class="label">Current load:</span>
+          <span class="value">{{ formatLoad(data.loadKg) }}</span>
+        </div>
+        <div class="tooltip-row">
+          <span class="label">Peak load:</span>
+          <span class="value">{{ formatLoad(data.maxLoad) }}</span>
+        </div>
+        <div class="tooltip-row">
+          <span class="label">Reload trips:</span>
+          <span class="value">{{ data.nTrips }}</span>
+        </div>
       </div>
-      <div class="tooltip-row">
-        <span class="label">Peak load:</span>
-        <span class="value">{{ formatLoad(data.maxLoad) }}</span>
-      </div>
-      <div class="tooltip-row">
-        <span class="label">Reload trips:</span>
-        <span class="value">{{ data.nTrips }}</span>
-      </div>
-    </div>
     </template>
   </div>
 </template>

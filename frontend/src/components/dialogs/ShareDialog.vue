@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import BcDialogCard from '@/components/ui/BcDialogCard.vue'
+import { ref } from 'vue'
 
 defineProps<{ modelValue: boolean; url: string; name: string }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()

@@ -160,11 +160,7 @@ export function useDeckGLTrafficAnalysis() {
 
     const reverse = getReverseEdge(clicked.u, clicked.v)
     if (reverse) {
-      edgeClickCallback(
-        reverse.u,
-        reverse.v,
-        reverse.name || `Edge ${reverse.u}→${reverse.v}`
-      )
+      edgeClickCallback(reverse.u, reverse.v, reverse.name || `Edge ${reverse.u}→${reverse.v}`)
     }
   }
 
@@ -189,7 +185,7 @@ export function useDeckGLTrafficAnalysis() {
       length,
       travel_time: travelTime,
       speed_kph: speedKph,
-      bus_route_refs: (hovered.bus_route_refs || edge?.bus_route_refs) || undefined,
+      bus_route_refs: hovered.bus_route_refs || edge?.bus_route_refs || undefined,
       frequency: stats?.frequency ?? hovered.frequency,
       count,
       delta_count: stats?.delta_count ?? hovered.delta_count,

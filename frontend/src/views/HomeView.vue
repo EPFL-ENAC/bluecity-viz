@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import VisualizationsPanel from '@/components/panels/VisualizationsPanel.vue'
-import InvestigationSection from '@/components/sidebar/InvestigationSection.vue'
 import DatasetsSection from '@/components/sidebar/DatasetsSection.vue'
+import InvestigationSection from '@/components/sidebar/InvestigationSection.vue'
 import LayersSection from '@/components/sidebar/LayersSection.vue'
 import ToolsSection from '@/components/sidebar/ToolsSection.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
-import { ref, watch, provide } from 'vue'
 import { useLayersStore } from '@/stores/layers'
 import { useThemeStore } from '@/stores/theme'
+import { provide, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
 
 // Map reference to pass to child components

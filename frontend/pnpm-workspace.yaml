@@ -2,4 +2,3 @@ allowBuilds:
   '@parcel/watcher': true
   '@vaadin/vaadin-usage-statistics': false
   esbuild: true
-  vue-demi: true

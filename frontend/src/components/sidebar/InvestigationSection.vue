@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useLayersStore } from '@/stores/layers'
+import DeleteDialog from '@/components/dialogs/DeleteDialog.vue'
+import ShareDialog from '@/components/dialogs/ShareDialog.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcRow from '@/components/ui/BcRow.vue'
-import ShareDialog from '@/components/dialogs/ShareDialog.vue'
-import DeleteDialog from '@/components/dialogs/DeleteDialog.vue'
+import { useLayersStore } from '@/stores/layers'
+import { computed, ref } from 'vue'
 
 // Use the layers store. initializeInvestigations() is called once by HomeView.
 const layersStore = useLayersStore()

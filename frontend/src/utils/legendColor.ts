@@ -1,5 +1,5 @@
-import type { LayerSpecification } from 'maplibre-gl'
 import type { Encoding, MapLayerConfig } from '@/config/layerTypes'
+import type { LayerSpecification } from 'maplibre-gl'
 
 export type LegendColor = {
   color: string

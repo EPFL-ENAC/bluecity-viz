@@ -79,8 +79,8 @@ const onInput = (event: Event) => {
 /* track: hairline, filled up to the current value */
 .bc-slider__input::-webkit-slider-runnable-track {
   height: 14px;
-  background: linear-gradient(var(--bc-ink), var(--bc-ink)) 0 6px / var(--bc-slider-pct) 1px
-      no-repeat,
+  background:
+    linear-gradient(var(--bc-ink), var(--bc-ink)) 0 6px / var(--bc-slider-pct) 1px no-repeat,
     linear-gradient(var(--bc-line), var(--bc-line)) 0 6px / 100% 1px no-repeat;
 }
 

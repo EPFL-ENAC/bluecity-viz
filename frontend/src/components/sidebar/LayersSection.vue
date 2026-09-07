@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useLayersStore } from '@/stores/layers'
 import BcRow from '@/components/ui/BcRow.vue'
 import type { MapLayerConfig } from '@/config/layerTypes'
+import { useLayersStore } from '@/stores/layers'
+import { computed } from 'vue'
 
 const layersStore = useLayersStore()
 

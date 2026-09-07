@@ -20,19 +20,19 @@ in production alike. Git worktrees get their own pair of ports, see
 
 ## Scripts
 
-| Command | What it does |
-|---|---|
-| `pnpm run dev` | Dev server with hot reload |
-| `pnpm run build` | Type check and build |
-| `pnpm run build-only` | Build without the type check (what the image runs) |
-| `pnpm run preview` | Serve the built `dist/` |
-| `pnpm run type-check` | `vue-tsc` on the app |
-| `pnpm run type-check:test` | `vue-tsc` on the tests |
-| `pnpm run test:unit` | Vitest, runs once |
-| `pnpm run test:watch` | Vitest in watch mode |
-| `pnpm run lint` | ESLint with `--fix` |
-| `pnpm run lint:check` | ESLint without `--fix` (what CI runs) |
-| `pnpm run format` | Prettier on `src/` |
+| Command                    | What it does                                       |
+| -------------------------- | -------------------------------------------------- |
+| `pnpm run dev`             | Dev server with hot reload                         |
+| `pnpm run build`           | Type check and build                               |
+| `pnpm run build-only`      | Build without the type check (what the image runs) |
+| `pnpm run preview`         | Serve the built `dist/`                            |
+| `pnpm run type-check`      | `vue-tsc` on the app                               |
+| `pnpm run type-check:test` | `vue-tsc` on the tests                             |
+| `pnpm run test:unit`       | Vitest, runs once                                  |
+| `pnpm run test:watch`      | Vitest in watch mode                               |
+| `pnpm run lint`            | ESLint with `--fix`                                |
+| `pnpm run lint:check`      | ESLint without `--fix` (what CI runs)              |
+| `pnpm run format`          | Prettier on `src/`                                 |
 
 ## Layout
 
