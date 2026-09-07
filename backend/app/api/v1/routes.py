@@ -32,6 +32,7 @@ class GraphInfoResponse(BaseModel):
     node_count: int
     edge_count: int
     sample_nodes: List[int]
+    od_pairs: int = 0
 
 
 @router.get("/graph-info", response_model=GraphInfoResponse)
@@ -71,8 +72,12 @@ def calculate_routes(request: RouteRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/recalculate", response_model=RecalculateResponse)
-def recalculate_routes(request: RecalculateRequest):
+@router.post(
+    "/recalculate",
+    response_model=None,
+    responses={200: {"model": RecalculateResponse}},
+)
+def recalculate_routes(request: RecalculateRequest) -> dict:
     """
     Recalculate shortest paths after applying edge modifications.
     Modifications can remove edges or change their speed.
@@ -93,6 +98,7 @@ def recalculate_routes(request: RecalculateRequest):
             congestion_iterations=request.congestion_iterations,
             resample_destinations=request.resample_destinations,
         )
+        result.pop("_timing_raw", None)
         return result
     except Exception as e:
         logger.error("Recalculate error: %s\n%s", e, traceback.format_exc())

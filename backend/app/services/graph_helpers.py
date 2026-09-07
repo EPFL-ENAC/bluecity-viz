@@ -4,15 +4,17 @@ import logging
 import time
 from typing import List, Optional, Tuple
 
+import numpy as np
+
 from app.models.route import (
     EdgeModification,
-    EdgeUsageStats,
     GraphData,
     GraphEdge,
     PathGeometry,
-    Route,
 )
 from app.services.co2_calculator import CO2Calculator
+
+logger = logging.getLogger(__name__)
 
 
 def get_edge_data(graph, u: int, v: int) -> dict:
@@ -138,76 +140,135 @@ def calculate_edge_co2(graph, u: int, v: int) -> Optional[float]:
     )
 
 
-def count_edge_usage(routes: List[Route]) -> dict:
-    """Count how many times each edge is used across routes."""
-    counts = {}
-    for route in routes:
-        for i in range(len(route.path) - 1):
-            key = (route.path[i], route.path[i + 1])
-            counts[key] = counts.get(key, 0) + 1
-    return counts
-
-
-def build_edge_usage_stats(
-    edge_co2_cache: dict,
-    counts: dict,
+def build_edge_usage_rows(
+    mirror,
+    counts: np.ndarray,
     total_routes: int,
-    original_counts: Optional[dict] = None,
-    edge_bc_cache: Optional[dict] = None,
-    delta_bc: Optional[dict] = None,
-) -> List[EdgeUsageStats]:
-    """Build edge usage statistics from a pre-computed edge count dict."""
-    logger = logging.getLogger(__name__)
-    label = "new" if original_counts is not None else "original"
+    co2_per_km: np.ndarray,
+    original_counts: Optional[np.ndarray] = None,
+    betweenness: Optional[np.ndarray] = None,
+    delta_betweenness: Optional[np.ndarray] = None,
+) -> List[dict]:
+    """Build the per-(u, v) usage rows of a recalculate response.
+
+    Every array is indexed by (u, v) group, see GraphMirror.uv_group. Only
+    groups actually used by a route produce a row. Values are rounded here:
+    the payload holds about 6,400 rows twice, and full float precision adds
+    around 30 % of bytes that no one reads.
+    """
     t0 = time.perf_counter()
+    used = np.flatnonzero(counts > 0)
+    if len(used) == 0:
+        return []
 
-    t1 = time.perf_counter()
-    stats = []
-    for (u, v), count in counts.items():
-        freq = count / total_routes if total_routes > 0 else 0
-        delta_count = delta_freq = None
+    freq = counts[used] / total_routes if total_routes > 0 else np.zeros(len(used))
+    order = np.argsort(-freq, kind="stable")
+    used = used[order]
+    freq = freq[order]
 
-        if original_counts is not None:
-            if (u, v) in original_counts:
-                delta_count = count - original_counts[(u, v)]
-                orig_freq = original_counts[(u, v)] / total_routes if total_routes > 0 else 0
-                delta_freq = freq - orig_freq
-            else:
-                delta_count = count
-                delta_freq = freq
+    us = mirror.uv_u[used]
+    vs = mirror.uv_v[used]
+    cnt = counts[used].astype(np.int64)
+    co2 = np.round(co2_per_km[used], 2)
+    freq_r = np.round(freq, 6)
 
-        stats.append(
-            EdgeUsageStats(
-                u=u,
-                v=v,
-                count=count,
-                frequency=freq,
-                delta_count=delta_count,
-                delta_frequency=delta_freq,
-                co2_per_km=edge_co2_cache.get((u, v)),
-                betweenness_centrality=edge_bc_cache.get((u, v)) if edge_bc_cache else None,
-                delta_betweenness=delta_bc.get((u, v)) if delta_bc else None,
-            )
-        )
-    t_build_ms = (time.perf_counter() - t1) * 1000
+    delta_cnt = delta_freq = None
+    if original_counts is not None:
+        delta_cnt = (counts[used] - original_counts[used]).astype(np.int64)
+        orig_freq = original_counts[used] / total_routes if total_routes > 0 else 0.0
+        delta_freq = np.round(freq - orig_freq, 6)
 
-    t2 = time.perf_counter()
-    stats.sort(key=lambda x: x.frequency, reverse=True)
-    t_sort_ms = (time.perf_counter() - t2) * 1000
+    bc = np.round(betweenness[used], 2) if betweenness is not None else None
+    d_bc = np.round(delta_betweenness[used], 2) if delta_betweenness is not None else None
 
-    t_total_ms = (time.perf_counter() - t0) * 1000
-    logger.info(
-        f"[TIMING] build_edge_usage_stats ({label}) | "
-        f"unique_edges={len(counts)} | "
-        f"build_objects={t_build_ms:.1f}ms | "
-        f"sort={t_sort_ms:.1f}ms | "
-        f"TOTAL={t_total_ms:.1f}ms"
+    rows = [
+        {
+            "u": int(us[i]),
+            "v": int(vs[i]),
+            "count": int(cnt[i]),
+            "frequency": float(freq_r[i]),
+            "delta_count": int(delta_cnt[i]) if delta_cnt is not None else None,
+            "delta_frequency": float(delta_freq[i]) if delta_freq is not None else None,
+            "co2_per_km": float(co2[i]),
+            "betweenness_centrality": float(bc[i]) if bc is not None else None,
+            "delta_betweenness": float(d_bc[i]) if d_bc is not None else None,
+        }
+        for i in range(len(used))
+    ]
+
+    logger.debug(
+        "[TIMING] edge usage rows | %d rows | %.1f ms", len(rows), (time.perf_counter() - t0) * 1000
     )
-
-    return stats
+    return rows
 
 
 # ── Edge Modification Helpers ─────────────────────────────────────────────────
+
+
+def modifications_to_arrays(
+    mirror,
+    base_travel_time: np.ndarray,
+    base_speed: np.ndarray,
+    base_co2_per_km: np.ndarray,
+    base_co2_g: np.ndarray,
+    modifications: List[EdgeModification],
+) -> Tuple[list, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Turn edge modifications into per-request weight arrays.
+
+    Nothing is written to the shared graph. A removed edge gets a travel time
+    of +inf, which igraph treats as "do not use", so there is no rollback and
+    two requests cannot see each other's changes.
+
+    Returns:
+        (applied, travel_time, speed, co2_per_km, co2_g, blocked, changed_edge_ids)
+    """
+    travel_time = base_travel_time.copy()
+    speed = base_speed.copy()
+    co2_per_km = base_co2_per_km.copy()
+    co2_g = base_co2_g.copy()
+    blocked = np.zeros(mirror.n_edges, dtype=bool)
+
+    applied: list = []
+    changed: List[int] = []
+
+    for mod in modifications:
+        ids = mirror.edge_ids_for(mod.u, mod.v)
+        if ids is None:
+            continue
+
+        if mod.action == "remove":
+            blocked[ids] = True
+            travel_time[ids] = np.inf
+            applied.append(mod)
+            changed.extend(int(i) for i in ids)
+
+        elif mod.action == "modify" and mod.speed_kph is not None:
+            keep = ids[np.abs(speed[ids] - mod.speed_kph) >= 0.1]
+            if len(keep) > 0:
+                speed[keep] = mod.speed_kph
+                travel_time[keep] = mirror.length[keep] / (mod.speed_kph / 3.6)
+                grams = CO2Calculator.edge_co2_array(
+                    mirror.length[keep],
+                    np.full(len(keep), float(mod.speed_kph)),
+                    mirror.elev_gain[keep],
+                )
+                co2_g[keep] = grams
+                length_km = mirror.length[keep] / 1000.0
+                co2_per_km[keep] = np.where(
+                    length_km > 0, grams / np.where(length_km > 0, length_km, 1.0), 0.0
+                )
+                changed.extend(int(i) for i in keep)
+            applied.append(mod)
+
+    return (
+        applied,
+        travel_time,
+        speed,
+        co2_per_km,
+        co2_g,
+        blocked,
+        np.asarray(sorted(set(changed)), dtype=np.int64),
+    )
 
 
 def apply_edge_modifications(

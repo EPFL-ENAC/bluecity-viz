@@ -198,6 +198,9 @@ class TimingStats(BaseModel):
     affected_routes_ms: Optional[float] = Field(
         None, description="Affected-route detection (targeted BC mode only)"
     )
+    delta_bc_ms: Optional[float] = Field(
+        None, description="Betweenness centrality of the modified network"
+    )
     route_calculation_ms: float = Field(..., description="New route computation on modified graph")
     impact_stats_ms: float = Field(..., description="Impact statistics computation")
     edge_usage_stats_ms: float = Field(..., description="Edge usage stats build")

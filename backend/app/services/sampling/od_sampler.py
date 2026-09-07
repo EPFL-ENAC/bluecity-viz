@@ -75,8 +75,8 @@ def sample_od_pairs(
 def resample_od_destinations(
     pairs: List,
     nodes: pd.Series,
-    ig_modified,
-    idx_maps: dict,
+    mirror,
+    weights,
     config,
 ) -> List:
     """Resample destinations for each origin using travel times on the modified graph.
@@ -88,8 +88,8 @@ def resample_od_destinations(
     Args:
         pairs: Original NodePair list (provides origin set and dest counts)
         nodes: Candidate pool — pd.Series {NX node ID → weight}
-        ig_modified: igraph.Graph built from modified NX graph, with "travel_time" attribute
-        idx_maps: Node/edge index maps from networkx_to_igraph_with_indices
+        mirror: GraphMirror of the network
+        weights: Per-edge travel time array of the modified network
         config: SamplingConfig (uses lognorm_mu / lognorm_sigma)
 
     Returns:
@@ -97,7 +97,7 @@ def resample_od_destinations(
     """
     from app.models.route import NodePair
 
-    nx_to_ig = idx_maps["node_nx_to_ig"]
+    nx_to_ig = mirror.node_index
 
     # Build candidate arrays (only nodes present in igraph)
     candidate_nx_ids = [n for n in nodes.index if n in nx_to_ig]
@@ -113,8 +113,8 @@ def resample_od_destinations(
     origin_ig_ids = [nx_to_ig[nx] for nx in valid_origin_nx]
 
     # Compute travel-time matrix: origins × candidates
-    t_matrix = ig_modified.distances(
-        source=origin_ig_ids, target=candidate_ig_ids, weights="travel_time"
+    t_matrix = mirror.h.distances(
+        source=origin_ig_ids, target=candidate_ig_ids, weights=weights
     )
 
     rng = np.random.RandomState()
