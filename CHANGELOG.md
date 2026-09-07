@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.4.0](https://github.com/EPFL-ENAC/bluecity-viz/compare/bluecity-viz-v0.3.0...bluecity-viz-v0.4.0) (2026-09-07)
+
+
+### Features
+
+* improve map design ([8786dd7](https://github.com/EPFL-ENAC/bluecity-viz/commit/8786dd7423b75b06f3bcff172c36e9069228d238))
+* **map:** maplibre street graph, one scenario workbench, deck.gl gone ([89a2d3c](https://github.com/EPFL-ENAC/bluecity-viz/commit/89a2d3cce4695b37aabb1bfad4f31d7db3456f73))
+* **map:** one workbench dock with tabs, cvrp on the map, deck.gl gone ([3e9a9b4](https://github.com/EPFL-ENAC/bluecity-viz/commit/3e9a9b4b769236640f641ca03e2345159eea2e33))
+* **map:** show the routing result on the maplibre graph ([506c636](https://github.com/EPFL-ENAC/bluecity-viz/commit/506c636ce779f6c6c6ea1131c092c7c5e17cda41))
+* **workbench:** the dock says what the map draws, edit mode goes away ([986fbb0](https://github.com/EPFL-ENAC/bluecity-viz/commit/986fbb0408f146b8da3818fee65cf53b7b2ef571))
+
+
+### Bug Fixes
+
+* **dock:** move "where the traffic went" to the tool zone ([ae2d972](https://github.com/EPFL-ENAC/bluecity-viz/commit/ae2d972161f7f0a2d8f1362a7b21f1da0e78e084))
+* **tests:** type the test helpers against the current Street and store ([8c9fa34](https://github.com/EPFL-ENAC/bluecity-viz/commit/8c9fa3494349cf50ec3ebe5ca192fa23a4958766))
+* **workbench:** take the overlay off the map when the workbench closes ([2ae50b2](https://github.com/EPFL-ENAC/bluecity-viz/commit/2ae50b28a05e806346026df9a0e9674632f7cc9c))
+
+
+### Performance Improvements
+
+* **map:** draw the pointer from its own source, not from the graph ([9b6777e](https://github.com/EPFL-ENAC/bluecity-viz/commit/9b6777e677dc4fe1647abec50e2942bc61c96fc5))
+* **map:** show the pointer with feature state, not with a filter ([e256f25](https://github.com/EPFL-ENAC/bluecity-viz/commit/e256f25936b64d0b2228e448b2ae44e4605e8133))
+* **scenario:** keep the street map out of the reactive graph ([4f5c7c0](https://github.com/EPFL-ENAC/bluecity-viz/commit/4f5c7c06c0320435bbd1f233371f0ab85b5d0727))
+
 ## [0.3.0](https://github.com/EPFL-ENAC/bluecity-viz/compare/bluecity-viz-v0.2.0...bluecity-viz-v0.3.0) (2026-09-07)
 
 
