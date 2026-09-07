@@ -120,52 +120,122 @@ If your dataset has too many dimensions, ensure the GeoJSON is in 2D format befo
 
 1. Once uploaded, the files will be automatically available at the designated URL:
    ```
-   https://enacit4r-cdn.epfl.ch/urbes-viz/(your-file-name)
+   https://enacit4r-cdn.epfl.ch/bluecity/(your-file-name)
    ```
 2. No further configuration is needed on the server as the bucket handles availability automatically.
+3. You never write that host in the code. `baseUrl` in
+   `frontend/src/config/layerTypes.ts` points at this CDN in production and at
+   `/geodata` in dev, where the files are read from the local checkout.
 
 ---
 
 ## 3. Editing the Frontend
 
-### Step-by-Step Guide
+One object per layer, in one file. The map, the layers panel and the legend
+all read the same registry, there is nothing else to wire.
 
-#### a. Add Dataset URL to the Layer Selector
+### a. Declare the source and the layers
 
-1. Open the `LayerSelector.vue` component:
-   ```
-   frontend/src/components/LayerSelector.vue
-   ```
-2. Add the dataset’s URL and metadata to the `layers` array.
+Open the config file of the work package, for example
+`frontend/src/config/sp3_nature.ts`, or create a new one next to them.
 
-#### b. Update the Map Component
+```ts
+import { defineGroup, defineLayer } from '@/config/defineLayer'
+import type { CustomSourceSpecification } from '@/config/layerTypes'
+import { baseUrl } from '@/config/layerTypes'
 
-1. Open the `MapLibreMap.vue` component:
-   ```
-   frontend/src/components/MapLibreMap.vue
-   ```
-2. Add the new dataset as a source and layer:
-   ```javascript
-   map.addSource("new-layer", {
-     type: "vector",
-     url: "https://enacit4r-cdn.epfl.ch/urbes-viz/(your-file-name)",
-   });
-   map.addLayer({
-     id: "new-layer",
-     type: "fill",
-     source: "new-layer",
-     "source-layer": "layer-name",
-     paint: {
-       "fill-color": "#888",
-       "fill-opacity": 0.4,
-     },
-   });
-   ```
+const noiseSource: CustomSourceSpecification = {
+  type: 'vector',
+  id: 'lausanne_noise',            // saved in the investigations, do not rename
+  label: 'Noise levels - SP3',     // shown in the datasets panel
+  attribution: 'Ville de Lausanne',
+  url: `pmtiles://${baseUrl}/lausanne_noise.pmtiles`,
+  minzoom: 5
+}
 
-#### c. Test the Integration
+export const noiseGroup = defineGroup({
+  id: 'sp3_noise',
+  label: 'SP3 Noise',
+  multiple: false,                 // true lets the user tick several layers
+  layers: [
+    defineLayer({
+      id: 'lausanne_noise_day',    // the map layer id becomes <id>-layer
+      label: 'Noise, day',
+      unit: 'dB',
+      info: 'Average noise level between 6am and 10pm.',
+      source: noiseSource,
+      encoding: {
+        kind: 'sequential',
+        property: 'lden',
+        domain: [45, 55, 65, 75],
+        scheme: ['#f7f7f7', '#fdae61', '#d73027', '#7f0000']
+      },
+      layer: {
+        type: 'fill',
+        'source-layer': 'lausanne_noise',   // the layer name inside the pmtiles
+        paint: { 'fill-opacity': 0.8 }
+      }
+    })
+  ]
+})
+```
 
-1. Run the development server:
-   ```bash
-   npm run dev
-   ```
-2. Verify the dataset is visible and behaves as expected on the map.
+`defineLayer` fills the layer id and the source id, and turns the `encoding`
+into the paint expression. Use `kind: 'categorical'` for a value per class:
+
+```ts
+encoding: {
+  kind: 'categorical',
+  property: 'zone',
+  categories: [
+    { value: 'Residential', color: '#2E8B57' },
+    { value: 'Industrial', color: '#8A2BE2' }
+  ],
+  defaultColor: '#757575'
+}
+```
+
+The encoding is what the legend shows, so a layer that has one gets its legend
+for free, with a colour ramp or one checkbox per category. A layer whose colour
+is not a plain ramp (a hash, a `case`) just leaves `encoding` out and writes the
+paint by hand. It then has no legend.
+
+### b. Add the group to the registry
+
+In `frontend/src/config/mapConfig.ts`, add the group to the `datasets` list:
+
+```ts
+const datasets: LayerGroup[] = [
+  sp2MobilityGroup,
+  sp3NatureGroup,
+  noiseGroup,
+  ...
+]
+```
+
+That is the whole wiring. The layers, the sources and the groups are all read
+from this list. The order of the list is the order the layers are drawn in and
+the order of the datasets panel, so put a background layer before the layers
+that must cover it.
+
+The map loads a source the first time one of its layers is shown, so adding a
+dataset costs nothing until someone ticks it.
+
+### c. Check it
+
+```bash
+cd frontend
+npx vitest run        # the registry snapshot fails, see below
+npm run dev
+```
+
+The snapshot test in `src/config/__tests__/mapConfig.spec.ts` holds the whole
+registry, so it fails on any new layer. Read the diff, make sure it only shows
+what you added, then record it:
+
+```bash
+npx vitest run -u
+```
+
+Open the app, add the dataset in the datasets panel, tick the layer and check
+the map and the legend.

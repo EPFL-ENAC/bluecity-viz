@@ -30,9 +30,7 @@ def networkx_to_igraph_with_indices(
     return h, idx_maps
 
 
-def travel_time_matrix_igraph(
-    h: ig.Graph, nodes: List[int], weight_name: str
-) -> List[List[float]]:
+def travel_time_matrix_igraph(h: ig.Graph, nodes: List[int], weight_name: str) -> List[List[float]]:
     """Compute all-pairs travel time matrix using igraph shortest paths."""
     return h.distances(source=nodes, target=nodes, weights=weight_name)
 
@@ -43,9 +41,6 @@ def igraph_matrix_to_dict(
     """Convert igraph distance matrix to {origin_nx_id: {dest_nx_id: travel_time}}."""
     t_matrix_dict = {}
     for row_id, t_list in zip(nodes_ig, t_matrix):
-        d = {
-            idx_maps["node_ig_to_nx"][col_id]: t
-            for col_id, t in zip(nodes_ig, t_list)
-        }
+        d = {idx_maps["node_ig_to_nx"][col_id]: t for col_id, t in zip(nodes_ig, t_list)}
         t_matrix_dict[idx_maps["node_ig_to_nx"][row_id]] = d
     return t_matrix_dict

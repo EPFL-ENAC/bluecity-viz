@@ -4,7 +4,9 @@ import type { EdgeUsageStats } from '@/stores/trafficAnalysis'
 
 const isDev = import.meta.env.DEV
 
-const API_BASE_URL = isDev ? 'http://localhost:8000/api/v1/routes' : '/api/v1/routes'
+// Relative in dev too: vite proxies /api to this checkout's own backend, whose
+// port changes per git worktree (see vite.config.ts and docs/worktree-env/).
+const API_BASE_URL = '/api/v1/routes'
 
 function getGeojsonUrl(): string {
   const url = `${baseUrl}/lausanne.geojson`
@@ -32,32 +34,16 @@ export interface EdgeGeometry {
  */
 export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[]> {
   try {
-    console.time('[Frontend] Total fetch time')
-
-    console.time('[Frontend] Network request')
     const response = await fetch(getGeojsonUrl())
-    console.timeEnd('[Frontend] Network request')
 
     if (!response.ok) {
       console.warn('GeoJSON file not available, using empty dataset')
       return []
     }
 
-    // Check response size
-    const contentLength = response.headers.get('content-length')
-    const contentEncoding = response.headers.get('content-encoding')
-    console.log(
-      `[Frontend] Response size: ${
-        contentLength ? (parseInt(contentLength) / 1024).toFixed(2) + ' KB' : 'unknown'
-      }${contentEncoding ? ` (${contentEncoding})` : ''}`
-    )
-
-    console.time('[Frontend] JSON parsing')
     const geojson = await response.json()
-    console.timeEnd('[Frontend] JSON parsing')
 
     // Convert GeoJSON features to EdgeGeometry format
-    console.time('[Frontend] GeoJSON conversion')
     const edges: EdgeGeometry[] = geojson.features.map((feature: any) => ({
       u: feature.properties.u,
       v: feature.properties.v,
@@ -73,10 +59,6 @@ export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[
     if (limit) {
       edges.splice(limit)
     }
-    console.timeEnd('[Frontend] GeoJSON conversion')
-
-    console.timeEnd('[Frontend] Total fetch time')
-    console.log(`[Frontend] Loaded ${edges.length} edges from GeoJSON`)
 
     return edges
   } catch (error) {
@@ -118,16 +100,95 @@ export interface TimingStats {
   total_ms: number
 }
 
-export async function recalculateRoutes(
-  edgeModifications: EdgeModification[],
-  options?: { useCongestionModel?: boolean; congestionIterations?: number; elasticDemand?: boolean }
-): Promise<{
+/** Graph and OD pair counts, from GET /graph-info. */
+export interface GraphInfo {
+  node_count: number
+  edge_count: number
+  /** pairs really sampled at startup */
+  od_pairs: number
+  /** the count the server uses when the request says nothing */
+  od_pairs_default: number
+  /** the most the server accepts */
+  od_pairs_max: number
+}
+
+export interface BaselineResponse {
+  total_routes: number
+  /** the count really used, the server clamps what we ask for */
+  od_pairs: number
+  edge_usage: EdgeUsageStats[]
+}
+
+export interface RecalculateResponse {
+  od_pairs: number
   applied_modifications: EdgeModification[]
-  original_edge_usage: EdgeUsageStats[]
+  /** only sent when include_baseline is true, we ask for false */
+  original_edge_usage?: EdgeUsageStats[]
   new_edge_usage: EdgeUsageStats[]
   impact_statistics: ImpactStatistics
   timing: TimingStats
-}> {
+}
+
+/**
+ * Read the error out of a failed response. FastAPI sends `detail` as a string
+ * for our own HTTPException, and as a list of {msg} when pydantic rejects a
+ * field (od_pairs above the max, for one).
+ */
+async function throwHttpError(response: Response, what: string): Promise<never> {
+  let detail: unknown = null
+  try {
+    detail = (await response.json())?.detail
+  } catch {
+    // no body, or not json
+  }
+
+  let message: string
+  if (typeof detail === 'string') {
+    message = detail
+  } else if (Array.isArray(detail)) {
+    message = detail
+      .map((item: { msg?: string }) => item?.msg)
+      .filter(Boolean)
+      .join('; ')
+  } else {
+    message = response.statusText
+  }
+
+  throw new Error(`${what}: ${message || response.status}`)
+}
+
+export async function fetchGraphInfo(): Promise<GraphInfo> {
+  const response = await fetch(`${API_BASE_URL}/graph-info`)
+  if (!response.ok) await throwHttpError(response, 'Failed to fetch graph info')
+  return response.json()
+}
+
+/**
+ * Edge usage of the unmodified network. It never changes while the server
+ * runs, so it is served with an ETag: a plain fetch does the conditional
+ * request by itself and gets a 304 on the second load.
+ */
+export async function fetchBaseline(odPairs?: number): Promise<BaselineResponse> {
+  const url =
+    odPairs === undefined || odPairs === null
+      ? `${API_BASE_URL}/baseline`
+      : `${API_BASE_URL}/baseline?od_pairs=${odPairs}`
+
+  const response = await fetch(url)
+  if (!response.ok) await throwHttpError(response, 'Failed to fetch baseline')
+  return response.json()
+}
+
+export async function recalculateRoutes(
+  edgeModifications: EdgeModification[],
+  options?: {
+    useCongestionModel?: boolean
+    congestionIterations?: number
+    elasticDemand?: boolean
+    /** how many OD pairs, null for the server default */
+    odPairs?: number | null
+  }
+): Promise<RecalculateResponse> {
   const response = await fetch(`${API_BASE_URL}/recalculate`, {
     method: 'POST',
     headers: {
@@ -140,10 +201,12 @@ export async function recalculateRoutes(
       use_congestion: options?.useCongestionModel ?? false,
       congestion_iterations: options?.congestionIterations ?? 1,
       resample_destinations: options?.elasticDemand ?? false,
+      od_pairs: options?.odPairs ?? null,
+      // the baseline is the same for every run, we fetch it once from
+      // GET /baseline instead of carrying it in every answer
+      include_baseline: false
     })
   })
-  if (!response.ok) {
-    throw new Error('Failed to recalculate routes')
-  }
+  if (!response.ok) await throwHttpError(response, 'Failed to recalculate routes')
   return response.json()
 }

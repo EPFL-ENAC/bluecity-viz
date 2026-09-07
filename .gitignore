@@ -35,3 +35,21 @@ processing/**/*.graphml
 processing/**/BlueCity_Demo2/**
 processing/**/*/*.pbf
 processing/traffic-analysis/cache/
+
+# --- git worktree dev environment (docs/worktree-env/)
+
+# Claude Code local settings, rendered per worktree by scripts/wt-setup.sh
+.claude/settings.local.json
+# Worktrees live inside the repo (see ~/.config/wt/config.toml)
+.claude/worktrees/
+
+# Per-worktree ports written by scripts/wt-setup.sh
+.env.worktree
+
+# Server pane output mirrored by scripts/tmux-dev.sh (pipe-pane)
+.wt-logs/
+
+# One-shot agent briefs (wtgo --prompt) and local brief drafts
+PROMPT.md
+PROMPT.sent.md
+.wt-prompts/

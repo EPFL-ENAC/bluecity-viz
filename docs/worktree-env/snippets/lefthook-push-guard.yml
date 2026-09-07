@@ -1,0 +1,28 @@
+# The pre-push job that runs the guard. Copied from resslab-hub/lefthook.yml.
+#
+# `use_stdin: true` is required: git feeds the refs it is about to push on
+# stdin, and the guard reads them to decide. Without it the guard only sees no
+# input and falls back to protecting the base branches by name.
+#
+# If the target repo has no lefthook, either install it (npx lefthook install,
+# plus "prepare": "lefthook install" in package.json) or wire the guard as a
+# plain git hook instead:
+#
+#   printf '#!/bin/sh\nexec bash "$(git rev-parse --show-toplevel)/scripts/git-push-guard.sh"\n' \
+#     > "$(git rev-parse --git-common-dir)/hooks/pre-push"
+#   chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-push"
+#
+# Careful with the plain hook: worktrees share .git/hooks with the main
+# checkout, so this one file covers every worktree at once. That is what you
+# want here (the guard exits early in the main checkout), but it also means the
+# main checkout gets the hook whether it wants it or not.
+
+pre-push:
+  parallel: true
+  jobs:
+    # Inside a git worktree, only the worktree's own branch may be pushed and
+    # the protected branches never. Claude sessions live in worktrees. The main
+    # checkout is exempt (scripts/wt-land.sh lands branches from there).
+    - name: push-guard
+      run: bash scripts/git-push-guard.sh
+      use_stdin: true

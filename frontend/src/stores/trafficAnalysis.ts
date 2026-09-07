@@ -1,13 +1,31 @@
-import type { EdgeModification, ImpactStatistics } from '@/services/trafficAnalysis'
+import {
+  fetchBaseline,
+  fetchGraphInfo,
+  type EdgeModification,
+  type ImpactStatistics
+} from '@/services/trafficAnalysis'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleDivergingSymlog, scaleSequential } from 'd3-scale'
 import { interpolateSpectral, interpolateViridis } from 'd3-scale-chromatic'
 import { defineStore } from 'pinia'
-import { computed, ref, shallowRef } from 'vue'
+import { computed, markRaw, ref, shallowRef } from 'vue'
 
 type ColorScale = ((value: number) => string) | null
-type LegendMode = 'none' | 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
+type LegendMode =
+  | 'none'
+  | 'frequency'
+  | 'delta'
+  | 'delta_relative'
+  | 'co2'
+  | 'co2_delta'
+  | 'betweenness'
+  | 'betweenness_delta'
 export type ModificationAction = 'remove' | 'speed50' | 'speed30' | 'speed10'
+
+/** The visualization modes, 'none' included. */
+export type VisualizationMode = LegendMode
+/** The modes that have a color scale. */
+type ScaledMode = Exclude<VisualizationMode, 'none'>
 
 // Cycle order for edge modification actions
 export const MODIFICATION_CYCLE: (ModificationAction | null)[] = [
@@ -43,10 +61,39 @@ export interface EdgeUsageStats {
   delta_betweenness?: number
 }
 
+/** What getBaseline gives back: the rows and the count the server really used. */
+export interface BaselineResult {
+  odPairs: number
+  rows: EdgeUsageStats[]
+}
+
+/** A color scale with the range it covers. */
+interface ModeScale {
+  scale: (value: number) => string
+  min: number
+  max: number
+}
+
+type ModeScales = Record<ScaledMode, ModeScale | null>
+
+function emptyScales(): ModeScales {
+  return {
+    frequency: null,
+    delta: null,
+    delta_relative: null,
+    co2: null,
+    co2_delta: null,
+    betweenness: null,
+    betweenness_delta: null
+  }
+}
 
 // Fixed CO₂/km scale — matches the grade-relative model range (g CO₂/km).
 // Fallback upper bound used only when all CO2 values are zero.
 const CO2_KM_MAX = 350
+
+// CO2 delta: fixed ±6 domain prevents sub-g/km changes from saturating the scale
+const CO2_DELTA_CLAMP = 6
 
 /** 98th-percentile max — prevents a few outlier edges (zero-length stubs, roundabout loops)
  *  with astronomical CO2/km from blowing up the color scale. */
@@ -71,40 +118,47 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const nodePairs = shallowRef<NodePair[]>([])
   const originalEdgeUsage = shallowRef<EdgeUsageStats[]>([])
   const newEdgeUsage = shallowRef<EdgeUsageStats[]>([])
-  const impactStatistics = ref<ImpactStatistics | null>(null)
+  // shallow: nothing reads a single field reactively, and setEdgeUsage always
+  // replaces the whole object
+  const impactStatistics = shallowRef<ImpactStatistics | null>(null)
   const useCongestionModel = ref<boolean>(false)
   const congestionIterations = ref<number>(1)
   const elasticDemand = ref<boolean>(false)
   const filterBusRoutes = ref<boolean>(false)
-  // Visualization state
+  // How many OD pairs to route. null means the server default.
+  const odPairs = ref<number | null>(null)
+
+  // Filled once from /graph-info: the server default, the most it accepts, and
+  // the count the "full" choice sends (the set really sampled at startup).
+  const odPairsDefault = ref<number | null>(null)
+  const odPairsMax = ref<number | null>(null)
+  const odPairsFull = ref<number | null>(null)
+
+  // The count that produced the results on screen.
+  const resultOdPairs = ref<number | null>(null)
+
+  // The baseline never changes while the server runs, so one fetch per count is
+  // enough. Not reactive, nothing renders from it. Inside the setup so a fresh
+  // pinia (the tests, a reload) starts with an empty cache.
+  const baselineCache = new Map<number, EdgeUsageStats[]>()
+  const baselinePending = new Map<number | 'default', Promise<BaselineResult>>()
+  let graphInfoPromise: Promise<void> | null = null
+
+  // Visualization state. Only the active scale is reactive; the per-mode scales
+  // live in a plain object because switching mode only reads one of them.
   const legendMode = ref<LegendMode>('none')
   const colorScale = ref<ColorScale>(null)
-  const frequencyColorScale = ref<ColorScale>(null)
-  const deltaColorScale = ref<ColorScale>(null)
-  const co2ColorScale = ref<ColorScale>(null)
-  const co2DeltaColorScale = ref<ColorScale>(null)
   const minValue = ref<number>(0)
   const maxValue = ref<number>(0)
-  const frequencyMinValue = ref<number>(0)
-  const frequencyMaxValue = ref<number>(0)
-  const deltaMinValue = ref<number>(0)
-  const deltaMaxValue = ref<number>(0)
-  const co2MinValue = ref<number>(0)
-  const co2MaxValue = ref<number>(0)
-  const co2DeltaMinValue = ref<number>(0)
-  const co2DeltaMaxValue = ref<number>(0)
-  const bcColorScale = ref<ColorScale>(null)
-  const bcDeltaColorScale = ref<ColorScale>(null)
-  const bcMinValue = ref<number>(0)
-  const bcMaxValue = ref<number>(0)
-  const bcDeltaMinValue = ref<number>(0)
-  const bcDeltaMaxValue = ref<number>(0)
-  const deltaRelativeColorScale = ref<ColorScale>(null)
-  const deltaRelativeMinValue = ref<number>(0)
-  const deltaRelativeMaxValue = ref<number>(0)
-  const activeVisualization = ref<
-    'none' | 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
-  >('none') // User-selected visualization
+  const activeVisualization = ref<VisualizationMode>('none') // User-selected visualization
+
+  let scales: ModeScales = emptyScales()
+
+  // getColor is called once per edge on every recolor, so the d3 scale output
+  // (a css string) is parsed once per distinct color, not once per edge.
+  // The returned arrays are shared, callers must not change them.
+  let colorCacheScale: ColorScale = null
+  let colorCache = new Map<string, [number, number, number]>()
 
   // Computed: convert edgeModifications to API format
   const edgeModificationsArray = computed(() => {
@@ -171,7 +225,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // Available visualization modes based on calculated data
   const availableVisualizations = computed(() => {
     const modes: Array<{
-      value: 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
+      value: Exclude<VisualizationMode, 'none'>
       label: string
     }> = []
     if (hasCalculatedRoutes.value) {
@@ -252,121 +306,151 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     nodePairs.value = pairs
   }
 
+  /**
+   * Build every color scale from the new usage stats.
+   *
+   * One pass over the edges collects the min, the max and the flags all seven
+   * modes need. The old code walked the array about ten times and used
+   * Math.max(...values), which spreads 10k arguments onto the stack.
+   */
+  function buildScales(usage: EdgeUsageStats[]): ModeScales {
+    const built = emptyScales()
+    if (usage.length === 0) return built
+
+    let maxFreq = 0.01
+    let absDeltaMax = 0.01
+    let absRelMax = 0.01
+    let maxBC = 0.01
+    let absBCDeltaMax = 0.01
+    let co2Min = Infinity
+    const co2Values: number[] = []
+    let hasCO2 = false
+    let hasDeltaValues = false
+    let hasBetweenness = false
+    let hasBCDelta = false
+
+    for (const stat of usage) {
+      const frequency = stat.frequency
+      if (frequency > maxFreq) maxFreq = frequency
+
+      const co2 = stat.co2_per_km ?? 0
+      co2Values.push(co2)
+      if (stat.co2_per_km !== undefined && stat.co2_per_km > 0) {
+        hasCO2 = true
+        if (co2 < co2Min) co2Min = co2
+      }
+
+      const deltaCount = stat.delta_count ?? 0
+      if (stat.delta_count !== undefined && Math.abs(stat.delta_count) > 0.001) {
+        hasDeltaValues = true
+      }
+      const absDelta = Math.abs(deltaCount)
+      if (absDelta > absDeltaMax) absDeltaMax = absDelta
+
+      const deltaFrequency = stat.delta_frequency ?? 0
+      const origFreq = (stat.frequency ?? 0) - deltaFrequency
+      const rel = origFreq > 0.0001 ? (deltaFrequency / origFreq) * 100 : 0
+      const absRel = Math.abs(rel)
+      if (absRel > absRelMax) absRelMax = absRel
+
+      const bc = stat.betweenness_centrality ?? 0
+      if (stat.betweenness_centrality !== undefined && stat.betweenness_centrality > 0) {
+        hasBetweenness = true
+      }
+      if (bc > maxBC) maxBC = bc
+
+      const bcDelta = stat.delta_betweenness ?? 0
+      if (stat.delta_betweenness != null && stat.delta_betweenness !== 0) {
+        hasBCDelta = true
+      }
+      const absBCDelta = Math.abs(bcDelta)
+      if (absBCDelta > absBCDeltaMax) absBCDeltaMax = absBCDelta
+    }
+
+    // Frequency is always available once there are routes
+    built.frequency = {
+      scale: scaleSequential(interpolateViridis).domain([0, maxFreq]),
+      min: 0,
+      max: maxFreq
+    }
+
+    if (hasCO2) {
+      const co2Max = robustMax(co2Values, 0.98, CO2_KM_MAX)
+      built.co2 = {
+        scale: scaleSequential(interpolateViridis).domain([co2Min, co2Max]),
+        min: co2Min,
+        max: co2Max
+      }
+    }
+
+    if (hasDeltaValues) {
+      // symmetrical around zero, so a gain and a loss of the same size read the same
+      built.delta = {
+        scale: scaleDiverging(interpolateSpectral).domain([absDeltaMax, 0, -absDeltaMax]),
+        min: -absDeltaMax,
+        max: absDeltaMax
+      }
+
+      if (hasCO2) {
+        built.co2_delta = {
+          scale: scaleDiverging(interpolateSpectral).domain([CO2_DELTA_CLAMP, 0, -CO2_DELTA_CLAMP]),
+          min: -CO2_DELTA_CLAMP,
+          max: CO2_DELTA_CLAMP
+        }
+      }
+
+      // Symlog scale: linear within ±10%, logarithmic beyond — compresses outliers
+      // (e.g. +3000%) without hard-capping, keeping small changes visible
+      const relScale = (scaleDivergingSymlog() as any)
+        .constant(10)
+        .domain([absRelMax, 0, -absRelMax])
+      built.delta_relative = {
+        scale: (v: number) => interpolateSpectral(relScale(v)),
+        min: -absRelMax,
+        max: absRelMax
+      }
+    }
+
+    if (hasBetweenness) {
+      built.betweenness = {
+        scale: scaleSequential(interpolateViridis).domain([0, maxBC]),
+        min: 0,
+        max: maxBC
+      }
+    }
+
+    if (hasBCDelta) {
+      built.betweenness_delta = {
+        scale: scaleDiverging(interpolateSpectral).domain([absBCDeltaMax, 0, -absBCDeltaMax]),
+        min: -absBCDeltaMax,
+        max: absBCDeltaMax
+      }
+    }
+
+    return built
+  }
+
   function setEdgeUsage(
     original: EdgeUsageStats[],
     newUsage: EdgeUsageStats[],
-    impact?: ImpactStatistics
+    impact?: ImpactStatistics,
+    usedOdPairs?: number | null
   ) {
     originalEdgeUsage.value = original
     newEdgeUsage.value = newUsage
-    impactStatistics.value = impact || null
+    impactStatistics.value = impact ? markRaw(impact) : null
+    resultOdPairs.value = usedOdPairs ?? null
 
-    // Calculate color scale based on usage data
+    scales = buildScales(newUsage)
+
     if (newUsage.length === 0) {
-      legendMode.value = 'none'
-      colorScale.value = null
-      frequencyColorScale.value = null
-      deltaColorScale.value = null
-      co2ColorScale.value = null
-      co2DeltaColorScale.value = null
+      updateActiveColorScale()
       return
     }
 
-    // Always calculate frequency scale
-    const maxFreq = Math.max(...newUsage.map((d) => d.frequency), 0.01)
-    frequencyMinValue.value = 0
-    frequencyMaxValue.value = maxFreq
-    frequencyColorScale.value = scaleSequential(interpolateViridis).domain([0, maxFreq])
+    // Delta is the interesting view when the routes moved, otherwise frequency
+    activeVisualization.value = scales.delta ? 'delta' : 'frequency'
 
-    // Check if we have CO2 data
-    const hasCO2 = newUsage.some((stat) => stat.co2_per_km !== undefined && stat.co2_per_km > 0)
-
-    if (hasCO2) {
-      const co2Values = newUsage.map((d) => d.co2_per_km ?? 0)
-      const co2Min = Math.min(...co2Values.filter((v) => v > 0))
-      const co2Max = robustMax(co2Values, 0.98, CO2_KM_MAX)
-      co2MinValue.value = co2Min
-      co2MaxValue.value = co2Max
-      co2ColorScale.value = scaleSequential(interpolateViridis).domain([co2Min, co2Max])
-    }
-
-    // Check if we have delta values (recalculated routes)
-    const hasDeltaValues = newUsage.some(
-      (stat) => stat.delta_count !== undefined && Math.abs(stat.delta_count) > 0.001
-    )
-
-    if (hasDeltaValues) {
-      // Calculate delta scale (symmetrical around zero)
-      const deltaValues = newUsage.map((d) => d.delta_count ?? 0)
-      const absDeltaMax = Math.max(...deltaValues.map(Math.abs), 0.01)
-      deltaMinValue.value = -absDeltaMax
-      deltaMaxValue.value = absDeltaMax
-      deltaColorScale.value = scaleDiverging(interpolateSpectral).domain([
-        absDeltaMax,
-        0,
-        -absDeltaMax
-      ])
-
-      // CO2 delta: fixed ±6 domain prevents sub-g/km changes from saturating the scale
-      if (hasCO2) {
-        const CO2_DELTA_CLAMP = 6
-        co2DeltaMinValue.value = -CO2_DELTA_CLAMP
-        co2DeltaMaxValue.value = CO2_DELTA_CLAMP
-        co2DeltaColorScale.value = scaleDiverging(interpolateSpectral).domain([
-          CO2_DELTA_CLAMP,
-          0,
-          -CO2_DELTA_CLAMP
-        ])
-      }
-
-      // Delta relative: (delta_frequency / original_frequency) * 100
-      const relValues = newUsage.map((d) => {
-        const origFreq = (d.frequency ?? 0) - (d.delta_frequency ?? 0)
-        return origFreq > 0.0001 ? ((d.delta_frequency ?? 0) / origFreq) * 100 : 0
-      })
-      // Symlog scale: linear within ±10%, logarithmic beyond — compresses outliers
-      // (e.g. +3000%) without hard-capping, keeping small changes visible
-      const absRelMax = Math.max(...relValues.map(Math.abs), 0.01)
-      deltaRelativeMinValue.value = -absRelMax
-      deltaRelativeMaxValue.value = absRelMax
-      const relScale = (scaleDivergingSymlog() as any).constant(10).domain([absRelMax, 0, -absRelMax])
-      deltaRelativeColorScale.value = (v: number) => interpolateSpectral(relScale(v))
-
-      // Auto-select delta visualization when available
-      activeVisualization.value = 'delta'
-    } else {
-      // Auto-select frequency visualization
-      activeVisualization.value = 'frequency'
-    }
-
-    // Calculate betweenness centrality scale
-    const hasBetweenness = newUsage.some(
-      (stat) => stat.betweenness_centrality !== undefined && stat.betweenness_centrality > 0
-    )
-    if (hasBetweenness) {
-      const bcValues = newUsage.map((d) => d.betweenness_centrality ?? 0)
-      const maxBC = Math.max(...bcValues, 0.01)
-      bcMinValue.value = 0
-      bcMaxValue.value = maxBC
-      bcColorScale.value = scaleSequential(interpolateViridis).domain([0, maxBC])
-    }
-
-    const hasBCDelta = newUsage.some(
-      (stat) => stat.delta_betweenness != null && stat.delta_betweenness !== 0
-    )
-    if (hasBCDelta) {
-      const bcDeltas = newUsage.map((d) => d.delta_betweenness ?? 0)
-      const absBCDeltaMax = Math.max(...bcDeltas.map(Math.abs), 0.01)
-      bcDeltaMinValue.value = -absBCDeltaMax
-      bcDeltaMaxValue.value = absBCDeltaMax
-      bcDeltaColorScale.value = scaleDiverging(interpolateSpectral).domain([
-        absBCDeltaMax,
-        0,
-        -absBCDeltaMax
-      ])
-    }
-
-    // Update active color scale based on selection
     updateActiveColorScale()
   }
 
@@ -374,78 +458,105 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     originalEdgeUsage.value = []
     newEdgeUsage.value = []
     impactStatistics.value = null
-    legendMode.value = 'none'
-    colorScale.value = null
-    frequencyColorScale.value = null
-    deltaColorScale.value = null
-    co2ColorScale.value = null
-    co2DeltaColorScale.value = null
-    deltaRelativeColorScale.value = null
-    deltaRelativeMinValue.value = 0
-    deltaRelativeMaxValue.value = 0
-    minValue.value = 0
-    maxValue.value = 0
-    frequencyMinValue.value = 0
-    frequencyMaxValue.value = 0
-    deltaMinValue.value = 0
-    deltaMaxValue.value = 0
-    co2MinValue.value = 0
-    co2MaxValue.value = 0
-    co2DeltaMinValue.value = 0
-    co2DeltaMaxValue.value = 0
-    bcColorScale.value = null
-    bcDeltaColorScale.value = null
-    bcMinValue.value = 0
-    bcMaxValue.value = 0
-    bcDeltaMinValue.value = 0
-    bcDeltaMaxValue.value = 0
+    resultOdPairs.value = null
+    scales = emptyScales()
     activeVisualization.value = 'none'
     filterBusRoutes.value = false
+    updateActiveColorScale()
+  }
+
+  /**
+   * Change the OD pair count. Results computed at another count are dropped, so
+   * two sizes are never compared on screen.
+   *
+   * A function and not a watch on odPairs: restoreState sets the count and the
+   * results of an investigation in the same tick, and a watcher would run after
+   * that and wipe what we just restored.
+   */
+  function setOdPairs(count: number | null) {
+    if (count === odPairs.value) return
+    if (hasCalculatedRoutes.value) clearResults()
+    odPairs.value = count
+  }
+
+  /** Read the OD pair counts from the server, once per session. */
+  function loadGraphInfo(): Promise<void> {
+    if (!graphInfoPromise) {
+      graphInfoPromise = fetchGraphInfo()
+        .then((info) => {
+          odPairsDefault.value = info.od_pairs_default
+          odPairsMax.value = info.od_pairs_max
+          // The server clamps to the set it really sampled, so asking for more
+          // than that would show one number and give back another.
+          odPairsFull.value = Math.min(info.od_pairs_max, info.od_pairs)
+        })
+        .catch((error) => {
+          // let a later call try again
+          graphInfoPromise = null
+          throw error
+        })
+    }
+    return graphInfoPromise
+  }
+
+  /**
+   * The free-flow usage for a pair count, from the cache or from the server.
+   * Keyed by the count the server used, which is what the results carry.
+   */
+  function getBaseline(count?: number): Promise<BaselineResult> {
+    if (count !== undefined) {
+      const cached = baselineCache.get(count)
+      if (cached) return Promise.resolve({ odPairs: count, rows: cached })
+    }
+
+    const key = count ?? 'default'
+    const inFlight = baselinePending.get(key)
+    if (inFlight) return inFlight
+
+    const request = fetchBaseline(count)
+      .then((response) => {
+        baselineCache.set(response.od_pairs, response.edge_usage)
+        baselinePending.delete(key)
+        return { odPairs: response.od_pairs, rows: response.edge_usage }
+      })
+      .catch((error) => {
+        // a failed fetch must not stick, the next Calculate tries again
+        baselinePending.delete(key)
+        throw error
+      })
+
+    baselinePending.set(key, request)
+    return request
   }
 
   function getColor(value: number): [number, number, number] {
-    if (!colorScale.value) return [136, 136, 136] // Gray fallback
-    const colorStr = colorScale.value(value)
-    const color = rgb(colorStr)
-    return [color.r, color.g, color.b]
+    const scale = colorScale.value
+    if (!scale) return [136, 136, 136] // Gray fallback
+
+    if (scale !== colorCacheScale) {
+      colorCacheScale = scale
+      colorCache = new Map()
+    }
+
+    const colorStr = scale(value)
+    let parsed = colorCache.get(colorStr)
+    if (!parsed) {
+      const color = rgb(colorStr)
+      parsed = [color.r, color.g, color.b]
+      colorCache.set(colorStr, parsed)
+    }
+    return parsed
   }
 
   function updateActiveColorScale() {
-    if (activeVisualization.value === 'frequency' && frequencyColorScale.value) {
-      colorScale.value = frequencyColorScale.value
-      minValue.value = frequencyMinValue.value
-      maxValue.value = frequencyMaxValue.value
-      legendMode.value = 'frequency'
-    } else if (activeVisualization.value === 'delta' && deltaColorScale.value) {
-      colorScale.value = deltaColorScale.value
-      minValue.value = deltaMinValue.value
-      maxValue.value = deltaMaxValue.value
-      legendMode.value = 'delta'
-    } else if (activeVisualization.value === 'delta_relative' && deltaRelativeColorScale.value) {
-      colorScale.value = deltaRelativeColorScale.value
-      minValue.value = deltaRelativeMinValue.value
-      maxValue.value = deltaRelativeMaxValue.value
-      legendMode.value = 'delta_relative'
-    } else if (activeVisualization.value === 'co2' && co2ColorScale.value) {
-      colorScale.value = co2ColorScale.value
-      minValue.value = co2MinValue.value
-      maxValue.value = co2MaxValue.value
-      legendMode.value = 'co2'
-    } else if (activeVisualization.value === 'co2_delta' && co2DeltaColorScale.value) {
-      colorScale.value = co2DeltaColorScale.value
-      minValue.value = co2DeltaMinValue.value
-      maxValue.value = co2DeltaMaxValue.value
-      legendMode.value = 'co2_delta'
-    } else if (activeVisualization.value === 'betweenness' && bcColorScale.value) {
-      colorScale.value = bcColorScale.value
-      minValue.value = bcMinValue.value
-      maxValue.value = bcMaxValue.value
-      legendMode.value = 'betweenness'
-    } else if (activeVisualization.value === 'betweenness_delta' && bcDeltaColorScale.value) {
-      colorScale.value = bcDeltaColorScale.value
-      minValue.value = bcDeltaMinValue.value
-      maxValue.value = bcDeltaMaxValue.value
-      legendMode.value = 'betweenness_delta'
+    const mode = activeVisualization.value
+    const active = mode === 'none' ? null : scales[mode]
+
+    if (active) {
+      colorScale.value = active.scale
+      minValue.value = active.min
+      maxValue.value = active.max
+      legendMode.value = mode
     } else {
       colorScale.value = null
       minValue.value = 0
@@ -454,9 +565,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     }
   }
 
-  function setActiveVisualization(
-    mode: 'none' | 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
-  ) {
+  function setActiveVisualization(mode: VisualizationMode) {
     activeVisualization.value = mode
     updateActiveColorScale()
   }
@@ -464,12 +573,18 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // Batch restore function for investigation switching (avoids multiple reactive updates)
   function restoreState(state: {
     isOpen: boolean
-    edgeModifications: Array<{ u: number; v: number; action: string; name?: string }>
-    nodePairs: Array<{ origin: number; destination: number }>
-    originalEdgeUsage: EdgeUsageStats[]
-    newEdgeUsage: EdgeUsageStats[]
-    impactStatistics: any | null
-    activeVisualization: 'none' | 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
+    edgeModifications?: Array<{ u: number; v: number; action: string; name?: string }>
+    nodePairs?: Array<{ origin: number; destination: number }>
+    originalEdgeUsage?: EdgeUsageStats[]
+    newEdgeUsage?: EdgeUsageStats[]
+    impactStatistics?: ImpactStatistics | null
+    activeVisualization: VisualizationMode
+    useCongestionModel?: boolean
+    congestionIterations?: number
+    elasticDemand?: boolean
+    filterBusRoutes?: boolean
+    odPairs?: number | null
+    resultOdPairs?: number | null
   }) {
     isRestoring.value = true
     isOpen.value = state.isOpen
@@ -487,17 +602,36 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     )
     edgeModifications.value = modMap
 
-    nodePairs.value = state.nodePairs
+    nodePairs.value = state.nodePairs ?? []
 
-    if (state.newEdgeUsage.length > 0) {
-      setEdgeUsage(state.originalEdgeUsage, state.newEdgeUsage, state.impactStatistics || undefined)
+    // The routing options are part of the scenario, restore them when they are
+    // in the saved state so a caller does not have to set them itself.
+    if (state.useCongestionModel !== undefined) useCongestionModel.value = state.useCongestionModel
+    if (state.congestionIterations !== undefined)
+      congestionIterations.value = state.congestionIterations
+    if (state.elasticDemand !== undefined) elasticDemand.value = state.elasticDemand
+    if (state.filterBusRoutes !== undefined) filterBusRoutes.value = state.filterBusRoutes
+    // assigned, not setOdPairs: the results below belong to this state and
+    // setOdPairs would clear them.
+    if (state.odPairs !== undefined) odPairs.value = state.odPairs
+
+    const original = state.originalEdgeUsage ?? []
+    const restored = state.newEdgeUsage ?? []
+    const impact = state.impactStatistics ?? null
+
+    if (restored.length > 0) {
+      setEdgeUsage(original, restored, impact ?? undefined, state.resultOdPairs ?? null)
+      // setEdgeUsage picks a mode on its own, the saved one wins
       activeVisualization.value = state.activeVisualization
       updateActiveColorScale()
     } else {
-      originalEdgeUsage.value = state.originalEdgeUsage
-      newEdgeUsage.value = state.newEdgeUsage
-      impactStatistics.value = state.impactStatistics
+      originalEdgeUsage.value = original
+      newEdgeUsage.value = restored
+      impactStatistics.value = impact ? markRaw(impact) : null
+      resultOdPairs.value = null
+      scales = emptyScales()
       activeVisualization.value = state.activeVisualization
+      updateActiveColorScale()
     }
 
     isRestoring.value = false
@@ -518,6 +652,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     congestionIterations,
     elasticDemand,
     filterBusRoutes,
+    odPairs,
+    odPairsDefault,
+    odPairsMax,
+    odPairsFull,
+    resultOdPairs,
 
     // Visualization state
     legendMode,
@@ -542,6 +681,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     clearEdgeModifications,
     getEdgeModification,
     setNodePairs,
+    setOdPairs,
+    loadGraphInfo,
+    getBaseline,
     setEdgeUsage,
     clearResults,
     getColor,

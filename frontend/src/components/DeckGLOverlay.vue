@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { MapboxOverlay } from '@deck.gl/mapbox'
-import { onMounted, onUnmounted, watch, inject, type Ref, nextTick } from 'vue'
 import type { Map as MapLibreMap } from 'maplibre-gl'
+import { inject, onUnmounted, watch, type Ref } from 'vue'
 
 const props = defineProps<{
   layers: any[]
@@ -14,17 +14,10 @@ const mapRef = inject<Ref<{ map?: MapLibreMap }>>('mapRef')
 
 let deckOverlay: MapboxOverlay | null = null
 
-const initializeOverlay = () => {
-  if (!mapRef?.value?.map) {
-    console.warn('MapLibre map not available for Deck.gl overlay')
-    return false
-  }
-
-  const map = mapRef.value.map
-
+const initializeOverlay = (map: MapLibreMap) => {
   // Don't reinitialize if already exists
   if (deckOverlay) {
-    return true
+    return
   }
 
   // Create Deck.gl overlay that syncs with MapLibre
@@ -50,20 +43,23 @@ const initializeOverlay = () => {
   })
 
   // Add overlay to MapLibre map
-  map.addControl(deckOverlay as any)
-  return true
+  try {
+    map.addControl(deckOverlay as any)
+  } catch (error) {
+    console.warn('Could not add the Deck.gl overlay to the map', error)
+    deckOverlay = null
+  }
 }
 
-onMounted(async () => {
-  // Wait for next tick to ensure map is ready
-  await nextTick()
-
-  // Try to initialize, retry if map not ready
-  const initialized = initializeOverlay()
-  if (!initialized) {
-    setTimeout(initializeOverlay, 100)
-  }
-})
+// The map is created asynchronously (MapLibreMap waits for the basemap tile URLs
+// before `new Map()`), so wait for it instead of polling after mount.
+watch(
+  () => mapRef?.value?.map,
+  (map) => {
+    if (map) initializeOverlay(map)
+  },
+  { immediate: true }
+)
 
 // Watch for layer changes and update deck overlay
 watch(

@@ -4,15 +4,12 @@ import logging
 import time
 from typing import List, Optional, Tuple
 
-from app.models.route import (
-    EdgeModification,
-    EdgeUsageStats,
-    GraphData,
-    GraphEdge,
-    PathGeometry,
-    Route,
-)
+import numpy as np
+
+from app.models.route import EdgeModification, PathGeometry
 from app.services.co2_calculator import CO2Calculator
+
+logger = logging.getLogger(__name__)
 
 
 def get_edge_data(graph, u: int, v: int) -> dict:
@@ -124,11 +121,7 @@ def calculate_edge_co2(graph, u: int, v: int) -> Optional[float]:
 
     edge_time = edge_data.get("travel_time", 0)
     edge_len = edge_data.get("length", 0)
-    speed_kph = (
-        (edge_len / 1000) / (edge_time / 3600)
-        if edge_time > 0 and edge_len > 0
-        else None
-    )
+    speed_kph = (edge_len / 1000) / (edge_time / 3600) if edge_time > 0 and edge_len > 0 else None
 
     edge_elev = 0.0
     if u in graph.nodes and v in graph.nodes:
@@ -142,80 +135,140 @@ def calculate_edge_co2(graph, u: int, v: int) -> Optional[float]:
     )
 
 
-def count_edge_usage(routes: List[Route]) -> dict:
-    """Count how many times each edge is used across routes."""
-    counts = {}
-    for route in routes:
-        for i in range(len(route.path) - 1):
-            key = (route.path[i], route.path[i + 1])
-            counts[key] = counts.get(key, 0) + 1
-    return counts
-
-
-def build_edge_usage_stats(
-    edge_co2_cache: dict,
-    counts: dict,
+def build_edge_usage_rows(
+    mirror,
+    counts: np.ndarray,
     total_routes: int,
-    original_counts: Optional[dict] = None,
-    edge_bc_cache: Optional[dict] = None,
-    delta_bc: Optional[dict] = None,
-) -> List[EdgeUsageStats]:
-    """Build edge usage statistics from a pre-computed edge count dict."""
-    logger = logging.getLogger(__name__)
-    label = "new" if original_counts is not None else "original"
+    co2_per_km: np.ndarray,
+    original_counts: Optional[np.ndarray] = None,
+    betweenness: Optional[np.ndarray] = None,
+    delta_betweenness: Optional[np.ndarray] = None,
+) -> List[dict]:
+    """Build the per-(u, v) usage rows of a recalculate response.
+
+    Every array is indexed by (u, v) group, see GraphMirror.uv_group. Only
+    groups actually used by a route produce a row. Values are rounded here:
+    the payload holds about 6,400 rows twice, and full float precision adds
+    around 30 % of bytes that no one reads.
+    """
     t0 = time.perf_counter()
+    used = np.flatnonzero(counts > 0)
+    if len(used) == 0:
+        return []
 
-    t_count_ms = 0.0  # counting is now done externally
+    freq = counts[used] / total_routes if total_routes > 0 else np.zeros(len(used))
+    order = np.argsort(-freq, kind="stable")
+    used = used[order]
+    freq = freq[order]
 
-    t1 = time.perf_counter()
-    stats = []
-    for (u, v), count in counts.items():
-        freq = count / total_routes if total_routes > 0 else 0
-        delta_count = delta_freq = None
+    us = mirror.uv_u[used]
+    vs = mirror.uv_v[used]
+    cnt = counts[used].astype(np.int64)
+    co2 = np.round(co2_per_km[used], 2)
+    freq_r = np.round(freq, 6)
 
-        if original_counts is not None:
-            if (u, v) in original_counts:
-                delta_count = count - original_counts[(u, v)]
-                orig_freq = (
-                    original_counts[(u, v)] / total_routes if total_routes > 0 else 0
-                )
-                delta_freq = freq - orig_freq
-            else:
-                delta_count = count
-                delta_freq = freq
+    delta_cnt = delta_freq = None
+    if original_counts is not None:
+        delta_cnt = (counts[used] - original_counts[used]).astype(np.int64)
+        orig_freq = original_counts[used] / total_routes if total_routes > 0 else 0.0
+        delta_freq = np.round(freq - orig_freq, 6)
 
-        stats.append(
-            EdgeUsageStats(
-                u=u,
-                v=v,
-                count=count,
-                frequency=freq,
-                delta_count=delta_count,
-                delta_frequency=delta_freq,
-                co2_per_km=edge_co2_cache.get((u, v)),
-                betweenness_centrality=edge_bc_cache.get((u, v)) if edge_bc_cache else None,
-                delta_betweenness=delta_bc.get((u, v)) if delta_bc else None,
-            )
-        )
-    t_build_ms = (time.perf_counter() - t1) * 1000
+    bc = np.round(betweenness[used], 2) if betweenness is not None else None
+    d_bc = np.round(delta_betweenness[used], 2) if delta_betweenness is not None else None
 
-    t2 = time.perf_counter()
-    stats.sort(key=lambda x: x.frequency, reverse=True)
-    t_sort_ms = (time.perf_counter() - t2) * 1000
+    # Keys whose value would be null are left out. The frontend reads every
+    # optional field with `?? 0`, and 3 nulls per row cost about 400 kB.
+    rows = []
+    for i in range(len(used)):
+        row = {
+            "u": int(us[i]),
+            "v": int(vs[i]),
+            "count": int(cnt[i]),
+            "frequency": float(freq_r[i]),
+            "co2_per_km": float(co2[i]),
+        }
+        if delta_cnt is not None:
+            row["delta_count"] = int(delta_cnt[i])
+            row["delta_frequency"] = float(delta_freq[i])
+        if bc is not None:
+            row["betweenness_centrality"] = float(bc[i])
+        if d_bc is not None:
+            row["delta_betweenness"] = float(d_bc[i])
+        rows.append(row)
 
-    t_total_ms = (time.perf_counter() - t0) * 1000
-    logger.info(
-        f"[TIMING] build_edge_usage_stats ({label}) | "
-        f"unique_edges={len(counts)} | "
-        f"build_objects={t_build_ms:.1f}ms | "
-        f"sort={t_sort_ms:.1f}ms | "
-        f"TOTAL={t_total_ms:.1f}ms"
+    logger.debug(
+        "[TIMING] edge usage rows | %d rows | %.1f ms", len(rows), (time.perf_counter() - t0) * 1000
     )
-
-    return stats
+    return rows
 
 
 # ── Edge Modification Helpers ─────────────────────────────────────────────────
+
+
+def modifications_to_arrays(
+    mirror,
+    base_travel_time: np.ndarray,
+    base_speed: np.ndarray,
+    base_co2_per_km: np.ndarray,
+    base_co2_g: np.ndarray,
+    modifications: List[EdgeModification],
+) -> Tuple[list, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Turn edge modifications into per-request weight arrays.
+
+    Nothing is written to the shared graph. A removed edge gets a travel time
+    of +inf, which igraph treats as "do not use", so there is no rollback and
+    two requests cannot see each other's changes.
+
+    Returns:
+        (applied, travel_time, speed, co2_per_km, co2_g, blocked, changed_edge_ids)
+    """
+    travel_time = base_travel_time.copy()
+    speed = base_speed.copy()
+    co2_per_km = base_co2_per_km.copy()
+    co2_g = base_co2_g.copy()
+    blocked = np.zeros(mirror.n_edges, dtype=bool)
+
+    applied: list = []
+    changed: List[int] = []
+
+    for mod in modifications:
+        ids = mirror.edge_ids_for(mod.u, mod.v)
+        if ids is None:
+            continue
+
+        if mod.action == "remove":
+            blocked[ids] = True
+            travel_time[ids] = np.inf
+            applied.append(mod)
+            changed.extend(int(i) for i in ids)
+
+        elif mod.action == "modify" and mod.speed_kph is not None:
+            keep = ids[np.abs(speed[ids] - mod.speed_kph) >= 0.1]
+            if len(keep) > 0:
+                speed[keep] = mod.speed_kph
+                travel_time[keep] = mirror.length[keep] / (mod.speed_kph / 3.6)
+                grams = CO2Calculator.edge_co2_array(
+                    mirror.length[keep],
+                    np.full(len(keep), float(mod.speed_kph)),
+                    mirror.elev_gain[keep],
+                )
+                co2_g[keep] = grams
+                length_km = mirror.length[keep] / 1000.0
+                co2_per_km[keep] = np.where(
+                    length_km > 0, grams / np.where(length_km > 0, length_km, 1.0), 0.0
+                )
+                changed.extend(int(i) for i in keep)
+            applied.append(mod)
+
+    return (
+        applied,
+        travel_time,
+        speed,
+        co2_per_km,
+        co2_g,
+        blocked,
+        np.asarray(sorted(set(changed)), dtype=np.int64),
+    )
 
 
 def apply_edge_modifications(
@@ -256,12 +309,16 @@ def apply_edge_modifications(
                 if abs(edge_data.get("speed_kph", 0) - mod.speed_kph) < 0.1:
                     continue
 
-                modified_edges.append((
-                    mod.u, mod.v, key,
-                    edge_data.get("speed_kph"),
-                    edge_data.get("travel_time"),
-                    edge_data.get("co2_g"),
-                ))
+                modified_edges.append(
+                    (
+                        mod.u,
+                        mod.v,
+                        key,
+                        edge_data.get("speed_kph"),
+                        edge_data.get("travel_time"),
+                        edge_data.get("co2_g"),
+                    )
+                )
                 length = edge_data.get("length", 0)
                 edge_data["speed_kph"] = mod.speed_kph
                 edge_data["travel_time"] = (
@@ -272,7 +329,10 @@ def apply_edge_modifications(
                     length=length, speed_kph=mod.speed_kph, elevation_gain=elev_gain
                 )
                 edge_metrics_cache[(mod.u, mod.v)] = (
-                    edge_data["travel_time"], length, elev_gain, edge_data["co2_g"]
+                    edge_data["travel_time"],
+                    length,
+                    elev_gain,
+                    edge_data["co2_g"],
                 )
                 length_km = length / 1000
                 edge_co2_cache[(mod.u, mod.v)] = (
@@ -302,15 +362,51 @@ def restore_edge_modifications(
         ed["co2_g"] = orig_co2
         length = ed.get("length", 0.0)
         edge_metrics_cache[(u, v)] = (
-            orig_tt or 0.0, length, ed.get("elevation_gain", 0.0), orig_co2 or 0.0
+            orig_tt or 0.0,
+            length,
+            ed.get("elevation_gain", 0.0),
+            orig_co2 or 0.0,
         )
         length_km = length / 1000
-        edge_co2_cache[(u, v)] = (
-            (orig_co2 / length_km) if orig_co2 and length_km > 0 else 0.0
-        )
+        edge_co2_cache[(u, v)] = (orig_co2 / length_km) if orig_co2 and length_km > 0 else 0.0
 
 
 # ── Graph Serialization ───────────────────────────────────────────────────────
+
+
+def edge_coordinates(graph, u, v, data) -> List[List[float]]:
+    """Coordinates of an edge, rounded to 6 decimals (about 10 cm)."""
+    if "geometry" in data:
+        return [[round(lon, 6), round(lat, 6)] for lon, lat in data["geometry"].coords]
+    return [
+        [round(graph.nodes[u]["x"], 6), round(graph.nodes[u]["y"], 6)],
+        [round(graph.nodes[v]["x"], 6), round(graph.nodes[v]["y"], 6)],
+    ]
+
+
+def habitat_geojson(graph) -> dict:
+    """Habitat density per edge as a GeoJSON FeatureCollection."""
+    features = []
+    for u, v, data in graph.edges(data=True):
+        habitat = float(data.get("habitat_area_m2", 0.0) or 0.0)
+        if habitat <= 0:
+            continue
+        length = float(data.get("length", 1.0) or 1.0)
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": edge_coordinates(graph, u, v, data),
+                },
+                "properties": {
+                    "u": int(u),
+                    "v": int(v),
+                    "habitat_density_m2_per_m": round(habitat / length if length > 0 else 0.0, 4),
+                },
+            }
+        )
+    return {"type": "FeatureCollection", "features": features}
 
 
 def get_edge_geometries(graph, limit: Optional[int] = None) -> List[dict]:
@@ -319,14 +415,7 @@ def get_edge_geometries(graph, limit: Optional[int] = None) -> List[dict]:
     for i, (u, v, data) in enumerate(graph.edges(data=True)):
         if limit and i >= limit:
             break
-        coords = (
-            [[lon, lat] for lon, lat in data["geometry"].coords]
-            if "geometry" in data
-            else [
-                [graph.nodes[u]["x"], graph.nodes[u]["y"]],
-                [graph.nodes[v]["x"], graph.nodes[v]["y"]],
-            ]
-        )
+        coords = edge_coordinates(graph, u, v, data)
         name_raw = data.get("name")
         name = (
             (name_raw[0] if name_raw else None)
@@ -334,34 +423,29 @@ def get_edge_geometries(graph, limit: Optional[int] = None) -> List[dict]:
             else (str(name_raw) if name_raw else None)
         )
         highway_raw = data.get("highway", "Unknown")
-        edges.append({
-            "u": int(u),
-            "v": int(v),
-            "coordinates": coords,
-            "travel_time": data.get("travel_time"),
-            "length": data.get("length"),
-            "speed_kph": data.get("speed_kph"),
-            "name": name,
-            "highway": highway_raw[0] if isinstance(highway_raw, list) else highway_raw,
-            "bus_route_count": int(data.get("bus_route_count", 0) or 0),
-            "bus_route_refs": str(data.get("bus_route_refs", "") or ""),
-            "habitat_area_m2": float(data.get("habitat_area_m2", 0.0) or 0.0),
-        })
+        edges.append(
+            {
+                "u": int(u),
+                "v": int(v),
+                "coordinates": coords,
+                "travel_time": data.get("travel_time"),
+                "length": data.get("length"),
+                "speed_kph": data.get("speed_kph"),
+                "name": name,
+                "highway": highway_raw[0] if isinstance(highway_raw, list) else highway_raw,
+                "bus_route_count": int(data.get("bus_route_count", 0) or 0),
+                "bus_route_refs": str(data.get("bus_route_refs", "") or ""),
+                "habitat_area_m2": float(data.get("habitat_area_m2", 0.0) or 0.0),
+            }
+        )
     return edges
 
 
-def get_graph_data(graph) -> GraphData:
-    """Get complete graph data for visualization."""
+def get_graph_data(graph) -> dict:
+    """Get complete graph data for visualization, as plain dicts."""
     edges = []
     for u, v, d in graph.edges(data=True):
-        coords = (
-            [[lon, lat] for lon, lat in d["geometry"].coords]
-            if "geometry" in d
-            else [
-                [graph.nodes[u]["x"], graph.nodes[u]["y"]],
-                [graph.nodes[v]["x"], graph.nodes[v]["y"]],
-            ]
-        )
+        coords = edge_coordinates(graph, u, v, d)
         name_raw = d.get("name")
         name = (
             " - ".join(str(n) for n in name_raw if n)
@@ -369,21 +453,23 @@ def get_graph_data(graph) -> GraphData:
             else (str(name_raw) if name_raw else None)
         )
         highway_raw = d.get("highway", "Unknown")
-        edges.append(GraphEdge(
-            u=u,
-            v=v,
-            geometry=PathGeometry(coordinates=coords),
-            name=name,
-            highway=(highway_raw[0] if isinstance(highway_raw, list) else highway_raw),
-            speed_kph=d.get("speed_kph"),
-            length=d.get("length"),
-            travel_time=d.get("travel_time"),
-            bus_route_count=int(d.get("bus_route_count", 0) or 0),
-            bus_route_refs=str(d.get("bus_route_refs", "") or ""),
-            habitat_area_m2=float(d.get("habitat_area_m2", 0.0) or 0.0),
-        ))
-    return GraphData(
-        edges=edges,
-        node_count=len(graph.nodes),
-        edge_count=len(graph.edges),
-    )
+        edges.append(
+            {
+                "u": int(u),
+                "v": int(v),
+                "geometry": {"coordinates": coords},
+                "name": name,
+                "highway": (highway_raw[0] if isinstance(highway_raw, list) else highway_raw),
+                "speed_kph": d.get("speed_kph"),
+                "length": d.get("length"),
+                "travel_time": d.get("travel_time"),
+                "bus_route_count": int(d.get("bus_route_count", 0) or 0),
+                "bus_route_refs": str(d.get("bus_route_refs", "") or ""),
+                "habitat_area_m2": float(d.get("habitat_area_m2", 0.0) or 0.0),
+            }
+        )
+    return {
+        "edges": edges,
+        "node_count": len(graph.nodes),
+        "edge_count": len(graph.edges),
+    }

@@ -1,8 +1,8 @@
 dev:
-	npm run dev
+	pnpm run dev
 
 build:
-	npm run build
+	pnpm run build
 
 install:
-	npm install
+	pnpm install

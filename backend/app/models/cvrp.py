@@ -1,21 +1,26 @@
 """CVRP models for API requests and responses."""
 
-from typing import List
+from typing import List, Literal
 
 from pydantic import BaseModel, Field
 
 from app.models.route import EdgeModification
 
+# Waste types with a centroid CSV (``<type>_final_clustered_centroids.csv``).
+WASTE_TYPES = ("DI", "DV", "PC", "VE")
+WasteType = Literal["DI", "DV", "PC", "VE"]
+LoadUnit = Literal["kg", "kg_m"]
+
 
 class CVRPRequest(BaseModel):
     """Request body for CVRP solve endpoint."""
 
-    waste_type: str = Field(default="DI", description="Waste type: DI, DV, PC, or VE")
+    waste_type: WasteType = Field(default="DI", description="Waste type: DI, DV, PC, or VE")
     n_vehicles: int = Field(default=5, ge=1, le=50, description="Number of collection vehicles")
     vehicle_capacity: int = Field(default=5000, ge=100, description="Vehicle capacity in kg")
     max_runtime: int = Field(default=10, ge=1, le=120, description="Solver max runtime in seconds")
     waste_per_centroid: int = Field(default=10, ge=1, description="Waste per centroid in kg")
-    load_unit: str = Field(default="kg", description="Load unit: 'kg' or 'kg_m'")
+    load_unit: LoadUnit = Field(default="kg", description="Load unit: 'kg' or 'kg_m'")
     edge_modifications: List[EdgeModification] = Field(
         default_factory=list, description="Edge modifications to respect during routing"
     )

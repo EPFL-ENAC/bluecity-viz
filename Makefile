@@ -1,6 +1,12 @@
 # BlueCity Viz - Root Makefile
 
+# Per-checkout overrides. Git worktrees export these from .env.worktree (see
+# docs/worktree-env/), the main checkout keeps the defaults. `?=` matters: the
+# value only applies when the environment does not already set one.
+BACKEND_PORT ?= 8000
+
 .PHONY: help dev build install clean upload-frontend-geodata list-geodata check-bucket-env check-geodata clean-geodata
+.PHONY: dev-all tmux-dev-all new go wt-land wt-done wt-open
 
 help: ## Show this help message
 	@echo "BlueCity Viz - Available commands:"
@@ -9,26 +15,46 @@ help: ## Show this help message
 dev: ## Start frontend and backend development servers
 	@echo "Starting backend and frontend development servers..."
 	@trap 'kill 0' INT; \
-	cd backend && uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload & \
-	cd frontend && npm run dev & \
+	cd backend && uv run python -m uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) --reload & \
+	cd frontend && pnpm run dev & \
 	wait
 
 dev-frontend: ## Start only frontend development server
-	cd frontend && npm run dev
+	cd frontend && pnpm run dev
 
 dev-backend: ## Start only backend development server
-	cd backend && uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+	cd backend && uv run python -m uvicorn app.main:app --host 0.0.0.0 --port $(BACKEND_PORT) --reload
 
 build: ## Build frontend for production
-	cd frontend && npm run build
+	cd frontend && pnpm run build
 
 install: ## Install all dependencies
-	cd frontend && npm install
+	cd frontend && pnpm install
 	cd backend && uv sync
 	cd processing && uv sync
 
+# --- dev sessions and git worktrees (docs/worktree-env/)
 
+# Both servers in this terminal (same as `make dev`, the name matches resslab-hub).
+# In a worktree, export its ports first: set -a; . .env.worktree; set +a
+dev-all: dev ## Same as `make dev` (both servers in this terminal)
 
+tmux-dev-all: ## tmux session "<repo>/<branch>" with claude, backend, frontend and shell panes
+	scripts/tmux-dev.sh
+
+new: ## make new BRANCH=feat/x [BASE=origin/dev] [PROMPT=brief.md] : worktree + deps + session, attached
+	scripts/wt-new.sh $(BRANCH) $(BASE) $(if $(PROMPT),--prompt '$(PROMPT)')
+
+go: new ## make go BRANCH=feat/x : jump to the branch's session, creating branch/worktree/session as needed (tab completion: wtgo)
+
+wt-land: ## make wt-land BRANCH=feat/x [MODE=--local] : rebase, PR + squash-merge into dev, clean up
+	scripts/wt-land.sh $(BRANCH) $(MODE)
+
+wt-done: ## make wt-done BRANCH=feat/x : kill the session + remove the worktree, keep the branch
+	scripts/wt-done.sh $(BRANCH)
+
+wt-open: ## make wt-open [TARGET=frontend|backend] [BRANCH=feat/x] : print and open the URL
+	scripts/wt-open.sh $(or $(TARGET),frontend) $(BRANCH)
 
 
 # Check if BUCKET_NAME is defined

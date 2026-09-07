@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { CVRPTooltipData } from '@/composables/useDeckGLCVRP'
 import { getVehicleColor } from '@/stores/cvrp'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps<{
   data: CVRPTooltipData | null
@@ -17,89 +17,87 @@ function formatLoad(kg: number): string {
   if (kg >= 1000) return `${(kg / 1000).toFixed(1)} t`
   return `${Math.round(kg)} kg`
 }
+
+const root = ref<HTMLElement | null>(null)
+
+// same as the edge tooltip: the position never goes through a prop
+function move(x: number, y: number): void {
+  if (root.value) root.value.style.transform = `translate3d(${x + 15}px, ${y + 15}px, 0)`
+}
+
+defineExpose({ move })
 </script>
 
 <template>
-  <div
-    v-if="data"
-    class="cvrp-tooltip"
-    :style="{ left: `${data.x + 15}px`, top: `${data.y + 15}px` }"
-  >
-    <div class="tooltip-header">
-      <span class="vehicle-dot" :style="{ background: dotColor }" />
-      Vehicle {{ data.routeId + 1 }}
-    </div>
+  <div v-show="data" ref="root" class="cvrp-tooltip">
+    <template v-if="data">
+      <div class="tooltip-header">
+        <span class="vehicle-dot" :style="{ background: dotColor }" />
+        Vehicle {{ data.routeId + 1 }}
+      </div>
 
-    <div class="tooltip-section">
-      <div class="tooltip-row">
-        <span class="label">Current load:</span>
-        <span class="value">{{ formatLoad(data.loadKg) }}</span>
+      <div class="tooltip-section">
+        <div class="tooltip-row">
+          <span class="label">Current load:</span>
+          <span class="value">{{ formatLoad(data.loadKg) }}</span>
+        </div>
+        <div class="tooltip-row">
+          <span class="label">Peak load:</span>
+          <span class="value">{{ formatLoad(data.maxLoad) }}</span>
+        </div>
+        <div class="tooltip-row">
+          <span class="label">Reload trips:</span>
+          <span class="value">{{ data.nTrips }}</span>
+        </div>
       </div>
-      <div class="tooltip-row">
-        <span class="label">Peak load:</span>
-        <span class="value">{{ formatLoad(data.maxLoad) }}</span>
-      </div>
-      <div class="tooltip-row">
-        <span class="label">Reload trips:</span>
-        <span class="value">{{ data.nTrips }}</span>
-      </div>
-    </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .cvrp-tooltip {
-  position: fixed;
-  z-index: 1001;
-  background: rgba(255, 255, 255, 0.98);
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 12px;
-  min-width: 170px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-size: 13px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: var(--bc-panel);
+  color: var(--bc-ink);
+  border: 1px solid var(--bc-line);
+  padding: 10px 12px;
+  min-width: 160px;
+  max-width: 260px;
+  font-size: 12px;
   pointer-events: none;
+  z-index: 1001;
 }
 
 .tooltip-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
-  font-size: 14px;
-  color: #1a1a1a;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #eee;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
 }
 
 .vehicle-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.tooltip-section {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  width: 11px;
+  height: 11px;
+  flex: none;
 }
 
 .tooltip-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 2px 0;
+  gap: 12px;
+  padding: 1px 0;
 }
 
 .label {
-  color: #666;
-  font-size: 12px;
+  color: var(--bc-grey);
 }
 
 .value {
-  font-weight: 500;
-  color: #1a1a1a;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 </style>
