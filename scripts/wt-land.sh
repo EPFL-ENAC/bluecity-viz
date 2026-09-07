@@ -68,7 +68,10 @@ case "$mode" in
     ;;
   --local)
     [ -z "$(git status --porcelain --untracked-files=no)" ] || die "the main checkout has uncommitted changes"
-    [ -z "$(worktree_path_for "$BASE_BRANCH")" ] || die "$BASE_BRANCH is checked out in a worktree — remove it (wt remove $BASE_BRANCH) or land with a PR"
+    # The main checkout itself may be on the base branch, that is the normal case.
+    base_wt="$(worktree_path_for "$BASE_BRANCH")"
+    [ -z "$base_wt" ] || [ "$(readlink -f "$base_wt")" = "$(readlink -f "$ROOT")" ] \
+      || die "$BASE_BRANCH is checked out in the worktree $base_wt — remove it (wt remove $BASE_BRANCH) or land with a PR"
     prev="$(current_branch)"
     git checkout "$BASE_BRANCH"
     git pull --ff-only origin "$BASE_BRANCH"
@@ -78,7 +81,8 @@ case "$mode" in
     # errors and undefined names) through ruff, the only linter in its deps.
     # --no-fix: pyproject turns fixes on, and a land must not edit files.
     if [ "${WT_SKIP_CHECKS:-0}" != 1 ]; then
-      (cd frontend && pnpm run lint && pnpm run type-check)
+      # The branch may change the lockfile: install first, then check.
+      (cd frontend && pnpm install --frozen-lockfile && pnpm run lint && pnpm run type-check)
       (cd backend && uv run ruff check --no-fix --select E9,F63,F7,F82 app)
     fi
     git push origin "$BASE_BRANCH"
