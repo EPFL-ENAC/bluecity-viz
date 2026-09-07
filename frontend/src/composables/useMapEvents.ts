@@ -96,8 +96,8 @@ export function useMapEvents(
    */
   function handleLayerClick(_layerId: string, layerLabel: string, e: MapLayerMouseEvent): void {
     if (!e.features || e.features.length === 0 || !mapRef.value) return
-    // While the graph is edited the click belongs to the edge under it.
-    if (scenarioStore.editMode) return
+    // A street under the cursor owns the click while the workbench is open.
+    if (scenarioStore.isOpen && scenarioStore.hovered) return
 
     const feature = e.features[0]
 
@@ -146,7 +146,8 @@ export function useMapEvents(
    */
   function handleLayerMouseMove(_layerId: string, layerLabel: string, e: MapLayerMouseEvent): void {
     if (!e.features || e.features.length === 0 || !mapRef.value) return
-    if (scenarioStore.editMode) return
+    // Same rule as the click: the graph takes the pointer when it is under it.
+    if (scenarioStore.isOpen && scenarioStore.hovered) return
 
     const feature = e.features[0]
     mapRef.value.getCanvas().style.cursor = 'pointer'

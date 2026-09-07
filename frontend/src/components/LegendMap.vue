@@ -2,6 +2,7 @@
 import type { MapLayerConfig } from '@/config/layerTypes'
 import { getVehicleColor, useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
+import { useMapView } from '@/composables/useMapView'
 import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { graphLegendRows } from '@/utils/graphLegend'
@@ -22,12 +23,14 @@ const store = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
 const scenarioStore = useScenarioStore()
+// The legend explains the map, so it reads the same source of truth.
+const { shown } = useMapView()
 
 // The key to the graph vocabulary. Shown whenever a tool draws on the graph.
 const graphRows = computed(() => {
   if (!scenarioStore.isOpen) return []
   return graphLegendRows({
-    mode: scenarioStore.mapMode,
+    mode: shown.value ? 'result' : 'scenario',
     hasModifications: scenarioStore.hasModifications
   })
 })
@@ -47,8 +50,7 @@ const trafficLegend = computed(() => {
   const max = trafficStore.maxValue
 
   // The ramp explains the colour on the map, so it goes with the colour.
-  if (scenarioStore.mapMode !== 'result') return null
-  if (!trafficStore.isOpen || mode === 'none' || !scale) {
+  if (shown.value !== 'routing' || mode === 'none' || !scale) {
     return null
   }
 
@@ -56,7 +58,7 @@ const trafficLegend = computed(() => {
 })
 // Generate CVRP legend
 const cvrpLegend = computed(() => {
-  if (!cvrpStore.isOpen || !cvrpStore.hasResult || !cvrpStore.lastResult) return null
+  if (shown.value !== 'cvrp' || !cvrpStore.lastResult) return null
 
   if (cvrpStore.visualizationMode === 'heatmap') {
     const steps = 40

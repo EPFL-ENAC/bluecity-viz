@@ -219,11 +219,11 @@ describe('scenario store', () => {
     expect(store.list.map((r) => r.name)).toEqual(['Alpha', 'Zebra'])
   })
 
-  it('leaves the selection when edit mode ends', () => {
+  it('clears the selection', () => {
     const store = useScenarioStore()
-    store.setEditMode(true)
     store.select({ key: '3-7', dir: 'fwd' })
-    store.setEditMode(false)
+    expect(store.selected).toEqual({ key: '3-7', dir: 'fwd' })
+    store.select(null)
     expect(store.selected).toBeNull()
   })
 

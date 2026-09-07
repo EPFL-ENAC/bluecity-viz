@@ -75,8 +75,7 @@ export const useScenarioStore = defineStore('scenario', () => {
   const isOpen = ref(false)
   const activeTab = ref<'routing' | 'cvrp'>('routing')
 
-  /** clicking an edge opens the popover instead of cycling */
-  const editMode = ref(false)
+  /** the street picked by a click, shown as an accent band with its popover */
   const selected = ref<EdgeRef | null>(null)
   /** shared by the dock rows and the map, so hovering one lights the other */
   const hovered = ref<EdgeRef | null>(null)
@@ -185,13 +184,6 @@ export const useScenarioStore = defineStore('scenario', () => {
     hovered.value = ref_
   }
 
-  function setEditMode(on: boolean): void {
-    editMode.value = on
-    // Editing is done on the scenario, not on a result read in colour.
-    if (on) mapMode.value = 'scenario'
-    if (!on) selected.value = null
-  }
-
   /** Put the streets of the loaded graph in, and fold what they teach us. */
   function setStreets(next: Map<string, Street>): void {
     streets.value = markRaw(next)
@@ -248,7 +240,6 @@ export const useScenarioStore = defineStore('scenario', () => {
     edgeModifications,
     isOpen,
     activeTab,
-    editMode,
     selected,
     hovered,
     mapMode,
@@ -270,7 +261,6 @@ export const useScenarioStore = defineStore('scenario', () => {
     clear,
     select,
     hover,
-    setEditMode,
     setStreets,
     normalizeOneWay,
     restore,

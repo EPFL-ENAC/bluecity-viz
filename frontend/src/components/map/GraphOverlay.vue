@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import EdgeHoverCard, { type HoverCardData } from '@/components/map/EdgeHoverCard.vue'
 import EdgePopover from '@/components/map/EdgePopover.vue'
-import EditChip from '@/components/map/EditChip.vue'
-import ModeToggle from '@/components/map/ModeToggle.vue'
 import RouteHoverCard, { type RouteCardData } from '@/components/map/RouteHoverCard.vue'
 import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useGraphOverlay, type EdgeHover, type RouteHover } from '@/composables/useGraphOverlay'
+import { useMapView } from '@/composables/useMapView'
 import { useScenarioStore, type ScenarioAction, type ScenarioDir } from '@/stores/scenario'
 import { useCVRPStore } from '@/stores/cvrp'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
@@ -22,6 +21,7 @@ const scenarioStore = useScenarioStore()
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
 const { edges, loadGraphEdges } = useGraphEdges()
+const { shown } = useMapView()
 
 const mapComponentRef = inject<Ref<{ map?: MapLibreMap } | undefined>>('mapRef')
 const map = computed(() => mapComponentRef?.value?.map)
@@ -55,6 +55,8 @@ const totalsByStreet = computed(() => {
 })
 
 function usageFor(key: string) {
+  // The card reads the map: no routing colours on screen, no routing numbers.
+  if (shown.value !== 'routing') return null
   const row = totalsByStreet.value.get(key)
   if (!row) return null
   return {
@@ -136,11 +138,23 @@ watch(
   { immediate: true }
 )
 
-// Leaving edit mode closes the popover with it.
+// Dropping the selection (Esc, or a click on empty map) closes the popover.
 watch(
-  () => scenarioStore.editMode,
-  (on) => {
-    if (!on) popover.value = null
+  () => scenarioStore.selected,
+  (edge) => {
+    if (!edge) popover.value = null
+  }
+)
+
+// Closing the workbench leaves the graph on the map but stops pointing at it,
+// so the cards go with it.
+watch(
+  () => scenarioStore.isOpen,
+  (open) => {
+    if (open) return
+    hoverData.value = null
+    routeData.value = null
+    popover.value = null
   }
 )
 
@@ -199,7 +213,7 @@ function reset() {
 
 void loadGraphEdges()
 
-defineExpose({ hoverRoute: overlay.hoverRoute })
+defineExpose({ hoverRoute: overlay.hoverRoute, focus: overlay.focus })
 
 onUnmounted(() => {
   const instance = map.value
@@ -212,9 +226,6 @@ onUnmounted(() => {
 
 <template>
   <div class="graph-overlay">
-    <EditChip v-if="scenarioStore.editMode" />
-    <ModeToggle v-else />
-
     <!-- The popover sits where the cursor is, so a card would land on top of it. -->
     <EdgeHoverCard ref="hoverCard" :data="popover ? null : hoverData" />
     <RouteHoverCard ref="routeCard" :data="popover ? null : routeData" />

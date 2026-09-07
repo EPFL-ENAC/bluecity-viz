@@ -56,8 +56,10 @@ uv run python scripts/test_with_data.py        # manual check against a running 
 
 **Composables** encapsulate map logic:
 - `composables/useGraphOverlay.ts` — mounts the graph overlay on the map, owns
-  the pointer (hover, click, shift-click, Esc) and writes the result and the
-  routes through `feature-state`
+  the pointer (hover, click, shift-click, Esc), fits the camera on streets
+  (`focus`) and writes the result and the routes through `feature-state`
+- `composables/useMapView.ts` — what the map draws (`shown`) and which dock zone
+  is dimmed, derived from the active tab and the lit zone
 - `composables/useResultStates.ts` — joins the per edge numbers to the streets
   and sums the two directions
 - `composables/useMapLogic.ts`, `useMapEvents.ts` — MapLibre map setup and event handling
@@ -103,9 +105,13 @@ sources for the badges and the CVRP routes. The vocabulary (Bertin):
   paper dashes, a speed limit is ink with direction arrows, and a 22px square
   badge sits at the middle of the street
 - the accent blue is only the pointer: hover and selection
-A `Scenario | Result` toggle flips between the ink scenario and the coloured
-result. Colours and highlights ride `feature-state`, so switching mode never
-touches the 6 MB source.
+The dock says what the map draws, there is no toggle on the map. It has two
+zones, the scenario block and the tool, and exactly one is lit: the map shows
+the ink scenario, or the active tab's result. The other zone goes to 40 % but
+stays clickable, and a click lights it. `composables/useMapView.ts` is the one
+place that answers "what is on the map". Only the tab you are on ever draws.
+Colours and highlights ride `feature-state`, so switching never touches the
+6 MB source.
 
 **Basemap**: `utils/epflBasemap.ts` builds the EPFL "Substrat" style
 (OpenFreeMap vector tiles, canvas textures): flat tints, no road line at all,
@@ -136,7 +142,8 @@ The backend loads a **GraphML road network** (Lausanne) at startup via osmnx, th
 
 ### Data Flow for Traffic Analysis
 
-1. User turns on Edit graph, clicks an edge → the popover writes `{action, dir}` to the `scenario` store
+1. User clicks a street on the map (no mode to turn on first, ⇧-click picks one
+   lane) → the popover writes `{action, dir}` to the `scenario` store
 2. User triggers recalculate → `RoutingTab` calls backend `POST /recalculate` with `scenario.wire`
 3. Backend applies modifications, re-routes with igraph Dijkstra (optionally with BPR congestion), computes CO₂ and BC
 4. Response `EdgeUsageStats[]` is stored in `trafficAnalysis` store → D3 color scales are recomputed

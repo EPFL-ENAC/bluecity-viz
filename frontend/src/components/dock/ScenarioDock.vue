@@ -3,6 +3,7 @@ import CvrpTab from '@/components/dock/CvrpTab.vue'
 import RoutingTab from '@/components/dock/RoutingTab.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcTabs, { type BcTab } from '@/components/ui/BcTabs.vue'
+import { useMapView } from '@/composables/useMapView'
 import { topAbsorbers, valueOf } from '@/composables/useResultStates'
 import { useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
@@ -18,12 +19,30 @@ import { computed } from 'vue'
  * about the same graph, each keeps its own result and its own stale state.
  */
 
-const emit = defineEmits<{ (event: 'hover-route', routeId: number | null): void }>()
+const emit = defineEmits<{
+  (event: 'hover-route', routeId: number | null): void
+  (event: 'focus', keys: string[]): void
+}>()
 
 const layersStore = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
 const scenarioStore = useScenarioStore()
+const { dimmed } = useMapView()
+
+/**
+ * The dock has two zones and the map draws the lit one: the ink scenario on
+ * top, the tool below. Clicking anywhere in the dimmed zone lights it, and the
+ * click still goes through, so nothing needs a second try.
+ */
+function light(zone: 'scenario' | 'tool'): void {
+  scenarioStore.mapMode = zone === 'scenario' ? 'scenario' : 'result'
+}
+
+/** Fit the map on the modified streets, or on one of them. */
+function focus(keys: string[]): void {
+  if (keys.length) emit('focus', keys)
+}
 
 const title = computed(() => layersStore.activeInvestigation?.name ?? 'Road closure scenario')
 
@@ -66,8 +85,12 @@ const totalsByKey = computed(() => {
   return map
 })
 
+// The bars read the routing result, so they follow the tab, not the lit zone.
 const showDelta = computed(
-  () => trafficStore.hasCalculatedRoutes && trafficStore.activeVisualization !== 'none'
+  () =>
+    scenarioStore.activeTab === 'routing' &&
+    trafficStore.hasCalculatedRoutes &&
+    trafficStore.activeVisualization !== 'none'
 )
 
 interface DeltaRow {
@@ -129,24 +152,36 @@ function rowFor(key: string) {
       <div class="dock-title">{{ title }}</div>
     </div>
 
-    <!-- Modified edges -->
-    <div class="dock-section">
+    <!-- Modified edges: the scenario zone -->
+    <section
+      class="dock-section zone"
+      :data-dim="dimmed === 'scenario'"
+      :data-lit="dimmed === 'tool'"
+      @pointerdown.capture="light('scenario')"
+      @focusin="light('scenario')"
+    >
       <div class="dock-section__head">
         <span class="bc-micro">Modified edges · {{ scenarioStore.count }}</span>
-        <button
-          v-if="scenarioStore.count > 0"
-          class="bc-micro clear-btn"
-          @click="scenarioStore.clear()"
-        >
-          Clear
-        </button>
+        <span v-if="scenarioStore.count > 0" class="head-actions">
+          <button
+            class="focus-btn"
+            type="button"
+            title="Fit the map on the modified streets"
+            @click="focus(scenarioStore.list.map((edge) => edge.key))"
+          >
+            <BcIcon name="map-pin" />
+          </button>
+          <button class="bc-micro clear-btn" @click="scenarioStore.clear()">Clear</button>
+        </span>
       </div>
 
       <div
         v-for="edge in scenarioStore.list"
         :key="edge.key"
-        class="edge-row"
+        class="edge-row edge-row--click"
         :data-lit="scenarioStore.hovered?.key === edge.key"
+        title="Zoom to this street"
+        @click="focus([edge.key])"
         @mouseenter="scenarioStore.hover({ key: edge.key, dir: edge.dir })"
         @mouseleave="scenarioStore.hover(null)"
       >
@@ -156,7 +191,7 @@ function rowFor(key: string) {
         <button
           class="edge-row__remove"
           title="Remove this modification"
-          @click="scenarioStore.remove(edge.key)"
+          @click.stop="scenarioStore.remove(edge.key)"
         >
           <BcIcon name="x" />
         </button>
@@ -176,7 +211,7 @@ function rowFor(key: string) {
       </div>
 
       <p v-if="scenarioStore.count === 0" class="bc-empty edge-empty">
-        Turn on Edit graph, then click an edge on the map.
+        Click a street on the map to close it or set a speed limit. ⇧-click picks one direction.
       </p>
 
       <!-- Where the diverted traffic ended up -->
@@ -185,8 +220,10 @@ function rowFor(key: string) {
         <div
           v-for="row in absorbers"
           :key="row.key"
-          class="edge-row edge-row--absorb"
+          class="edge-row edge-row--absorb edge-row--click"
           :data-lit="scenarioStore.hovered?.key === row.key"
+          title="Zoom to this street"
+          @click="focus([row.key])"
           @mouseenter="scenarioStore.hover({ key: row.key, dir: 'both' })"
           @mouseleave="scenarioStore.hover(null)"
         >
@@ -203,21 +240,21 @@ function rowFor(key: string) {
         </div>
       </template>
 
-      <button
-        class="edit-graph"
-        type="button"
-        @click="scenarioStore.setEditMode(!scenarioStore.editMode)"
-      >
-        <span class="edit-graph__dot" :data-on="scenarioStore.editMode"></span>
-        {{ scenarioStore.editMode ? 'Leave edit mode' : 'Edit graph' }}
-      </button>
-    </div>
+    </section>
 
+    <!-- The tool zone: the tabs and the body of the active one -->
+    <section
+      class="zone zone--tool"
+      :data-dim="dimmed === 'tool'"
+      :data-lit="dimmed === 'scenario'"
+      @pointerdown.capture="light('tool')"
+      @focusin="light('tool')"
+    >
+      <BcTabs v-model="scenarioStore.activeTab" :tabs="tabs" />
 
-    <BcTabs v-model="scenarioStore.activeTab" :tabs="tabs" />
-
-    <RoutingTab v-if="scenarioStore.activeTab === 'routing'" />
-    <CvrpTab v-else @hover-route="(id) => emit('hover-route', id)" />
+      <RoutingTab v-if="scenarioStore.activeTab === 'routing'" />
+      <CvrpTab v-else @hover-route="(id) => emit('hover-route', id)" />
+    </section>
   </div>
 </template>
 
@@ -237,6 +274,62 @@ function rowFor(key: string) {
 .dock-section {
   padding: 16px 22px;
   border-bottom: 1px solid var(--bc-line);
+}
+
+/*
+ * The map draws one zone at a time. The other one steps back to 40 %, the same
+ * fade a stale result gets on the map, and comes back on hover so it stays
+ * readable. It is never disabled: a click both lights it and does its job.
+ */
+.zone {
+  position: relative;
+  transition: opacity var(--bc-t);
+}
+
+.zone--tool {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.zone[data-dim='true'] {
+  opacity: 0.4;
+}
+
+.zone[data-dim='true']:hover,
+.zone[data-dim='true']:focus-within {
+  opacity: 0.7;
+}
+
+.zone[data-lit='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--bc-ink);
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.focus-btn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--bc-grey);
+  cursor: pointer;
+  transition: color var(--bc-t);
+}
+
+.focus-btn:hover {
+  color: var(--bc-ink);
 }
 
 .dock-section__head {
@@ -269,6 +362,10 @@ function rowFor(key: string) {
   padding: 7px 0;
   border-top: 1px solid var(--bc-line);
   font-size: var(--bc-fs-body);
+}
+
+.edge-row--click {
+  cursor: pointer;
 }
 
 .edge-row[data-lit='true'] {
@@ -348,40 +445,6 @@ function rowFor(key: string) {
 
 .edge-row__remove:hover {
   color: var(--bc-ink);
-}
-
-.edit-graph {
-  margin-top: 10px;
-  width: 100%;
-  font-family: var(--bc-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  background: transparent;
-  color: var(--bc-ink);
-  border: 1px solid var(--bc-ink);
-  padding: 9px 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: background var(--bc-t);
-}
-
-.edit-graph:hover {
-  background: var(--bc-hover);
-}
-
-.edit-graph__dot {
-  width: 5px;
-  height: 5px;
-  background: var(--bc-accent);
-  flex: none;
-}
-
-.edit-graph__dot[data-on='true'] {
-  background: var(--bc-ink);
 }
 
 .edge-empty {

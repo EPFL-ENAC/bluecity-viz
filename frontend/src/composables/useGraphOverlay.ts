@@ -1,4 +1,5 @@
 import type { FeatureCollection } from 'geojson'
+import { useMapView } from '@/composables/useMapView'
 import { valueOf } from '@/composables/useResultStates'
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
 import { streetKey, useScenarioStore, type ScenarioDir } from '@/stores/scenario'
@@ -31,11 +32,14 @@ import {
 import { GRAPH_COLORS } from '@/utils/epflBasemap'
 import { pointFeatures, routeFeatures } from '@/utils/cvrpSource'
 import { buildGraphSource, pickLane, type GraphSource } from '@/utils/graphSource'
-import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl'
+import { LngLatBounds, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl'
 import { computed, watch, type Ref } from 'vue'
 
 /** The layers the pointer can hit. */
 const PICK_LAYERS = ['bc-graph-one', 'bc-graph-two', 'bc-lanes']
+
+/** The dock hides this much of the map on the right (--bc-dock-w). */
+const DOCK_WIDTH = 340
 
 /** What the map knows about the vehicle route under the cursor. */
 export interface RouteHover {
@@ -75,6 +79,11 @@ export function useGraphOverlay(
   const themeStore = useThemeStore()
   const trafficStore = useTrafficAnalysisStore()
   const cvrpStore = useCVRPStore()
+  // One place says what the map draws: the lit zone of the dock.
+  const { shown } = useMapView()
+
+  /** Ink treatment of the modifications: they recede once colour is on. */
+  const inkMode = computed<'scenario' | 'result'>(() => (shown.value ? 'result' : 'scenario'))
 
   const colors = computed(() => (themeStore.isDark ? GRAPH_COLORS.dark : GRAPH_COLORS.light))
 
@@ -179,7 +188,7 @@ export function useGraphOverlay(
 
       // Under the street names, so the basemap labels stay readable.
       const before = map.getLayer(BEFORE_LAYER) ? BEFORE_LAYER : undefined
-      for (const layer of buildGraphLayers({ colors: colors.value, mode: scenarioStore.mapMode })) {
+      for (const layer of buildGraphLayers({ colors: colors.value, mode: inkMode.value })) {
         if (map.getLayer(layer.id)) map.removeLayer(layer.id)
         map.addLayer(layer, before)
       }
@@ -237,7 +246,7 @@ export function useGraphOverlay(
       map.setFeatureState({ source: GRAPH_SOURCE, id }, { ml: lane.has(id) ? 1 : 0 })
     }
 
-    applyModifications(map, draw, scenarioStore.mapMode)
+    applyModifications(map, draw, inkMode.value)
   }
 
   /**
@@ -257,8 +266,7 @@ export function useGraphOverlay(
     resultIds = []
 
     const mode = trafficStore.activeVisualization
-    const show =
-      scenarioStore.mapMode === 'result' && mode !== 'none' && trafficStore.hasCalculatedRoutes
+    const show = shown.value === 'routing' && mode !== 'none'
 
     if (!show) {
       setDataFilter(map, [])
@@ -300,7 +308,7 @@ export function useGraphOverlay(
     if (!map || mountedOn !== map) return
 
     const result = cvrpStore.lastResult
-    const show = scenarioStore.mapMode === 'result' && !!result && cvrpStore.isOpen
+    const show = shown.value === 'cvrp' && !!result
 
     const points = cvrpStore.showCentroids
       ? pointFeatures(cvrpStore.centroids, result?.n_missing_clients ?? 0)
@@ -470,6 +478,16 @@ export function useGraphOverlay(
     frame = requestAnimationFrame(() => {
       frame = 0
 
+      // The workbench owns the graph. With it closed the map is a picture:
+      // nothing to point at, and the card would offer a click that does
+      // nothing.
+      if (!scenarioStore.isOpen) {
+        onMouseOut()
+        const idle = mapRef.value
+        if (idle) idle.getCanvas().style.cursor = ''
+        return
+      }
+
       // A vehicle route sits on top of the graph, so it takes the pointer.
       const route = routeAt(event)
       if (route) {
@@ -490,7 +508,7 @@ export function useGraphOverlay(
       callbacks.onHover?.(hit, { x: event.point.x, y: event.point.y })
 
       const map = mapRef.value
-      if (map) map.getCanvas().style.cursor = hit && scenarioStore.editMode ? 'pointer' : ''
+      if (map) map.getCanvas().style.cursor = hit && scenarioStore.isOpen ? 'pointer' : ''
     })
   }
 
@@ -523,12 +541,14 @@ export function useGraphOverlay(
   }
 
   function onClick(event: MapMouseEvent): void {
-    if (!scenarioStore.editMode) return
+    // The graph is always editable while the workbench is open, there is no
+    // mode to turn on first.
+    if (!scenarioStore.isOpen) return
     const hit = hitAt(event)
 
     if (!hit) {
-      // clicking empty map leaves edit mode
-      scenarioStore.setEditMode(false)
+      // clicking empty map drops the selection and closes the popover
+      scenarioStore.select(null)
       return
     }
 
@@ -542,7 +562,40 @@ export function useGraphOverlay(
   }
 
   function onKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'Escape' && scenarioStore.editMode) scenarioStore.setEditMode(false)
+    if (event.key === 'Escape' && scenarioStore.selected) scenarioStore.select(null)
+  }
+
+  /**
+   * Fit the camera on some streets, keeping them clear of the dock.
+   *
+   * The dock covers the right of the canvas, so the right padding carries its
+   * width on top of the normal margin.
+   */
+  function focus(keys: string[]): void {
+    const map = mapRef.value
+    const source = graph.value
+    if (!map || !source || keys.length === 0) return
+
+    const bounds = new LngLatBounds()
+    let any = false
+    for (const key of keys) {
+      const street = source.streets.get(key)
+      const id = street?.fwdId ?? street?.bwdId
+      if (id === undefined) continue
+      const feature = source.collection.features[id]
+      if (!feature) continue
+      for (const point of feature.geometry.coordinates) {
+        bounds.extend(point)
+        any = true
+      }
+    }
+    if (!any) return
+
+    map.fitBounds(bounds, {
+      padding: { top: 80, bottom: 80, left: 80, right: 80 + DOCK_WIDTH },
+      maxZoom: 16,
+      duration: 600
+    })
   }
 
   function attach(map: MapLibreMap): void {
@@ -570,19 +623,21 @@ export function useGraphOverlay(
   watch([mapRef, graph], () => mount(), { immediate: true })
 
   watch(() => scenarioStore.edgeModifications, redraw)
-  watch(
-    () => scenarioStore.mapMode,
-    () => {
-      unmount()
-      mount()
-    }
-  )
+  // Only a change of ink treatment needs the layers rebuilt, not every switch
+  // of the lit zone.
+  watch(inkMode, () => {
+    unmount()
+    mount()
+  })
+  // Registered before the CVRP one on purpose: both write the same result
+  // colours, so on a tab switch this one clears them before applyLoads writes.
   watch(
     () => [
       trafficStore.resultTotals,
       trafficStore.activeVisualization,
       trafficStore.filterBusRoutes,
-      trafficStore.isStale
+      trafficStore.isStale,
+      shown.value
     ],
     applyResult
   )
@@ -594,7 +649,7 @@ export function useGraphOverlay(
       cvrpStore.isStale,
       cvrpStore.showCentroids,
       cvrpStore.centroids,
-      scenarioStore.mapMode
+      shown.value
     ],
     applyRoutes
   )
@@ -605,7 +660,18 @@ export function useGraphOverlay(
     mount()
   })
 
-  return { mount, unmount, redraw, applyResult, applyRoutes, hoverRoute, attach, detach, hitAt }
+  return {
+    mount,
+    unmount,
+    redraw,
+    applyResult,
+    applyRoutes,
+    hoverRoute,
+    focus,
+    attach,
+    detach,
+    hitAt
+  }
 }
 
 /** Build the source once the network is loaded. */

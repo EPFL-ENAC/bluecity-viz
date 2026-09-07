@@ -37,6 +37,11 @@ function hoverRoute(routeId: number | null) {
   graphOverlay.value?.hoverRoute(routeId)
 }
 
+/** The scenario block asking the map to fit some streets. */
+function focusStreets(keys: string[]) {
+  graphOverlay.value?.focus(keys)
+}
+
 // Get the provided map ref from parent
 const mapComponentRef = inject<Ref<any>>('mapRef')
 
@@ -60,7 +65,7 @@ watch(
     cvrpStore.isOpen = isOpen
     if (isOpen) return
 
-    scenarioStore.setEditMode(false)
+    scenarioStore.select(null)
     // Closing the workbench throws the waste collection result away. Not on
     // the first run: a restored session was never open, it just loaded.
     if (wasOpen) cvrpStore.clearResult()
@@ -95,7 +100,7 @@ watch(
 
     <!-- The scenario workbench, on the right edge of the map -->
     <div v-if="anyToolOpen" class="dock">
-      <ScenarioDock @hover-route="hoverRoute" />
+      <ScenarioDock @hover-route="hoverRoute" @focus="focusStreets" />
     </div>
   </div>
 </template>

@@ -366,8 +366,8 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     // Delta is the interesting view when the routes moved, otherwise frequency
     activeVisualization.value = scales.delta ? 'delta' : 'frequency'
 
-    // A fresh result is what the user asked for, so show it.
-    useScenarioStore().mapMode = 'result'
+    // A fresh result is what the user asked for, so light the tool zone.
+    if (useScenarioStore().activeTab === 'routing') useScenarioStore().mapMode = 'result'
 
     updateActiveColorScale()
   }
@@ -381,8 +381,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     activeVisualization.value = 'none'
     filterBusRoutes.value = false
     resultScenarioHash.value = null
-    // Nothing left to read in colour, back to the scenario.
-    useScenarioStore().mapMode = 'scenario'
+    // Nothing left to read in colour, back to the scenario. Only if the user
+    // is looking at this tab, the other tool may still have a result up.
+    if (useScenarioStore().activeTab === 'routing') useScenarioStore().mapMode = 'scenario'
     updateActiveColorScale()
   }
 

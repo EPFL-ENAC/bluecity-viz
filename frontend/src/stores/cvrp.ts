@@ -81,12 +81,15 @@ export const useCVRPStore = defineStore('cvrp', () => {
       edgeLoadColorScale.value = scaleSequential(interpolateViridis).domain([0, maxLoad])
     }
 
-    // A fresh solution is what the user asked for, so show it.
-    useScenarioStore().mapMode = 'result'
+    // A fresh solution is what the user asked for, so light the tool zone.
+    if (useScenarioStore().activeTab === 'cvrp') useScenarioStore().mapMode = 'result'
   }
 
   function clearResult() {
-    if (lastResult.value) useScenarioStore().mapMode = 'scenario'
+    // Only when this tab is the one on the map: routing may still show a result.
+    if (lastResult.value && useScenarioStore().activeTab === 'cvrp') {
+      useScenarioStore().mapMode = 'scenario'
+    }
     lastResult.value = null
     edgeLoadColorScale.value = null
     edgeLoadMax.value = 0
