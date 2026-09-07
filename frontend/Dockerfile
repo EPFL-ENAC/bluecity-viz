@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build-stage
+FROM node:24-alpine AS build-stage
 WORKDIR /app
 
 # pnpm, pinned by the packageManager field in package.json
