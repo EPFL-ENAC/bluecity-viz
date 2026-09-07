@@ -1,57 +1,78 @@
-# it4r-webmap
+# BlueCity Viz frontend
 
-## Configuration
+Vue 3 single page app: MapLibre for the basemap, Deck.gl on top for the
+analytics overlays, Pinia for the state, Vuetify for a few remaining widgets.
 
-Two external json files to load configuration in [`.env`](.env) :
+## Setup
 
-- **VITE_PARAMETERS_URL**: Webmap parameters following [this JSON Schema](schema/parameters.schema.json)
-- **VITE_STYLE_URL**: [MapLibre style](https://maplibre.org/maplibre-style/)
+Node 22 (see `.nvmrc`) and pnpm. From this directory:
 
-## Recommended IDE Setup
-
-[VSCode](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur) + [TypeScript Vue Plugin (Volar)](https://marketplace.visualstudio.com/items?itemName=Vue.vscode-typescript-vue-plugin).
-
-## Type Support for `.vue` Imports in TS
-
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [TypeScript Vue Plugin (Volar)](https://marketplace.visualstudio.com/items?itemName=Vue.vscode-typescript-vue-plugin) to make the TypeScript language service aware of `.vue` types.
-
-If the standalone TypeScript plugin doesn't feel fast enough to you, Volar has also implemented a [Take Over Mode](https://github.com/johnsoncodehk/volar/discussions/471#discussioncomment-1361669) that is more performant. You can enable it by the following steps:
-
-1. Disable the built-in TypeScript Extension
-   1. Run `Extensions: Show Built-in Extensions` from VSCode's command palette
-   2. Find `TypeScript and JavaScript Language Features`, right click and select `Disable (Workspace)`
-2. Reload the VSCode window by running `Developer: Reload Window` from the command palette.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vitejs.dev/config/).
-
-## Project Setup
-
-```sh
-npm install
+```bash
+pnpm install
+pnpm run dev
 ```
 
-### Compile and Hot-Reload for Development
+The dev server listens on 5173, or on `FRONTEND_PORT` when it is set. It
+proxies `/api` and `/data` to the backend on `BACKEND_PORT` (8000 by
+default), so the app always calls the backend on a relative path, in dev and
+in production alike. Git worktrees get their own pair of ports, see
+[docs/worktree-env/](../docs/worktree-env/).
 
-```sh
-npm run dev
+## Scripts
+
+| Command | What it does |
+|---|---|
+| `pnpm run dev` | Dev server with hot reload |
+| `pnpm run build` | Type check and build |
+| `pnpm run build-only` | Build without the type check (what the image runs) |
+| `pnpm run preview` | Serve the built `dist/` |
+| `pnpm run type-check` | `vue-tsc` on the app |
+| `pnpm run type-check:test` | `vue-tsc` on the tests |
+| `pnpm run test:unit` | Vitest, runs once |
+| `pnpm run test:watch` | Vitest in watch mode |
+| `pnpm run lint` | ESLint with `--fix` |
+| `pnpm run lint:check` | ESLint without `--fix` (what CI runs) |
+| `pnpm run format` | Prettier on `src/` |
+
+## Layout
+
+```
+src/
+├── components/
+│   ├── dock/        # TrafficDock, CvrpDock: one per analytics tool
+│   ├── sidebar/     # investigation tree, datasets, layers, tools
+│   ├── panels/      # VisualizationsPanel, the map stage
+│   ├── dialogs/     # add source, share, delete
+│   └── ui/          # BcIcon, BcRow, BcSeg, BcSlider, BcDialogCard
+├── composables/     # map setup, events, Deck.gl layer building
+├── stores/          # Pinia: trafficAnalysis, layers, theme, apiKey
+├── services/        # HTTP clients for the backend
+├── config/          # layer definitions per dataset (PMTiles on S3)
+├── utils/           # basemap style, colours, helpers
+└── assets/          # tokens.css and the Suisse Int'l fonts
 ```
 
-### Type-Check, Compile and Minify for Production
+One page: a 360px sidebar on the left, the map full-bleed, and a 340px dock
+on the right when a tool is open. No app bar, no drawer.
 
-```sh
-npm run build
-```
+## Design system
 
-### Run Unit Tests with [Vitest](https://vitest.dev/)
+The UI follows the Workbench design (EPFL design system, Architecture
+sub-brand): Suisse Int'l, 1px hairlines, square corners, no shadows, mono
+micro-labels, Blue City blue `#0500E1` as the only accent, red kept for
+delete.
 
-```sh
-npm run test:unit
-```
+`assets/tokens.css` holds the `--bc-*` tokens, the shared classes and the
+dark block, applied through `data-theme="dark"` on `<html>`.
+`plugins/vuetify.ts` re-themes the Vuetify components that are still in use.
+Build new UI from `components/ui/`, not from raw `v-card` or `v-checkbox`.
 
-### Lint with [ESLint](https://eslint.org/)
+## Build output
 
-```sh
-npm run lint
-```
+`vite build` splits the vendor code into `maplibre`, `deck`, `vuetify` and
+`d3` chunks, and the home view is loaded on demand, so a change in app code
+does not invalidate the cached libraries. Sourcemaps are emitted but not
+referenced from the bundles (`sourcemap: 'hidden'`).
+
+More on the architecture in [CLAUDE.md](../CLAUDE.md), contribution rules in
+[CONTRIBUTING.md](../CONTRIBUTING.md).
