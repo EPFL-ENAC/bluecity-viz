@@ -23,6 +23,11 @@ updates:
     cooldown:
       default-days: 7
       semver-major-days: 30
+    ignore:
+      # the node types follow the node runtime (frontend/.nvmrc, Dockerfile).
+      # we bump them by hand when we move node, not before.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # one PR for all the small stuff, majors stay on their own
       frontend-minor:
