@@ -1,5 +1,6 @@
 import { fetchEdgeGeometries, type EdgeGeometry } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore, type ModificationAction } from '@/stores/trafficAnalysis'
+import { createHullPaths, getPathMidpoint } from '@/utils/geometry'
 import { PathStyleExtension } from '@deck.gl/extensions'
 import { GeoJsonLayer, PathLayer, TextLayer } from '@deck.gl/layers'
 import type { Ref, ShallowRef } from 'vue'
@@ -21,119 +22,6 @@ const SPEED_LIMIT_TEXT: Record<ModificationAction, string> = {
   speed50: '50'
 }
 
-// Helper to get midpoint of a path
-function getPathMidpoint(coordinates: number[][]): [number, number] {
-  if (coordinates.length === 0) return [0, 0]
-  if (coordinates.length === 1) return [coordinates[0][0], coordinates[0][1]]
-
-  // Calculate total length and find midpoint
-  let totalLength = 0
-  const segmentLengths: number[] = []
-
-  for (let i = 1; i < coordinates.length; i++) {
-    const dx = coordinates[i][0] - coordinates[i - 1][0]
-    const dy = coordinates[i][1] - coordinates[i - 1][1]
-    const len = Math.sqrt(dx * dx + dy * dy)
-    segmentLengths.push(len)
-    totalLength += len
-  }
-
-  const halfLength = totalLength / 2
-  let accumulated = 0
-
-  for (let i = 0; i < segmentLengths.length; i++) {
-    if (accumulated + segmentLengths[i] >= halfLength) {
-      const ratio = (halfLength - accumulated) / segmentLengths[i]
-      const x = coordinates[i][0] + ratio * (coordinates[i + 1][0] - coordinates[i][0])
-      const y = coordinates[i][1] + ratio * (coordinates[i + 1][1] - coordinates[i][1])
-      return [x, y]
-    }
-    accumulated += segmentLengths[i]
-  }
-
-  const last = coordinates[coordinates.length - 1]
-  return [last[0], last[1]]
-}
-
-// Helper to compute offset path (parallel line at given distance)
-// offsetMeters is approximate - we convert to degrees roughly
-function computeOffsetPath(coordinates: number[][], offsetMeters: number): number[][] {
-  if (coordinates.length < 2) return coordinates
-
-  // Rough conversion: 1 degree ≈ 111,000 meters at equator
-  // For latitude ~46° (Lausanne), longitude degree ≈ 77,000 meters
-  const metersPerDegreeLat = 111000
-  const metersPerDegreeLon = 77000
-
-  const offsetPath: number[][] = []
-
-  for (let i = 0; i < coordinates.length; i++) {
-    let nx = 0,
-      ny = 0
-
-    if (i === 0) {
-      // First point: use direction to next point
-      const dx = coordinates[1][0] - coordinates[0][0]
-      const dy = coordinates[1][1] - coordinates[0][1]
-      const len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 0) {
-        nx = -dy / len
-        ny = dx / len
-      }
-    } else if (i === coordinates.length - 1) {
-      // Last point: use direction from previous point
-      const dx = coordinates[i][0] - coordinates[i - 1][0]
-      const dy = coordinates[i][1] - coordinates[i - 1][1]
-      const len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 0) {
-        nx = -dy / len
-        ny = dx / len
-      }
-    } else {
-      // Middle points: average normals from both segments
-      const dx1 = coordinates[i][0] - coordinates[i - 1][0]
-      const dy1 = coordinates[i][1] - coordinates[i - 1][1]
-      const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1)
-
-      const dx2 = coordinates[i + 1][0] - coordinates[i][0]
-      const dy2 = coordinates[i + 1][1] - coordinates[i][1]
-      const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2)
-
-      if (len1 > 0 && len2 > 0) {
-        const nx1 = -dy1 / len1
-        const ny1 = dx1 / len1
-        const nx2 = -dy2 / len2
-        const ny2 = dx2 / len2
-        nx = (nx1 + nx2) / 2
-        ny = (ny1 + ny2) / 2
-        // Normalize
-        const nlen = Math.sqrt(nx * nx + ny * ny)
-        if (nlen > 0) {
-          nx /= nlen
-          ny /= nlen
-        }
-      }
-    }
-
-    // Apply offset in degrees
-    const offsetLon = (offsetMeters / metersPerDegreeLon) * nx
-    const offsetLat = (offsetMeters / metersPerDegreeLat) * ny
-
-    offsetPath.push([coordinates[i][0] + offsetLon, coordinates[i][1] + offsetLat])
-  }
-
-  return offsetPath
-}
-
-// Create hull outline paths (left and right offset + end caps)
-function createHullPaths(coordinates: number[][], widthMeters: number): number[][][] {
-  const halfWidth = widthMeters / 2
-  const leftPath = computeOffsetPath(coordinates, halfWidth)
-  const rightPath = computeOffsetPath(coordinates, -halfWidth)
-
-  // Return as separate paths for the two sides
-  return [leftPath, rightPath]
-}
 
 interface EdgeUsageStats {
   u: number
