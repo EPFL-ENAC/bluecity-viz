@@ -34,32 +34,16 @@ export interface EdgeGeometry {
  */
 export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[]> {
   try {
-    console.time('[Frontend] Total fetch time')
-
-    console.time('[Frontend] Network request')
     const response = await fetch(getGeojsonUrl())
-    console.timeEnd('[Frontend] Network request')
 
     if (!response.ok) {
       console.warn('GeoJSON file not available, using empty dataset')
       return []
     }
 
-    // Check response size
-    const contentLength = response.headers.get('content-length')
-    const contentEncoding = response.headers.get('content-encoding')
-    console.log(
-      `[Frontend] Response size: ${
-        contentLength ? (parseInt(contentLength) / 1024).toFixed(2) + ' KB' : 'unknown'
-      }${contentEncoding ? ` (${contentEncoding})` : ''}`
-    )
-
-    console.time('[Frontend] JSON parsing')
     const geojson = await response.json()
-    console.timeEnd('[Frontend] JSON parsing')
 
     // Convert GeoJSON features to EdgeGeometry format
-    console.time('[Frontend] GeoJSON conversion')
     const edges: EdgeGeometry[] = geojson.features.map((feature: any) => ({
       u: feature.properties.u,
       v: feature.properties.v,
@@ -75,10 +59,6 @@ export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[
     if (limit) {
       edges.splice(limit)
     }
-    console.timeEnd('[Frontend] GeoJSON conversion')
-
-    console.timeEnd('[Frontend] Total fetch time')
-    console.log(`[Frontend] Loaded ${edges.length} edges from GeoJSON`)
 
     return edges
   } catch (error) {
