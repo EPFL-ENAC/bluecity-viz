@@ -25,7 +25,7 @@ const scenarioStore = useScenarioStore()
 
 // The key to the graph vocabulary. Shown whenever a tool draws on the graph.
 const graphRows = computed(() => {
-  if (!trafficStore.isOpen && !cvrpStore.isOpen) return []
+  if (!scenarioStore.isOpen) return []
   return graphLegendRows({
     mode: scenarioStore.mapMode,
     hasModifications: scenarioStore.hasModifications

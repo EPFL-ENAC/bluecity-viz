@@ -101,7 +101,8 @@ export const useLayersStore = defineStore('layers', () => {
     const trafficStore = useTrafficAnalysisStore()
 
     return {
-      isOpen: trafficStore.isOpen,
+      // the workbench owns this flag, both tools follow it
+      isOpen: useScenarioStore().isOpen,
       activeVisualization: trafficStore.activeVisualization,
       useCongestionModel: trafficStore.useCongestionModel,
       congestionIterations: trafficStore.congestionIterations,
@@ -116,6 +117,8 @@ export const useLayersStore = defineStore('layers', () => {
   function applyTrafficAnalysisState(inputs: TrafficAnalysisInputs, investigationId: string): void {
     const trafficStore = useTrafficAnalysisStore()
     const results = getResults(investigationId)
+
+    useScenarioStore().isOpen = inputs.isOpen
 
     trafficStore.restoreState({
       isOpen: inputs.isOpen,
@@ -218,8 +221,6 @@ export const useLayersStore = defineStore('layers', () => {
 
   // Persist state to localStorage
   function persistState() {
-    const trafficStore = useTrafficAnalysisStore()
-
     const stateToPersist: PersistedState = {
       selectedLayers: selectedLayers.value,
       availableResourceSources: availableResourceSources.value,
@@ -228,7 +229,7 @@ export const useLayersStore = defineStore('layers', () => {
       activeInvestigationId: activeInvestigationId.value,
       sp0Period: sp0Period.value,
       expandedGroups: expandedGroups.value,
-      trafficPanelOpen: trafficStore.isOpen
+      trafficPanelOpen: useScenarioStore().isOpen
     }
     saveStateToStorage(stateToPersist)
   }
@@ -261,7 +262,7 @@ export const useLayersStore = defineStore('layers', () => {
   const scenarioStore = useScenarioStore()
   watch(
     [
-      () => trafficStore.isOpen,
+      () => scenarioStore.isOpen,
       () => scenarioStore.edgeModifications,
       () => trafficStore.activeVisualization,
       () => trafficStore.useCongestionModel,

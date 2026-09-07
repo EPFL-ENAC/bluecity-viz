@@ -180,7 +180,8 @@ describe('layers store persistence', () => {
     const scenario = useScenarioStore()
 
     store.switchToInvestigation('inv-1')
-    traffic.openPanel()
+    // the workbench owns "open", both tools follow it
+    scenario.isOpen = true
     scenario.set('1-2', { action: 'remove', dir: 'both', name: 'Rue X' })
     traffic.setEdgeUsage(edgeRows(20), edgeRows(20), { total_distance_km: 12 } as any)
     traffic.setActiveVisualization('frequency')
@@ -229,7 +230,8 @@ describe('layers store persistence', () => {
     const traffic = useTrafficAnalysisStore()
     const scenario = useScenarioStore()
 
-    traffic.openPanel()
+    // the workbench owns "open", both tools follow it
+    scenario.isOpen = true
     scenario.set('1-2', { action: 'remove', dir: 'both', name: 'Rue X' })
     traffic.setActiveVisualization('frequency')
     traffic.useCongestionModel = true
@@ -249,7 +251,7 @@ describe('layers store persistence', () => {
     const reloadedTraffic = useTrafficAnalysisStore()
 
     expect(reloaded.selectedLayers).toEqual(['lausanne_pop_density-layer'])
-    expect(reloadedTraffic.isOpen).toBe(true)
+    expect(useScenarioStore().isOpen).toBe(true)
     expect(useScenarioStore().get('1-2')).toEqual({
       action: 'remove',
       dir: 'both',

@@ -85,7 +85,14 @@ describe('buildGraphLayers', () => {
   })
 
   it('uses the accent for the pointer and nothing else', () => {
-    const pointer = ['bc-hover', 'bc-hover-halo', 'bc-selected', 'bc-selected-ghost']
+    // the cvrp halo is the pointer too: it says which vehicle you are on
+    const pointer = [
+      'bc-hover',
+      'bc-hover-halo',
+      'bc-selected',
+      'bc-selected-ghost',
+      'bc-cvrp-halo'
+    ]
     for (const id of pointer) {
       expect(layer(id).paint['line-color']).toBe(light.accent)
     }

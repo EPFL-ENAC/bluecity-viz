@@ -48,7 +48,7 @@ const meta = computed(() => {
   const data = props.data
   if (!data) return ''
   const parts = [classLabel(data.highway)]
-  if (data.speed) parts.push(`${data.speed} KM/H`)
+  if (data.speed) parts.push(`${Math.round(data.speed)} KM/H`)
   parts.push(data.oneway ? '→ 1 EDGE' : '↔ 2 EDGES')
   return parts.join(' · ')
 })

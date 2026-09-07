@@ -1,39 +1,41 @@
 <script setup lang="ts">
 import LegendMap from '@/components/LegendMap.vue'
 import MapLibreMap from '@/components/MapLibreMap.vue'
-import CvrpDock from '@/components/dock/CvrpDock.vue'
-import TrafficDock from '@/components/dock/TrafficDock.vue'
+import ScenarioDock from '@/components/dock/ScenarioDock.vue'
 import GraphOverlay from '@/components/map/GraphOverlay.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
 import { useCVRPStore } from '@/stores/cvrp'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { computed, defineAsyncComponent, inject, ref, watch, type Ref } from 'vue'
+import { computed, inject, ref, watch, type Ref } from 'vue'
 
 // Use the map logic composable
 const { map, parameters, center, zoom, syncAllLayersVisibility, layersStore } = useMapLogic()
 
-// Use the traffic analysis store
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
+const scenarioStore = useScenarioStore()
 
-// The whole deck.gl stack is a separate chunk, loaded the first time a tool is
-// opened. Before that the page does not fetch the 6 MB road network at all.
-const DeckAnalysisLayer = defineAsyncComponent(() => import('./DeckAnalysisLayer.vue'))
+const anyToolOpen = computed(() => scenarioStore.isOpen)
 
-const anyToolOpen = computed(() => trafficStore.isOpen || cvrpStore.isOpen)
-
-// Once mounted it stays mounted: taking the deck.gl overlay off the map and
-// putting it back leaks a maplibre render listener each time, and rebuilding
-// the overlay throws away the GPU buffers for nothing. Closing every tool
-// empties the layer list instead.
-const deckMounted = ref(false)
+// The graph overlay pulls the 6 MB road network, so it is only mounted once a
+// tool asks for it. Once mounted it stays: its maplibre layers cost nothing
+// when no tool is open, and remounting would re-tile the source for nothing.
+const graphMounted = ref(false)
 watch(
   anyToolOpen,
   (open) => {
-    if (open) deckMounted.value = true
+    if (open) graphMounted.value = true
   },
   { immediate: true }
 )
+
+const graphOverlay = ref<InstanceType<typeof GraphOverlay> | null>(null)
+
+/** A dock row hovering a vehicle lights that route on the map. */
+function hoverRoute(routeId: number | null) {
+  graphOverlay.value?.hoverRoute(routeId)
+}
 
 // Get the provided map ref from parent
 const mapComponentRef = inject<Ref<any>>('mapRef')
@@ -49,13 +51,21 @@ watch(
   { immediate: true }
 )
 
-// Closing the waste collection tool throws its result away. This lives here,
-// not in the deck.gl child, so it still runs when that child is not mounted.
+// The workbench owns whether the tools are open. Both stores follow it, so a
+// restored session cannot end up with a tool "open" and no dock on screen.
 watch(
-  () => cvrpStore.isOpen,
-  (isOpen) => {
-    if (!isOpen) cvrpStore.clearResult()
-  }
+  () => scenarioStore.isOpen,
+  (isOpen, wasOpen) => {
+    trafficStore.isOpen = isOpen
+    cvrpStore.isOpen = isOpen
+    if (isOpen) return
+
+    scenarioStore.setEditMode(false)
+    // Closing the workbench throws the waste collection result away. Not on
+    // the first run: a restored session was never open, it just loaded.
+    if (wasOpen) cvrpStore.clearResult()
+  },
+  { immediate: true }
 )
 </script>
 
@@ -76,16 +86,16 @@ watch(
       </template>
     </MapLibreMap>
 
-    <!-- The street graph: MapLibre layers, the hover card and the editor -->
-    <GraphOverlay v-if="deckMounted" :class="{ 'is-docked': anyToolOpen }" />
+    <!-- The street graph, the result, the routes, the hover card and the editor -->
+    <GraphOverlay
+      v-if="graphMounted"
+      ref="graphOverlay"
+      :class="{ 'is-docked': anyToolOpen }"
+    />
 
-    <!-- Deck.gl canvas, tooltips and analysis layers -->
-    <DeckAnalysisLayer v-if="deckMounted" />
-
-    <!-- Analysis dock, on the right edge of the map, only when a tool is open -->
+    <!-- The scenario workbench, on the right edge of the map -->
     <div v-if="anyToolOpen" class="dock">
-      <TrafficDock v-if="trafficStore.isOpen" />
-      <CvrpDock v-else />
+      <ScenarioDock @hover-route="hoverRoute" />
     </div>
   </div>
 </template>

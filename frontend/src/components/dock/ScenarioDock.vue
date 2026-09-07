@@ -1,80 +1,31 @@
 <script setup lang="ts">
-import ImpactStatistics from '@/components/ImpactStatistics.vue'
+import CvrpTab from '@/components/dock/CvrpTab.vue'
+import RoutingTab from '@/components/dock/RoutingTab.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
-import BcRow from '@/components/ui/BcRow.vue'
-import BcSeg from '@/components/ui/BcSeg.vue'
-import BcSlider from '@/components/ui/BcSlider.vue'
-import { recalculateRoutes } from '@/services/trafficAnalysis'
+import BcTabs, { type BcTab } from '@/components/ui/BcTabs.vue'
+import { topAbsorbers, valueOf } from '@/composables/useResultStates'
+import { useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
 import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { topAbsorbers, valueOf } from '@/composables/useResultStates'
-import { computed, onMounted, ref } from 'vue'
+import { computed } from 'vue'
+
+/**
+ * The scenario workbench.
+ *
+ * One dock, one scenario, two tools. The modified edges belong to the dock,
+ * not to a tab: routing and waste collection both answer the same question
+ * about the same graph, each keeps its own result and its own stale state.
+ */
+
+const emit = defineEmits<{ (event: 'hover-route', routeId: number | null): void }>()
 
 const layersStore = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
+const cvrpStore = useCVRPStore()
 const scenarioStore = useScenarioStore()
 
-const loadingMessage = ref('')
-
 const title = computed(() => layersStore.activeInvestigation?.name ?? 'Road closure scenario')
-
-// The pair counts come from the server, not from a constant here.
-onMounted(() => {
-  trafficStore.loadGraphInfo().catch((error) => {
-    console.error('Failed to load graph info:', error)
-  })
-})
-
-function formatTrips(count: number): string {
-  return count.toLocaleString('en-US')
-}
-
-// The two choices, hidden until we know the numbers.
-const tripsOptions = computed(() => {
-  const base = trafficStore.odPairsDefault
-  const full = trafficStore.odPairsFull
-  if (!base || !full) return []
-  return [
-    { value: 'default', label: `${formatTrips(base)} (default)` },
-    { value: 'full', label: `${formatTrips(full)} (full)` }
-  ]
-})
-
-// null and the default count are the same choice on screen.
-const trips = computed({
-  get: () => {
-    const chosen = trafficStore.odPairs
-    return chosen === null || chosen === trafficStore.odPairsDefault ? 'default' : 'full'
-  },
-  set: (value: string) => {
-    trafficStore.setOdPairs(value === 'full' ? trafficStore.odPairsFull : null)
-  }
-})
-
-// What we send: null means the server default, so use the number when we have it.
-function chosenOdPairs(): number | undefined {
-  return trafficStore.odPairs ?? trafficStore.odPairsDefault ?? undefined
-}
-
-const resultTrips = computed(() =>
-  trafficStore.resultOdPairs === null ? '' : formatTrips(trafficStore.resultOdPairs)
-)
-
-// Sentence-case labels, per the design. Falls back to the store label.
-const VIS_LABELS: Record<string, string> = {
-  frequency: 'Edge usage frequency',
-  co2: 'CO₂ emissions',
-  delta: 'Traffic change (Δ)',
-  delta_relative: 'Traffic change (Δ, relative %)',
-  co2_delta: 'CO₂ emissions change',
-  betweenness: 'Betweenness centrality',
-  betweenness_delta: 'Betweenness change'
-}
-
-function visLabel(mode: string, fallback: string) {
-  return VIS_LABELS[mode] ?? fallback
-}
 
 // The badge in front of each modified edge: x to remove, else the speed limit.
 function edgeBadge(action: string) {
@@ -83,6 +34,30 @@ function edgeBadge(action: string) {
 
 // ↔ both directions, → or ← one lane of the street.
 const DIR_GLYPH: Record<string, string> = { both: '↔', fwd: '→', bwd: '←' }
+
+/** What each tab says under its name: not run, a summary, or stale. */
+const tabs = computed<BcTab[]>(() => [
+  {
+    id: 'routing',
+    label: 'Routing',
+    meta: trafficStore.isStale
+      ? 'stale'
+      : trafficStore.hasCalculatedRoutes
+        ? `${trafficStore.resultOdPairs ?? 0} trips`
+        : 'not run',
+    stale: trafficStore.isStale
+  },
+  {
+    id: 'cvrp',
+    label: 'Waste CVRP',
+    meta: cvrpStore.isStale
+      ? 'stale'
+      : cvrpStore.hasResult
+        ? `${cvrpStore.lastResult?.n_routes ?? 0} vehicles`
+        : 'not run',
+    stale: cvrpStore.isStale
+  }
+])
 
 // Once a result exists the rows carry a Δ bar in the same colour as the map.
 const totalsByKey = computed(() => {
@@ -94,15 +69,6 @@ const totalsByKey = computed(() => {
 const showDelta = computed(
   () => trafficStore.hasCalculatedRoutes && trafficStore.activeVisualization !== 'none'
 )
-
-/** The widest value on screen, so the bars share one scale. */
-const barMax = computed(() => {
-  let max = 0
-  for (const row of [...modifiedRows.value, ...absorbers.value]) {
-    max = Math.max(max, Math.abs(row.value))
-  }
-  return max || 1
-})
 
 interface DeltaRow {
   key: string
@@ -133,6 +99,15 @@ const absorbers = computed(() => {
   })
 })
 
+/** The widest value on screen, so the bars share one scale. */
+const barMax = computed(() => {
+  let max = 0
+  for (const row of [...modifiedRows.value, ...absorbers.value]) {
+    max = Math.max(max, Math.abs(row.value))
+  }
+  return max || 1
+})
+
 function barWidth(value: number): string {
   return `${Math.min(100, (Math.abs(value) / barMax.value) * 100)}%`
 }
@@ -145,56 +120,12 @@ function deltaText(value: number): string {
 function rowFor(key: string) {
   return modifiedRows.value.find((row) => row.key === key) ?? null
 }
-
-async function calculateRoutes() {
-  const odPairs = chosenOdPairs()
-  const trips = odPairs ? ` on ${formatTrips(odPairs)} trips` : ''
-
-  trafficStore.isCalculating = true
-  loadingMessage.value = trafficStore.useCongestionModel
-    ? `Congestion routing (${trafficStore.congestionIterations} iteration${
-        trafficStore.congestionIterations > 1 ? 's' : ''
-      })${trips}…`
-    : `Calculating routes${trips}…`
-  try {
-    // The baseline is the same for every run at that count, so it comes from
-    // the store cache after the first time.
-    const [baseline, result] = await Promise.all([
-      trafficStore.getBaseline(odPairs),
-      recalculateRoutes(scenarioStore.wire, {
-        useCongestionModel: trafficStore.useCongestionModel,
-        congestionIterations: trafficStore.congestionIterations,
-        elasticDemand: trafficStore.elasticDemand,
-        odPairs
-      })
-    ])
-
-    // The count changed while we were waiting, this answer is for the old one.
-    if (odPairs !== chosenOdPairs()) return
-
-    if (baseline.odPairs !== result.od_pairs) {
-      console.warn(`Baseline is on ${baseline.odPairs} pairs, the run on ${result.od_pairs}`)
-    }
-
-    trafficStore.setEdgeUsage(
-      baseline.rows,
-      result.new_edge_usage,
-      result.impact_statistics,
-      result.od_pairs,
-      scenarioStore.hash
-    )
-  } catch (error) {
-    console.error('Failed to calculate routes:', error)
-  } finally {
-    trafficStore.isCalculating = false
-  }
-}
 </script>
 
 <template>
   <div class="dock-panel">
     <div class="dock-head">
-      <div class="bc-micro">Traffic analysis</div>
+      <div class="bc-micro">Scenario</div>
       <div class="dock-title">{{ title }}</div>
     </div>
 
@@ -282,134 +213,11 @@ async function calculateRoutes() {
       </button>
     </div>
 
-    <!-- Routing model -->
-    <div class="dock-section">
-      <div class="bc-micro dock-section__title">Routing model</div>
 
-      <BcRow
-        :on="trafficStore.useCongestionModel"
-        @click="trafficStore.useCongestionModel = !trafficStore.useCongestionModel"
-      >
-        Iterative model (BPR congestion)
-        <template #trailing>
-          <v-tooltip location="right" max-width="320">
-            <template #activator="{ props: tip }">
-              <span v-bind="tip" class="info-icon" @click.stop><BcIcon name="info" /></span>
-            </template>
-            <div>
-              <div class="font-weight-bold mb-1">Static betweenness vs. iterative volumes</div>
-              <div class="mb-2">
-                <strong>Off — Static betweenness:</strong> BC is computed once on the modified graph
-                to derive congested travel times (<em>duration_bc</em>), then all affected routes
-                are re-run with those weights. Roads that structurally attract more flow appear
-                slower, discouraging over-assignment without any iteration.
-              </div>
-              <div>
-                <strong>On — Iterative volumes:</strong> actual simulated route volumes are counted,
-                normalised to daily vehicle-km, and fed into the BPR speed-reduction formula. Routes
-                are then re-run with the updated weights, repeating for the chosen number of
-                iterations — converging toward a <em>Wardrop user equilibrium</em>.
-              </div>
-            </div>
-          </v-tooltip>
-        </template>
-      </BcRow>
+    <BcTabs v-model="scenarioStore.activeTab" :tabs="tabs" />
 
-      <div v-if="trafficStore.useCongestionModel" class="iterations">
-        <div class="iterations__label">Iterations ({{ trafficStore.congestionIterations }})</div>
-        <BcSlider v-model="trafficStore.congestionIterations" :min="1" :max="3" :step="1" />
-      </div>
-
-      <BcRow
-        :on="trafficStore.elasticDemand"
-        @click="trafficStore.elasticDemand = !trafficStore.elasticDemand"
-      >
-        Elastic demand
-        <template #trailing>
-          <v-tooltip location="right" max-width="320">
-            <template #activator="{ props: tip }">
-              <span v-bind="tip" class="info-icon" @click.stop><BcIcon name="info" /></span>
-            </template>
-            <div>
-              <div class="font-weight-bold mb-1">Elastic demand</div>
-              <div>
-                When on, trip destinations are resampled to reflect that travellers adapt to new
-                travel times. Closing a major road shifts trips to closer destinations rather than
-                spiking total travel time. Origins remain unchanged; only destination choice
-                responds to the modified network.
-              </div>
-            </div>
-          </v-tooltip>
-        </template>
-      </BcRow>
-
-      <div v-if="tripsOptions.length > 0" class="trips">
-        <div class="bc-micro trips__label">Trips</div>
-        <BcSeg
-          v-model="trips"
-          :options="tripsOptions"
-          equal
-          :class="{ 'trips__seg--busy': trafficStore.isCalculating }"
-        />
-        <p v-if="trips === 'full'" class="trips__warning">
-          About 4x slower. Compared with the default, 85 of the 100 busiest roads are the same
-          (frequency correlation 0.96).
-        </p>
-      </div>
-
-      <button
-        class="bc-btn bc-btn--primary calculate"
-        :disabled="trafficStore.isCalculating"
-        @click="calculateRoutes"
-      >
-        {{ trafficStore.isCalculating ? 'Calculating…' : 'Calculate routes' }}
-      </button>
-      <v-progress-linear
-        v-if="trafficStore.isCalculating"
-        class="calculate__progress"
-        color="secondary"
-        :height="1"
-        indeterminate
-      />
-      <div v-if="trafficStore.isCalculating" class="bc-empty calculate__msg">
-        {{ loadingMessage }}
-      </div>
-    </div>
-
-    <!-- Visualisation -->
-    <div v-if="trafficStore.hasCalculatedRoutes" class="dock-section">
-      <div class="bc-micro dock-section__title">
-        Visualisation<template v-if="resultTrips"> · {{ resultTrips }} trips</template>
-      </div>
-      <BcRow
-        v-for="vis in trafficStore.availableVisualizations"
-        :key="vis.value"
-        :check="false"
-        :on="trafficStore.activeVisualization === vis.value"
-        :active="trafficStore.activeVisualization === vis.value"
-        class="vis-row"
-        @click="trafficStore.setActiveVisualization(vis.value)"
-      >
-        {{ visLabel(vis.value, vis.label) }}
-      </BcRow>
-
-      <div class="clip">
-        <span class="clip__label">Clip to</span>
-        <span
-          class="clip__chip"
-          :data-on="trafficStore.filterBusRoutes ? 'true' : 'false'"
-          @click="trafficStore.filterBusRoutes = !trafficStore.filterBusRoutes"
-          >Bus routes</span
-        >
-      </div>
-    </div>
-
-    <!-- Impact -->
-    <ImpactStatistics
-      v-if="trafficStore.impactStatistics"
-      :statistics="trafficStore.impactStatistics"
-      :elastic-demand="trafficStore.elasticDemand"
-    />
+    <RoutingTab v-if="scenarioStore.activeTab === 'routing'" />
+    <CvrpTab v-else @hover-route="(id) => emit('hover-route', id)" />
   </div>
 </template>
 

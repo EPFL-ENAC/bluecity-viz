@@ -1,27 +1,43 @@
+import type { FeatureCollection } from 'geojson'
 import { valueOf } from '@/composables/useResultStates'
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
 import { streetKey, useScenarioStore, type ScenarioDir } from '@/stores/scenario'
 import { useThemeStore } from '@/stores/theme'
+import { useCVRPStore } from '@/stores/cvrp'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import {
   addGraphImages,
+  applyCvrp,
+  applyCvrpHover,
   applyModifications,
   BADGE_SOURCE,
+  CVRP_POINT_SOURCE,
+  CVRP_SOURCE,
   BEFORE_LAYER,
   buildGraphLayers,
   drawFor,
   emptyBadges,
+  emptyPoints,
   GRAPH_SOURCE,
   graphLayerIds,
   idFilter
 } from '@/utils/bluecityGraph'
 import { GRAPH_COLORS } from '@/utils/epflBasemap'
+import { pointFeatures, routeFeatures } from '@/utils/cvrpSource'
 import { buildGraphSource, pickLane, type GraphSource } from '@/utils/graphSource'
 import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl'
 import { computed, watch, type Ref } from 'vue'
 
 /** The layers the pointer can hit. */
 const PICK_LAYERS = ['bc-graph-one', 'bc-graph-two', 'bc-lanes']
+
+/** What the map knows about the vehicle route under the cursor. */
+export interface RouteHover {
+  route_id: number
+  trip_id: number
+  load_kg: number
+  color: string
+}
 
 export interface EdgeHover {
   key: string
@@ -46,11 +62,13 @@ export function useGraphOverlay(
   callbacks: {
     onHover?: (hover: EdgeHover | null, point: { x: number; y: number }) => void
     onPick?: (key: string, dir: ScenarioDir, point: { x: number; y: number }) => void
+    onRoute?: (route: RouteHover | null, point: { x: number; y: number }) => void
   } = {}
 ) {
   const scenarioStore = useScenarioStore()
   const themeStore = useThemeStore()
   const trafficStore = useTrafficAnalysisStore()
+  const cvrpStore = useCVRPStore()
 
   const colors = computed(() => (themeStore.isDark ? GRAPH_COLORS.dark : GRAPH_COLORS.light))
 
@@ -102,14 +120,22 @@ export function useGraphOverlay(
       if (!map.getSource(GRAPH_SOURCE)) {
         map.addSource(GRAPH_SOURCE, {
           type: 'geojson',
-          data: source.collection as unknown as GeoJSON.FeatureCollection
+          data: source.collection as unknown as FeatureCollection
         })
       }
       if (!map.getSource(BADGE_SOURCE)) {
         map.addSource(BADGE_SOURCE, {
           type: 'geojson',
-          data: emptyBadges() as unknown as GeoJSON.FeatureCollection
+          data: emptyBadges() as unknown as FeatureCollection
         })
+      }
+      for (const id of [CVRP_SOURCE, CVRP_POINT_SOURCE]) {
+        if (!map.getSource(id)) {
+          map.addSource(id, {
+            type: 'geojson',
+            data: emptyPoints() as unknown as FeatureCollection
+          })
+        }
       }
 
       // Under the street names, so the basemap labels stay readable.
@@ -127,6 +153,7 @@ export function useGraphOverlay(
     mountedOn = map
     redraw()
     applyResult()
+    applyRoutes()
   }
 
   /** Wait for the style to move on, then mount again. */
@@ -211,6 +238,76 @@ export function useGraphOverlay(
     const opacity = trafficStore.isStale ? 0.4 : 1
     map.setPaintProperty('bc-data', 'line-opacity', opacity)
     map.setPaintProperty('bc-data-casing', 'line-opacity', opacity * 0.9)
+  }
+
+  /**
+   * The waste collection routes, braided one lane per vehicle.
+   *
+   * Load mode colours the graph itself instead, so it goes through the same
+   * feature-state channel as the routing result.
+   */
+  const EMPTY = { type: 'FeatureCollection' as const, features: [] }
+
+  function applyRoutes(): void {
+    const map = mapRef.value
+    if (!map || mountedOn !== map) return
+
+    const result = cvrpStore.lastResult
+    const show = scenarioStore.mapMode === 'result' && !!result && cvrpStore.isOpen
+
+    const points = cvrpStore.showCentroids
+      ? pointFeatures(cvrpStore.centroids, result?.n_missing_clients ?? 0)
+      : []
+
+    if (!show || !result) {
+      applyCvrp(map, points.length ? { routes: EMPTY, points, mode: 'routes', stale: false } : null)
+      return
+    }
+
+    if (cvrpStore.visualizationMode === 'heatmap') {
+      applyCvrp(map, { routes: EMPTY, points, mode: 'routes', stale: false })
+      applyLoads()
+      return
+    }
+
+    applyCvrp(map, {
+      routes: routeFeatures(result.route_segments, result.n_routes),
+      points,
+      mode: 'routes',
+      stale: cvrpStore.isStale
+    })
+  }
+
+  /** Edge load: viridis on the graph, through the same state as the result. */
+  function applyLoads(): void {
+    const map = mapRef.value
+    const source = graph.value
+    if (!map || mountedOn !== map || !source) return
+
+    for (const id of resultIds) map.removeFeatureState({ source: GRAPH_SOURCE, id }, 'c')
+    resultIds = []
+
+    const loads = cvrpStore.lastResult?.edge_loads ?? []
+    for (const load of loads) {
+      const street = source.streets.get(streetKey(load.u, load.v))
+      const id = street?.fwdId ?? street?.bwdId
+      if (id === undefined) continue
+      const [r, g, b] = cvrpStore.getEdgeLoadColor(load.load)
+      map.setFeatureState({ source: GRAPH_SOURCE, id }, { c: `rgb(${r},${g},${b})` })
+      resultIds.push(id)
+    }
+
+    setDataFilter(map, resultIds)
+    const opacity = cvrpStore.isStale ? 0.4 : 1
+    map.setPaintProperty('bc-data', 'line-opacity', opacity)
+    map.setPaintProperty('bc-data-casing', 'line-opacity', opacity * 0.9)
+  }
+
+  /** Light one vehicle, dim the rest. */
+  function hoverRoute(routeId: number | null): void {
+    const map = mapRef.value
+    if (!map || mountedOn !== map) return
+    applyCvrpHover(map, routeId)
   }
 
   function setDataFilter(map: MapLibreMap, ids: number[]): void {
@@ -344,6 +441,21 @@ export function useGraphOverlay(
     if (frame) return
     frame = requestAnimationFrame(() => {
       frame = 0
+
+      // A vehicle route sits on top of the graph, so it takes the pointer.
+      const route = routeAt(event)
+      if (route) {
+        hoverRoute(route.route_id)
+        scenarioStore.hover(null)
+        callbacks.onHover?.(null, { x: event.point.x, y: event.point.y })
+        callbacks.onRoute?.(route, { x: event.point.x, y: event.point.y })
+        const map = mapRef.value
+        if (map) map.getCanvas().style.cursor = 'pointer'
+        return
+      }
+      hoverRoute(null)
+      callbacks.onRoute?.(null, { x: event.point.x, y: event.point.y })
+
       const hit = hitAt(event)
       // Hovering points at the street; the lane only matters once we click.
       scenarioStore.hover(hit ? { key: hit.key, dir: hit.oneway ? 'both' : hit.dir } : null)
@@ -354,9 +466,32 @@ export function useGraphOverlay(
     })
   }
 
+  /** The vehicle route under the cursor, if any. */
+  function routeAt(event: MapMouseEvent): RouteHover | null {
+    const map = mapRef.value
+    if (!map || !map.getLayer('bc-cvrp')) return null
+
+    const box: [[number, number], [number, number]] = [
+      [event.point.x - 4, event.point.y - 4],
+      [event.point.x + 4, event.point.y + 4]
+    ]
+    const hits = map.queryRenderedFeatures(box, { layers: ['bc-cvrp'] })
+    if (hits.length === 0) return null
+
+    const props = hits[0].properties ?? {}
+    return {
+      route_id: Number(props.route_id),
+      trip_id: Number(props.trip_id),
+      load_kg: Number(props.load_kg),
+      color: String(props.color)
+    }
+  }
+
   function onMouseOut(): void {
     scenarioStore.hover(null)
+    hoverRoute(null)
     callbacks.onHover?.(null, { x: 0, y: 0 })
+    callbacks.onRoute?.(null, { x: 0, y: 0 })
   }
 
   function onClick(event: MapMouseEvent): void {
@@ -423,6 +558,18 @@ export function useGraphOverlay(
     ],
     applyResult
   )
+  watch(
+    () => [
+      cvrpStore.lastResult,
+      cvrpStore.visualizationMode,
+      cvrpStore.isOpen,
+      cvrpStore.isStale,
+      cvrpStore.showCentroids,
+      cvrpStore.centroids,
+      scenarioStore.mapMode
+    ],
+    applyRoutes
+  )
   watch(() => scenarioStore.hovered, applyHover)
   watch(() => scenarioStore.selected, applySelection)
   watch(colors, () => {
@@ -430,7 +577,7 @@ export function useGraphOverlay(
     mount()
   })
 
-  return { mount, unmount, redraw, applyResult, attach, detach, hitAt }
+  return { mount, unmount, redraw, applyResult, applyRoutes, hoverRoute, attach, detach, hitAt }
 }
 
 /** Build the source once the network is loaded. */

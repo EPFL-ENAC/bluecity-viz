@@ -61,7 +61,9 @@ watch(
     <div class="popover__head">
       <span class="popover__name">{{ props.name }}</span>
       <span class="popover__meta">
-        {{ props.edges }} EDGES<template v-if="props.speed"> · {{ props.speed }} KM/H</template>
+        {{ props.edges }} EDGES<template v-if="props.speed">
+          · {{ Math.round(props.speed) }} KM/H</template
+        >
       </span>
     </div>
 

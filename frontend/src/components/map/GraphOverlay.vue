@@ -3,20 +3,24 @@ import EdgeHoverCard, { type HoverCardData } from '@/components/map/EdgeHoverCar
 import EdgePopover from '@/components/map/EdgePopover.vue'
 import EditChip from '@/components/map/EditChip.vue'
 import ModeToggle from '@/components/map/ModeToggle.vue'
+import RouteHoverCard, { type RouteCardData } from '@/components/map/RouteHoverCard.vue'
 import { useGraphEdges } from '@/composables/useGraphEdges'
-import { useGraphOverlay, type EdgeHover } from '@/composables/useGraphOverlay'
+import { useGraphOverlay, type EdgeHover, type RouteHover } from '@/composables/useGraphOverlay'
 import { useScenarioStore, type ScenarioAction, type ScenarioDir } from '@/stores/scenario'
+import { useCVRPStore } from '@/stores/cvrp'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { routeSummaries } from '@/utils/cvrpSource'
 import { buildGraphSource, type GraphSource } from '@/utils/graphSource'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { computed, inject, onUnmounted, ref, shallowRef, watch, type Ref } from 'vue'
 
-// The street graph, drawn with MapLibre layers on top of the line-free
-// basemap. It owns the graph, the pointer and the ink modifications; deck.gl
-// keeps only the coloured result for now.
+// Everything the map draws on top of the line-free basemap: the street graph,
+// the routing result, the waste collection routes, the ink modifications and
+// the pointer.
 
 const scenarioStore = useScenarioStore()
 const trafficStore = useTrafficAnalysisStore()
+const cvrpStore = useCVRPStore()
 const { edges, loadGraphEdges } = useGraphEdges()
 
 const mapComponentRef = inject<Ref<{ map?: MapLibreMap } | undefined>>('mapRef')
@@ -104,7 +108,34 @@ function onPick(key: string, dir: ScenarioDir, point: { x: number; y: number }) 
   popover.value = { key, dir, x: point.x, y: point.y }
 }
 
-const overlay = useGraphOverlay(map as Ref<MapLibreMap | undefined>, graph, { onHover, onPick })
+// Per vehicle totals, so the card can say how far it drives and how many trips.
+const routeTotals = computed(() =>
+  cvrpStore.lastResult ? routeSummaries(cvrpStore.lastResult.route_segments) : []
+)
+
+const routeCard = ref<InstanceType<typeof RouteHoverCard> | null>(null)
+const routeData = shallowRef<RouteCardData | null>(null)
+
+function onRoute(route: RouteHover | null, point: { x: number; y: number }) {
+  if (!route) {
+    routeData.value = null
+    return
+  }
+  const totals = routeTotals.value.find((row) => row.route_id === route.route_id)
+  routeData.value = {
+    ...route,
+    wasteType: cvrpStore.wasteType,
+    distance_m: totals?.distance_m,
+    trips: totals?.trips
+  }
+  routeCard.value?.move(point.x, point.y)
+}
+
+const overlay = useGraphOverlay(map as Ref<MapLibreMap | undefined>, graph, {
+  onHover,
+  onPick,
+  onRoute
+})
 
 watch(
   map,
@@ -178,6 +209,8 @@ function reset() {
 
 void loadGraphEdges()
 
+defineExpose({ hoverRoute: overlay.hoverRoute })
+
 onUnmounted(() => {
   const instance = map.value
   if (instance) {
@@ -192,7 +225,9 @@ onUnmounted(() => {
     <EditChip v-if="scenarioStore.editMode" />
     <ModeToggle v-else />
 
-    <EdgeHoverCard ref="hoverCard" :data="hoverData" />
+    <!-- The popover sits where the cursor is, so a card would land on top of it. -->
+    <EdgeHoverCard ref="hoverCard" :data="popover ? null : hoverData" />
+    <RouteHoverCard ref="routeCard" :data="popover ? null : routeData" />
 
     <EdgePopover
       v-if="popover && popoverStreet"

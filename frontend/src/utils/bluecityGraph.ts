@@ -20,11 +20,14 @@ import type { ExpressionSpecification, LayerSpecification, Map as MapLibreMap } 
 
 export const GRAPH_SOURCE = 'bc-edges'
 export const BADGE_SOURCE = 'bc-badges'
+export const CVRP_SOURCE = 'bc-cvrp-routes'
+export const CVRP_POINT_SOURCE = 'bc-cvrp-pts'
 
 export const BADGE_PAPER = 'bc-badge-paper'
 export const BADGE_INK = 'bc-badge-ink'
 export const ARROW_PAPER = 'bc-arrow'
 export const ARROW_INK = 'bc-arrow-ink'
+export const DEPOT_BADGE = 'bc-depot'
 
 /** The layer the basemap puts street names in. Everything goes under it. */
 export const BEFORE_LAYER = 'rd-label'
@@ -324,10 +327,123 @@ export function buildGraphLayers(options: GraphLayerOptions): LayerSpecification
     //     offset expression, so there is one layer per case: the badge sits on
     //     the centre for a both modification, and shifts onto its lane for a
     //     one-direction one.
-    ...badgeLayers(colors)
+    ...badgeLayers(colors),
+
+    // 5 · waste collection. One hue per vehicle, braided so a shared street
+    //     shows every vehicle that uses it. Same paper casing as the data.
+    ...cvrpLayers(colors)
   ]
 
   return layers
+}
+
+const CVRP_STOPS: Stop[] = [
+  [13, 1.2],
+  [15, 3],
+  [17, 6]
+]
+
+/** the braid: each route rides its own slot around the centre line */
+export function cvrpOffset(): ExpressionSpecification {
+  return zi(CVRP_STOPS, (v) => ['*', v, ['get', 'slot']])
+}
+
+export function wCvrp(k = 1, add = 0): ExpressionSpecification {
+  return zi(
+    [
+      [12, 1.6],
+      [14, 2.6],
+      [16, 4]
+    ],
+    (v) => v * k + add
+  )
+}
+
+/**
+ * Route lines, collection points and the depot.
+ *
+ * The opacity rides feature-state `dim`: hovering one vehicle drops the others
+ * to 25 % instead of hiding them, so the shared streets stay readable.
+ */
+function cvrpLayers(colors: GraphColors): LayerSpecification[] {
+  const { ink, paper, accent } = colors
+  const line = { source: CVRP_SOURCE }
+  const point = { source: CVRP_POINT_SOURCE }
+
+  return [
+    {
+      ...line,
+      id: 'bc-cvrp-casing',
+      type: 'line',
+      filter: NOTHING,
+      layout: ROUND,
+      paint: { 'line-color': paper, 'line-width': wCvrp(1, 2), 'line-offset': cvrpOffset() }
+    },
+    {
+      ...line,
+      id: 'bc-cvrp-halo',
+      type: 'line',
+      filter: NOTHING,
+      layout: ROUND,
+      paint: {
+        'line-color': accent,
+        'line-width': wCvrp(1, 8),
+        'line-offset': cvrpOffset(),
+        'line-opacity': 0.16
+      }
+    },
+    {
+      ...line,
+      id: 'bc-cvrp',
+      type: 'line',
+      filter: NOTHING,
+      layout: ROUND,
+      paint: {
+        'line-color': ['get', 'color'] as unknown as ExpressionSpecification,
+        'line-width': wCvrp(),
+        'line-offset': cvrpOffset(),
+        'line-opacity': [
+          'case',
+          ['==', ['coalesce', ['feature-state', 'dim'], 0], 1],
+          0.25,
+          1
+        ] as unknown as ExpressionSpecification
+      }
+    },
+    {
+      ...point,
+      id: 'bc-cvrp-point',
+      type: 'circle',
+      filter: ['!=', ['get', 'kind'], 'depot'],
+      paint: {
+        'circle-radius': zi([
+          [13, 1.6],
+          [16, 3.4]
+        ]) as unknown as number,
+        // a point the solver could not reach is hollow, not absent
+        'circle-color': [
+          'case',
+          ['==', ['get', 'reached'], 0],
+          paper,
+          ink
+        ] as unknown as ExpressionSpecification,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': ink
+      }
+    },
+    {
+      ...point,
+      id: 'bc-cvrp-depot',
+      type: 'symbol',
+      filter: ['==', ['get', 'kind'], 'depot'],
+      layout: {
+        'icon-image': DEPOT_BADGE,
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-size': 1
+      }
+    }
+  ]
 }
 
 /** How far the badge shifts, in pixels, to sit on its lane. */
@@ -437,13 +553,28 @@ export function arrowImage(color: string, dpr = 2): ImageData {
   return ctx.getImageData(0, 0, size, size)
 }
 
-/** Register (or replace) the four images the overlay draws with. */
+/** The depot: an ink square with a paper D. */
+export function depotImage(fill: string, text: string, dpr = 2): ImageData {
+  const size = 18 * dpr
+  const ctx = canvas(size).getContext('2d') as CanvasRenderingContext2D
+  ctx.fillStyle = fill
+  ctx.fillRect(0, 0, size, size)
+  ctx.fillStyle = text
+  ctx.font = `bold ${11 * dpr}px ui-monospace, monospace`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('D', size / 2, size / 2 + 0.5 * dpr)
+  return ctx.getImageData(0, 0, size, size)
+}
+
+/** Register (or replace) the images the overlay draws with. */
 export function addGraphImages(map: MapLibreMap, colors: GraphColors): void {
   const images: Array<[string, ImageData]> = [
     [BADGE_PAPER, badgeImage(colors.paper, colors.ink)],
     [BADGE_INK, badgeImage(colors.ink, colors.ink)],
     [ARROW_PAPER, arrowImage(colors.paper)],
-    [ARROW_INK, arrowImage(colors.ink)]
+    [ARROW_INK, arrowImage(colors.ink)],
+    [DEPOT_BADGE, depotImage(colors.ink, colors.paper)]
   ]
 
   for (const [id, data] of images) {
@@ -575,4 +706,71 @@ export function applyModifications(
       features: draw.badges
     })
   }
+}
+
+// ---------- waste collection, on the map ----------
+
+export interface CvrpPointFeature {
+  type: 'Feature'
+  geometry: { type: 'Point'; coordinates: [number, number] }
+  properties: { kind: 'point' | 'depot'; reached: number }
+}
+
+export interface CvrpDraw {
+  /** the braided route lines, from routeFeatures() */
+  routes: { type: 'FeatureCollection'; features: unknown[] }
+  points: CvrpPointFeature[]
+  /** 'routes' draws the vehicles, 'load' colours the graph by tonnage instead */
+  mode: 'routes' | 'load'
+  /** a stale solution answers an old scenario, so it fades */
+  stale: boolean
+}
+
+export function emptyPoints(): { type: 'FeatureCollection'; features: CvrpPointFeature[] } {
+  return { type: 'FeatureCollection', features: [] }
+}
+
+function setData(map: MapLibreMap, id: string, data: unknown): void {
+  const source = map.getSource(id)
+  if (source && 'setData' in source) {
+    ;(source as { setData: (value: unknown) => void }).setData(data)
+  }
+}
+
+/** Put a solution on the map, or clear it when there is none. */
+export function applyCvrp(map: MapLibreMap, draw: CvrpDraw | null): void {
+  if (!draw || draw.mode === 'load') {
+    setData(map, CVRP_SOURCE, { type: 'FeatureCollection', features: [] })
+    setData(map, CVRP_POINT_SOURCE, emptyPoints())
+    return
+  }
+
+  setData(map, CVRP_SOURCE, draw.routes)
+  setData(map, CVRP_POINT_SOURCE, { type: 'FeatureCollection', features: draw.points })
+
+  const all: ExpressionSpecification = ['!=', ['get', 'route_id'], -1]
+  setFilter(map, 'bc-cvrp-casing', all)
+  setFilter(map, 'bc-cvrp', all)
+
+  const opacity = draw.stale ? 0.4 : 1
+  if (map.getLayer('bc-cvrp')) map.setPaintProperty('bc-cvrp', 'line-opacity', opacity)
+}
+
+/** Highlight one vehicle: an accent halo on it, the others dimmed. */
+export function applyCvrpHover(map: MapLibreMap, routeId: number | null): void {
+  if (!map.getLayer('bc-cvrp')) return
+
+  if (routeId === null) {
+    setFilter(map, 'bc-cvrp-halo', NOTHING)
+    map.setPaintProperty('bc-cvrp', 'line-opacity', 1)
+    return
+  }
+
+  setFilter(map, 'bc-cvrp-halo', ['==', ['get', 'route_id'], routeId])
+  map.setPaintProperty('bc-cvrp', 'line-opacity', [
+    'case',
+    ['==', ['get', 'route_id'], routeId],
+    1,
+    0.25
+  ] as unknown as number)
 }

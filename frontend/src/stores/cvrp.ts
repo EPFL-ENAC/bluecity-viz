@@ -1,3 +1,4 @@
+import type { FeatureCollection } from 'geojson'
 import type { CVRPSolveResponse } from '@/services/cvrp'
 import { fetchCVRPCentroids, solveCVRP } from '@/services/cvrp'
 import { useScenarioStore } from '@/stores/scenario'
@@ -39,10 +40,10 @@ export const useCVRPStore = defineStore('cvrp', () => {
   // Visualization mode
   const visualizationMode = ref<'routes' | 'heatmap'>('routes')
 
-  // Results. Shallow: deck.gl walks these arrays on every render and a deep
-  // reactive proxy on thousands of coordinates costs more than the render.
+  // Results. Shallow: a deep reactive proxy on thousands of coordinates costs
+  // more than building the GeoJSON the map reads.
   const lastResult = shallowRef<CVRPSolveResponse | null>(null)
-  const centroids = shallowRef<GeoJSON.FeatureCollection | null>(null)
+  const centroids = shallowRef<FeatureCollection | null>(null)
 
   // Edge load color scale (Viridis, domain set from 98th percentile of loads)
   const edgeLoadColorScale = ref<((v: number) => string) | null>(null)
@@ -79,9 +80,13 @@ export const useCVRPStore = defineStore('cvrp', () => {
       edgeLoadMax.value = maxLoad
       edgeLoadColorScale.value = scaleSequential(interpolateViridis).domain([0, maxLoad])
     }
+
+    // A fresh solution is what the user asked for, so show it.
+    useScenarioStore().mapMode = 'result'
   }
 
   function clearResult() {
+    if (lastResult.value) useScenarioStore().mapMode = 'scenario'
     lastResult.value = null
     edgeLoadColorScale.value = null
     edgeLoadMax.value = 0
