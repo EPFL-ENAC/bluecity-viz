@@ -10,8 +10,9 @@ const STORAGE_KEY = 'bluecity-layers-store'
 
 // v1 stored the full traffic results (edge usage, node pairs) inside every
 // investigation, which made the payload a few MB and blew the quota. v2 keeps
-// only the inputs, the results are recomputed on demand.
-export const SCHEMA_VERSION = 2
+// only the inputs, the results are recomputed on demand. v3 adds the OD pair
+// count (odPairs), missing in older entries and read back as null.
+export const SCHEMA_VERSION = 3
 
 export function defaultTrafficInputs(): TrafficAnalysisInputs {
   return {
@@ -21,7 +22,8 @@ export function defaultTrafficInputs(): TrafficAnalysisInputs {
     useCongestionModel: false,
     congestionIterations: 1,
     elasticDemand: false,
-    filterBusRoutes: false
+    filterBusRoutes: false,
+    odPairs: null
   }
 }
 
@@ -47,7 +49,9 @@ function pickTrafficInputs(raw: any): TrafficAnalysisInputs {
     useCongestionModel: !!raw.useCongestionModel,
     congestionIterations: Number(raw.congestionIterations) || 1,
     elasticDemand: !!raw.elasticDemand,
-    filterBusRoutes: !!raw.filterBusRoutes
+    filterBusRoutes: !!raw.filterBusRoutes,
+    // missing (v2 and older) or broken reads back as null, the server default
+    odPairs: Number.isInteger(raw.odPairs) && raw.odPairs > 0 ? raw.odPairs : null
   }
 }
 

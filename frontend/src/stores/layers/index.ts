@@ -113,16 +113,14 @@ export const useLayersStore = defineStore('layers', () => {
       useCongestionModel: trafficStore.useCongestionModel,
       congestionIterations: trafficStore.congestionIterations,
       elasticDemand: trafficStore.elasticDemand,
-      filterBusRoutes: trafficStore.filterBusRoutes
+      filterBusRoutes: trafficStore.filterBusRoutes,
+      odPairs: trafficStore.odPairs
     }
   }
 
   // Restore the inputs, plus the results we still have in memory for that
   // investigation. The arrays are always passed, empty when we have nothing.
-  function applyTrafficAnalysisState(
-    inputs: TrafficAnalysisInputs,
-    investigationId: string
-  ): void {
+  function applyTrafficAnalysisState(inputs: TrafficAnalysisInputs, investigationId: string): void {
     const trafficStore = useTrafficAnalysisStore()
     const results = getResults(investigationId)
 
@@ -133,10 +131,14 @@ export const useLayersStore = defineStore('layers', () => {
       originalEdgeUsage: results?.originalEdgeUsage ?? [],
       newEdgeUsage: results?.newEdgeUsage ?? [],
       impactStatistics: results?.impactStatistics ?? null,
-      activeVisualization: inputs.activeVisualization ?? 'none'
+      activeVisualization: inputs.activeVisualization ?? 'none',
+      // an input, restoreState assigns it without clearing the results above
+      odPairs: inputs.odPairs ?? null,
+      resultOdPairs: results?.resultOdPairs ?? null
     })
 
-    // restoreState does not handle the routing options, set them here.
+    // The other routing options are not part of restoreState's own defaults,
+    // set them here so an investigation without them falls back to off.
     trafficStore.useCongestionModel = inputs.useCongestionModel ?? false
     trafficStore.congestionIterations = inputs.congestionIterations ?? 1
     trafficStore.elasticDemand = inputs.elasticDemand ?? false
@@ -261,6 +263,7 @@ export const useLayersStore = defineStore('layers', () => {
       () => trafficStore.congestionIterations,
       () => trafficStore.elasticDemand,
       () => trafficStore.filterBusRoutes,
+      () => trafficStore.odPairs,
       () => trafficStore.newEdgeUsage
     ],
     () => {
@@ -273,7 +276,8 @@ export const useLayersStore = defineStore('layers', () => {
         nodePairs: toRaw(trafficStore.nodePairs),
         originalEdgeUsage: toRaw(trafficStore.originalEdgeUsage),
         newEdgeUsage: toRaw(trafficStore.newEdgeUsage),
-        impactStatistics: toRaw(trafficStore.impactStatistics)
+        impactStatistics: toRaw(trafficStore.impactStatistics),
+        resultOdPairs: trafficStore.resultOdPairs
       })
 
       persist.schedule()

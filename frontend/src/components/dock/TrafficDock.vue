@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { recalculateRoutes } from '@/services/trafficAnalysis'
 import ImpactStatistics from '@/components/ImpactStatistics.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcRow from '@/components/ui/BcRow.vue'
+import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
 
 const layersStore = useLayersStore()
@@ -14,6 +15,48 @@ const trafficStore = useTrafficAnalysisStore()
 const loadingMessage = ref('')
 
 const title = computed(() => layersStore.activeInvestigation?.name ?? 'Road closure scenario')
+
+// The pair counts come from the server, not from a constant here.
+onMounted(() => {
+  trafficStore.loadGraphInfo().catch((error) => {
+    console.error('Failed to load graph info:', error)
+  })
+})
+
+function formatTrips(count: number): string {
+  return count.toLocaleString('en-US')
+}
+
+// The two choices, hidden until we know the numbers.
+const tripsOptions = computed(() => {
+  const base = trafficStore.odPairsDefault
+  const full = trafficStore.odPairsFull
+  if (!base || !full) return []
+  return [
+    { value: 'default', label: `${formatTrips(base)} (default)` },
+    { value: 'full', label: `${formatTrips(full)} (full)` }
+  ]
+})
+
+// null and the default count are the same choice on screen.
+const trips = computed({
+  get: () => {
+    const chosen = trafficStore.odPairs
+    return chosen === null || chosen === trafficStore.odPairsDefault ? 'default' : 'full'
+  },
+  set: (value: string) => {
+    trafficStore.setOdPairs(value === 'full' ? trafficStore.odPairsFull : null)
+  }
+})
+
+// What we send: null means the server default, so use the number when we have it.
+function chosenOdPairs(): number | undefined {
+  return trafficStore.odPairs ?? trafficStore.odPairsDefault ?? undefined
+}
+
+const resultTrips = computed(() =>
+  trafficStore.resultOdPairs === null ? '' : formatTrips(trafficStore.resultOdPairs)
+)
 
 // Sentence-case labels, per the design. Falls back to the store label.
 const VIS_LABELS: Record<string, string> = {
@@ -39,22 +82,40 @@ function edgeBadge(action: string) {
 }
 
 async function calculateRoutes() {
+  const odPairs = chosenOdPairs()
+  const trips = odPairs ? ` on ${formatTrips(odPairs)} trips` : ''
+
   trafficStore.isCalculating = true
   loadingMessage.value = trafficStore.useCongestionModel
     ? `Congestion routing (${trafficStore.congestionIterations} iteration${
         trafficStore.congestionIterations > 1 ? 's' : ''
-      })…`
-    : 'Calculating routes…'
+      })${trips}…`
+    : `Calculating routes${trips}…`
   try {
-    const result = await recalculateRoutes(trafficStore.edgeModificationsArray, {
-      useCongestionModel: trafficStore.useCongestionModel,
-      congestionIterations: trafficStore.congestionIterations,
-      elasticDemand: trafficStore.elasticDemand
-    })
+    // The baseline is the same for every run at that count, so it comes from
+    // the store cache after the first time.
+    const [baseline, result] = await Promise.all([
+      trafficStore.getBaseline(odPairs),
+      recalculateRoutes(trafficStore.edgeModificationsArray, {
+        useCongestionModel: trafficStore.useCongestionModel,
+        congestionIterations: trafficStore.congestionIterations,
+        elasticDemand: trafficStore.elasticDemand,
+        odPairs
+      })
+    ])
+
+    // The count changed while we were waiting, this answer is for the old one.
+    if (odPairs !== chosenOdPairs()) return
+
+    if (baseline.odPairs !== result.od_pairs) {
+      console.warn(`Baseline is on ${baseline.odPairs} pairs, the run on ${result.od_pairs}`)
+    }
+
     trafficStore.setEdgeUsage(
-      result.original_edge_usage,
+      baseline.rows,
       result.new_edge_usage,
-      result.impact_statistics
+      result.impact_statistics,
+      result.od_pairs
     )
   } catch (error) {
     console.error('Failed to calculate routes:', error)
@@ -140,9 +201,7 @@ async function calculateRoutes() {
       </BcRow>
 
       <div v-if="trafficStore.useCongestionModel" class="iterations">
-        <div class="iterations__label">
-          Iterations ({{ trafficStore.congestionIterations }})
-        </div>
+        <div class="iterations__label">Iterations ({{ trafficStore.congestionIterations }})</div>
         <BcSlider v-model="trafficStore.congestionIterations" :min="1" :max="3" :step="1" />
       </div>
 
@@ -169,6 +228,20 @@ async function calculateRoutes() {
         </template>
       </BcRow>
 
+      <div v-if="tripsOptions.length > 0" class="trips">
+        <div class="bc-micro trips__label">Trips</div>
+        <BcSeg
+          v-model="trips"
+          :options="tripsOptions"
+          equal
+          :class="{ 'trips__seg--busy': trafficStore.isCalculating }"
+        />
+        <p v-if="trips === 'full'" class="trips__warning">
+          About 4x slower. Compared with the default, 85 of the 100 busiest roads are the same
+          (frequency correlation 0.96).
+        </p>
+      </div>
+
       <button
         class="bc-btn bc-btn--primary calculate"
         :disabled="trafficStore.isCalculating"
@@ -190,7 +263,9 @@ async function calculateRoutes() {
 
     <!-- Visualisation -->
     <div v-if="trafficStore.hasCalculatedRoutes" class="dock-section">
-      <div class="bc-micro dock-section__title">Visualisation</div>
+      <div class="bc-micro dock-section__title">
+        Visualisation<template v-if="resultTrips"> · {{ resultTrips }} trips</template>
+      </div>
       <BcRow
         v-for="vis in trafficStore.availableVisualizations"
         :key="vis.value"
@@ -325,6 +400,28 @@ async function calculateRoutes() {
   font-size: var(--bc-fs-small);
   color: var(--bc-grey);
   margin-bottom: 2px;
+}
+
+.trips {
+  margin-top: 14px;
+}
+
+.trips__label {
+  margin-bottom: 6px;
+}
+
+/* no switching while a run is in flight, the answer would be for the old count */
+.trips__seg--busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.trips__warning {
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  line-height: 1.5;
+  color: var(--bc-grey);
+  margin: 6px 0 0;
 }
 
 .calculate {

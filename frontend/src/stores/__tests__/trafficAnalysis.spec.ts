@@ -4,15 +4,37 @@ import {
   EXPECTED_STATE_KEYS,
   makeUsage
 } from '@/stores/__tests__/fixtures/trafficScales'
+import { fetchBaseline, fetchGraphInfo } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// vi.mock is hoisted above the imports, so the factory cannot use anything
+// declared here. importActual keeps the rest of the module real.
+vi.mock('@/services/trafficAnalysis', async () => ({
+  ...(await vi.importActual<typeof import('@/services/trafficAnalysis')>(
+    '@/services/trafficAnalysis'
+  )),
+  fetchBaseline: vi.fn(),
+  fetchGraphInfo: vi.fn()
+}))
+
+function baselineRows(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    u: i,
+    v: i + 1,
+    count: i,
+    frequency: i / count
+  }))
+}
 
 type Mode = (typeof EXPECTED_SCALES.modes)[number]
 
 describe('traffic analysis store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.mocked(fetchBaseline).mockReset()
+    vi.mocked(fetchGraphInfo).mockReset()
   })
 
   it('offers the same modes and picks delta when the routes moved', () => {
@@ -155,6 +177,126 @@ describe('traffic analysis store', () => {
     expect(store.congestionIterations).toBe(3)
   })
 
+  it('drops the results when the pair count changes, keeps them when it does not', () => {
+    const store = useTrafficAnalysisStore()
+    const usage = makeUsage()
+    store.setEdgeUsage(usage, usage, undefined, 20000)
+
+    expect(store.resultOdPairs).toBe(20000)
+
+    // same count, nothing happens
+    store.setOdPairs(null)
+    expect(store.hasCalculatedRoutes).toBe(true)
+
+    store.setOdPairs(76200)
+    expect(store.odPairs).toBe(76200)
+    expect(store.hasCalculatedRoutes).toBe(false)
+    expect(store.newEdgeUsage).toEqual([])
+    expect(store.resultOdPairs).toBeNull()
+    expect(store.activeVisualization).toBe('none')
+  })
+
+  it('fetches one baseline per count and keeps it', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockImplementation(async (odPairs?: number) => ({
+      total_routes: odPairs ?? 20000,
+      od_pairs: odPairs ?? 20000,
+      edge_usage: baselineRows(3)
+    }))
+
+    const first = await store.getBaseline(20000)
+    expect(first.odPairs).toBe(20000)
+    expect(first.rows).toHaveLength(3)
+
+    await store.getBaseline(20000)
+    expect(fetchBaseline).toHaveBeenCalledTimes(1)
+
+    await store.getBaseline(76200)
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(fetchBaseline).mock.calls[1][0]).toBe(76200)
+
+    // the first one is still cached
+    await store.getBaseline(20000)
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+  })
+
+  it('asks once when two calls overlap, and retries after a failure', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValue({
+      total_routes: 20000,
+      od_pairs: 20000,
+      edge_usage: baselineRows(2)
+    })
+
+    await Promise.all([store.getBaseline(20000), store.getBaseline(20000)])
+    expect(fetchBaseline).toHaveBeenCalledTimes(1)
+
+    vi.mocked(fetchBaseline).mockReset()
+    vi.mocked(fetchBaseline).mockRejectedValueOnce(new Error('server down'))
+    await expect(store.getBaseline(76200)).rejects.toThrow('server down')
+
+    vi.mocked(fetchBaseline).mockResolvedValue({
+      total_routes: 76200,
+      od_pairs: 76200,
+      edge_usage: baselineRows(2)
+    })
+    const retry = await store.getBaseline(76200)
+    expect(retry.odPairs).toBe(76200)
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads the pair counts from the server once', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchGraphInfo).mockResolvedValue({
+      node_count: 1,
+      edge_count: 2,
+      od_pairs: 76200,
+      od_pairs_default: 20000,
+      od_pairs_max: 76400
+    })
+
+    await store.loadGraphInfo()
+    await store.loadGraphInfo()
+
+    expect(fetchGraphInfo).toHaveBeenCalledTimes(1)
+    expect(store.odPairsDefault).toBe(20000)
+    expect(store.odPairsMax).toBe(76400)
+    // the full choice sends what was really sampled, the server clamps anyway
+    expect(store.odPairsFull).toBe(76200)
+  })
+
+  it('restores the pair count without dropping the restored results', () => {
+    const store = useTrafficAnalysisStore()
+    const usage = makeUsage()
+
+    store.restoreState({
+      isOpen: true,
+      edgeModifications: [],
+      originalEdgeUsage: usage,
+      newEdgeUsage: usage,
+      activeVisualization: 'frequency',
+      odPairs: 76200,
+      resultOdPairs: 76200
+    })
+
+    expect(store.odPairs).toBe(76200)
+    expect(store.resultOdPairs).toBe(76200)
+    expect(store.hasCalculatedRoutes).toBe(true)
+  })
+
+  it('restores the chosen count with no results', () => {
+    const store = useTrafficAnalysisStore()
+    store.restoreState({
+      isOpen: true,
+      activeVisualization: 'none',
+      odPairs: 76200
+    })
+
+    expect(store.odPairs).toBe(76200)
+    expect(store.resultOdPairs).toBeNull()
+    expect(store.hasCalculatedRoutes).toBe(false)
+  })
+
   it('keeps the saved mode when it restores results', () => {
     const store = useTrafficAnalysisStore()
     const usage = makeUsage()
@@ -174,5 +316,4 @@ describe('traffic analysis store', () => {
     expect(store.legendMode).toBe('co2')
     expect(store.minValue).toBeCloseTo(EXPECTED_SCALES.perMode.co2.min, 10)
   })
-
 })

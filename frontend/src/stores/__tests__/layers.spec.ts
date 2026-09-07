@@ -91,9 +91,34 @@ describe('layers store persistence', () => {
     expect(traffic.isOpen).toBe(true)
     expect(traffic.edgeModifications).toEqual([{ u: 1, v: 2, action: 'remove', name: 'Rue X' }])
     expect(traffic.activeVisualization).toBe('frequency')
+    // v1 knew nothing about the pair count, it reads back as the server default
+    expect(traffic.odPairs).toBeNull()
     for (const key of BULK_KEYS) {
       expect(traffic).not.toHaveProperty(key)
     }
+  })
+
+  it('keeps a saved pair count and drops a broken one', () => {
+    const withCount = (odPairs: unknown) =>
+      migratePersistedState({
+        projects: [
+          {
+            id: 'project-1',
+            investigations: [
+              {
+                id: 'inv-1',
+                name: 'Investigation 1',
+                trafficAnalysis: { isOpen: true, odPairs }
+              }
+            ]
+          }
+        ]
+      }).projects?.[0].investigations[0].trafficAnalysis
+
+    expect(withCount(76200)?.odPairs).toBe(76200)
+    expect(withCount(0)?.odPairs).toBeNull()
+    expect(withCount('76200')?.odPairs).toBeNull()
+    expect(withCount(undefined)?.odPairs).toBeNull()
   })
 
   it('does not crash on a broken or empty entry', () => {
@@ -201,6 +226,7 @@ describe('layers store persistence', () => {
     traffic.setActiveVisualization('frequency')
     traffic.useCongestionModel = true
     traffic.congestionIterations = 3
+    traffic.setOdPairs(76200)
     store.updateSelectedLayers(['lausanne_pop_density-layer'])
     await nextTick()
     store.persistState()
@@ -223,6 +249,29 @@ describe('layers store persistence', () => {
     expect(reloadedTraffic.activeVisualization).toBe('frequency')
     expect(reloadedTraffic.useCongestionModel).toBe(true)
     expect(reloadedTraffic.congestionIterations).toBe(3)
+    // the count comes back, the results do not, the user clicks Calculate again
+    expect(reloadedTraffic.odPairs).toBe(76200)
+    expect(reloadedTraffic.resultOdPairs).toBeNull()
     expect(reloadedTraffic.newEdgeUsage).toHaveLength(0)
+  })
+
+  it('gives the count back with the results in the same session', async () => {
+    vi.stubGlobal('localStorage', makeStorage())
+
+    const store = useLayersStore()
+    const traffic = useTrafficAnalysisStore()
+
+    store.switchToInvestigation('inv-1')
+    traffic.setOdPairs(76200)
+    traffic.setEdgeUsage(edgeRows(20), edgeRows(20), undefined, 76200)
+    await nextTick()
+
+    store.switchToInvestigation('inv-2')
+    await nextTick()
+    store.switchToInvestigation('inv-1')
+
+    expect(traffic.odPairs).toBe(76200)
+    expect(traffic.resultOdPairs).toBe(76200)
+    expect(traffic.newEdgeUsage).toHaveLength(20)
   })
 })
