@@ -37,9 +37,10 @@ keep the public names that owner depends on.
 4. S1 (smallest frontend diff, fixes the `restoreState` contract).
 5. S2 (largest frontend diff, only one touching VisualizationsPanel).
 6. S3 (config and MapLibre, no one waits on it).
-7. S7 and FINAL, each in a fresh worktree from the updated dev. They touch different
-   files (S7: services, traffic store, dock, persistence; FINAL: tooling) and can run at
-   the same time. Land S7 first, FINAL rebases across it.
+7. S7, in a fresh worktree from the updated dev. Land it before starting FINAL: FINAL
+   has a prettier 3 formatting commit that touches most files, and would conflict with
+   anything still open.
+8. FINAL, in a fresh worktree from dev with S7 in.
 
 S1 to S6 landed on dev on 2026-09-07 with `make wt-land BRANCH=... MODE=--local`. Use
 that mode: it merges with `--no-ff`, runs lint:check, type-check and ruff on the merged
