@@ -1,4 +1,9 @@
-import type { EdgeModification, ImpactStatistics } from '@/services/trafficAnalysis'
+import {
+  fetchBaseline,
+  fetchGraphInfo,
+  type EdgeModification,
+  type ImpactStatistics
+} from '@/services/trafficAnalysis'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleDivergingSymlog, scaleSequential } from 'd3-scale'
 import { interpolateSpectral, interpolateViridis } from 'd3-scale-chromatic'
@@ -6,7 +11,15 @@ import { defineStore } from 'pinia'
 import { computed, markRaw, ref, shallowRef } from 'vue'
 
 type ColorScale = ((value: number) => string) | null
-type LegendMode = 'none' | 'frequency' | 'delta' | 'delta_relative' | 'co2' | 'co2_delta' | 'betweenness' | 'betweenness_delta'
+type LegendMode =
+  | 'none'
+  | 'frequency'
+  | 'delta'
+  | 'delta_relative'
+  | 'co2'
+  | 'co2_delta'
+  | 'betweenness'
+  | 'betweenness_delta'
 export type ModificationAction = 'remove' | 'speed50' | 'speed30' | 'speed10'
 
 /** The visualization modes, 'none' included. */
@@ -46,6 +59,12 @@ export interface EdgeUsageStats {
   co2_per_km?: number
   betweenness_centrality?: number
   delta_betweenness?: number
+}
+
+/** What getBaseline gives back: the rows and the count the server really used. */
+export interface BaselineResult {
+  odPairs: number
+  rows: EdgeUsageStats[]
 }
 
 /** A color scale with the range it covers. */
@@ -106,6 +125,24 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const congestionIterations = ref<number>(1)
   const elasticDemand = ref<boolean>(false)
   const filterBusRoutes = ref<boolean>(false)
+  // How many OD pairs to route. null means the server default.
+  const odPairs = ref<number | null>(null)
+
+  // Filled once from /graph-info: the server default, the most it accepts, and
+  // the count the "full" choice sends (the set really sampled at startup).
+  const odPairsDefault = ref<number | null>(null)
+  const odPairsMax = ref<number | null>(null)
+  const odPairsFull = ref<number | null>(null)
+
+  // The count that produced the results on screen.
+  const resultOdPairs = ref<number | null>(null)
+
+  // The baseline never changes while the server runs, so one fetch per count is
+  // enough. Not reactive, nothing renders from it. Inside the setup so a fresh
+  // pinia (the tests, a reload) starts with an empty cache.
+  const baselineCache = new Map<number, EdgeUsageStats[]>()
+  const baselinePending = new Map<number | 'default', Promise<BaselineResult>>()
+  let graphInfoPromise: Promise<void> | null = null
 
   // Visualization state. Only the active scale is reactive; the per-mode scales
   // live in a plain object because switching mode only reads one of them.
@@ -356,11 +393,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
       if (hasCO2) {
         built.co2_delta = {
-          scale: scaleDiverging(interpolateSpectral).domain([
-            CO2_DELTA_CLAMP,
-            0,
-            -CO2_DELTA_CLAMP
-          ]),
+          scale: scaleDiverging(interpolateSpectral).domain([CO2_DELTA_CLAMP, 0, -CO2_DELTA_CLAMP]),
           min: -CO2_DELTA_CLAMP,
           max: CO2_DELTA_CLAMP
         }
@@ -388,11 +421,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
     if (hasBCDelta) {
       built.betweenness_delta = {
-        scale: scaleDiverging(interpolateSpectral).domain([
-          absBCDeltaMax,
-          0,
-          -absBCDeltaMax
-        ]),
+        scale: scaleDiverging(interpolateSpectral).domain([absBCDeltaMax, 0, -absBCDeltaMax]),
         min: -absBCDeltaMax,
         max: absBCDeltaMax
       }
@@ -404,11 +433,13 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   function setEdgeUsage(
     original: EdgeUsageStats[],
     newUsage: EdgeUsageStats[],
-    impact?: ImpactStatistics
+    impact?: ImpactStatistics,
+    usedOdPairs?: number | null
   ) {
     originalEdgeUsage.value = original
     newEdgeUsage.value = newUsage
     impactStatistics.value = impact ? markRaw(impact) : null
+    resultOdPairs.value = usedOdPairs ?? null
 
     scales = buildScales(newUsage)
 
@@ -427,10 +458,75 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     originalEdgeUsage.value = []
     newEdgeUsage.value = []
     impactStatistics.value = null
+    resultOdPairs.value = null
     scales = emptyScales()
     activeVisualization.value = 'none'
     filterBusRoutes.value = false
     updateActiveColorScale()
+  }
+
+  /**
+   * Change the OD pair count. Results computed at another count are dropped, so
+   * two sizes are never compared on screen.
+   *
+   * A function and not a watch on odPairs: restoreState sets the count and the
+   * results of an investigation in the same tick, and a watcher would run after
+   * that and wipe what we just restored.
+   */
+  function setOdPairs(count: number | null) {
+    if (count === odPairs.value) return
+    if (hasCalculatedRoutes.value) clearResults()
+    odPairs.value = count
+  }
+
+  /** Read the OD pair counts from the server, once per session. */
+  function loadGraphInfo(): Promise<void> {
+    if (!graphInfoPromise) {
+      graphInfoPromise = fetchGraphInfo()
+        .then((info) => {
+          odPairsDefault.value = info.od_pairs_default
+          odPairsMax.value = info.od_pairs_max
+          // The server clamps to the set it really sampled, so asking for more
+          // than that would show one number and give back another.
+          odPairsFull.value = Math.min(info.od_pairs_max, info.od_pairs)
+        })
+        .catch((error) => {
+          // let a later call try again
+          graphInfoPromise = null
+          throw error
+        })
+    }
+    return graphInfoPromise
+  }
+
+  /**
+   * The free-flow usage for a pair count, from the cache or from the server.
+   * Keyed by the count the server used, which is what the results carry.
+   */
+  function getBaseline(count?: number): Promise<BaselineResult> {
+    if (count !== undefined) {
+      const cached = baselineCache.get(count)
+      if (cached) return Promise.resolve({ odPairs: count, rows: cached })
+    }
+
+    const key = count ?? 'default'
+    const inFlight = baselinePending.get(key)
+    if (inFlight) return inFlight
+
+    const request = fetchBaseline(count)
+      .then((response) => {
+        baselineCache.set(response.od_pairs, response.edge_usage)
+        baselinePending.delete(key)
+        return { odPairs: response.od_pairs, rows: response.edge_usage }
+      })
+      .catch((error) => {
+        // a failed fetch must not stick, the next Calculate tries again
+        baselinePending.delete(key)
+        throw error
+      })
+
+    baselinePending.set(key, request)
+    return request
   }
 
   function getColor(value: number): [number, number, number] {
@@ -487,6 +583,8 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     congestionIterations?: number
     elasticDemand?: boolean
     filterBusRoutes?: boolean
+    odPairs?: number | null
+    resultOdPairs?: number | null
   }) {
     isRestoring.value = true
     isOpen.value = state.isOpen
@@ -513,13 +611,16 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       congestionIterations.value = state.congestionIterations
     if (state.elasticDemand !== undefined) elasticDemand.value = state.elasticDemand
     if (state.filterBusRoutes !== undefined) filterBusRoutes.value = state.filterBusRoutes
+    // assigned, not setOdPairs: the results below belong to this state and
+    // setOdPairs would clear them.
+    if (state.odPairs !== undefined) odPairs.value = state.odPairs
 
     const original = state.originalEdgeUsage ?? []
     const restored = state.newEdgeUsage ?? []
     const impact = state.impactStatistics ?? null
 
     if (restored.length > 0) {
-      setEdgeUsage(original, restored, impact ?? undefined)
+      setEdgeUsage(original, restored, impact ?? undefined, state.resultOdPairs ?? null)
       // setEdgeUsage picks a mode on its own, the saved one wins
       activeVisualization.value = state.activeVisualization
       updateActiveColorScale()
@@ -527,6 +628,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       originalEdgeUsage.value = original
       newEdgeUsage.value = restored
       impactStatistics.value = impact ? markRaw(impact) : null
+      resultOdPairs.value = null
       scales = emptyScales()
       activeVisualization.value = state.activeVisualization
       updateActiveColorScale()
@@ -550,6 +652,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     congestionIterations,
     elasticDemand,
     filterBusRoutes,
+    odPairs,
+    odPairsDefault,
+    odPairsMax,
+    odPairsFull,
+    resultOdPairs,
 
     // Visualization state
     legendMode,
@@ -574,6 +681,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     clearEdgeModifications,
     getEdgeModification,
     setNodePairs,
+    setOdPairs,
+    loadGraphInfo,
+    getBaseline,
     setEdgeUsage,
     clearResults,
     getColor,
