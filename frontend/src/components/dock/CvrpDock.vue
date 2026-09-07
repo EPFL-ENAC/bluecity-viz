@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useCVRPStore } from '@/stores/cvrp'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
+import { useCVRPStore } from '@/stores/cvrp'
+import { computed, ref } from 'vue'
 
 const cvrpStore = useCVRPStore()
 const errorMessage = ref('')

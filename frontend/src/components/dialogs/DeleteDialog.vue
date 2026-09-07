@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import BcDialogCard from '@/components/ui/BcDialogCard.vue'
+import { computed } from 'vue'
 
 const props = defineProps<{
   modelValue: boolean

@@ -8,12 +8,23 @@ import { describe, expect, it } from 'vitest'
 
 describe('getPathMidpoint', () => {
   it('takes the middle of a straight segment', () => {
-    expect(getPathMidpoint([[0, 0], [10, 0]])).toEqual([5, 0])
+    expect(
+      getPathMidpoint([
+        [0, 0],
+        [10, 0]
+      ])
+    ).toEqual([5, 0])
   })
 
   it('measures along the path, not between the ends', () => {
     // an L: 10 east then 10 north, so the middle is the corner
-    expect(getPathMidpoint([[0, 0], [10, 0], [10, 10]])).toEqual([10, 0])
+    expect(
+      getPathMidpoint([
+        [0, 0],
+        [10, 0],
+        [10, 10]
+      ])
+    ).toEqual([10, 0])
   })
 
   it('handles a path with one point or none', () => {
@@ -22,13 +33,25 @@ describe('getPathMidpoint', () => {
   })
 
   it('does not divide by zero on repeated points', () => {
-    expect(getPathMidpoint([[1, 1], [1, 1], [1, 1]])).toEqual([1, 1])
+    expect(
+      getPathMidpoint([
+        [1, 1],
+        [1, 1],
+        [1, 1]
+      ])
+    ).toEqual([1, 1])
   })
 })
 
 describe('computeOffsetPath', () => {
   it('moves a west to east line in latitude only', () => {
-    const out = computeOffsetPath([[6, 46], [7, 46]], 111)
+    const out = computeOffsetPath(
+      [
+        [6, 46],
+        [7, 46]
+      ],
+      111
+    )
     expect(out).toHaveLength(2)
     for (const point of out) {
       expect(point[1]).toBeCloseTo(46.001, 6)
@@ -38,7 +61,13 @@ describe('computeOffsetPath', () => {
   })
 
   it('moves a south to north line in longitude only', () => {
-    const out = computeOffsetPath([[6, 46], [6, 47]], 77)
+    const out = computeOffsetPath(
+      [
+        [6, 46],
+        [6, 47]
+      ],
+      77
+    )
     for (const point of out) {
       expect(point[0]).toBeCloseTo(5.999, 6)
     }
@@ -46,7 +75,13 @@ describe('computeOffsetPath', () => {
   })
 
   it('offsets the other way with a negative distance', () => {
-    const [a] = computeOffsetPath([[6, 46], [7, 46]], -111)
+    const [a] = computeOffsetPath(
+      [
+        [6, 46],
+        [7, 46]
+      ],
+      -111
+    )
     expect(a[1]).toBeCloseTo(45.999, 6)
   })
 
@@ -59,7 +94,10 @@ describe('computeOffsetPath', () => {
 
 describe('createHullPaths', () => {
   it('puts the two sides the same distance either side', () => {
-    const line = [[6, 46], [7, 46]]
+    const line = [
+      [6, 46],
+      [7, 46]
+    ]
     const [left, right] = createHullPaths(line, 222)
     expect(left[0][1] - 46).toBeCloseTo(-(right[0][1] - 46), 12)
     expect(left[0][1]).toBeCloseTo(46.001, 6)
@@ -68,7 +106,10 @@ describe('createHullPaths', () => {
 
 describe('createHullOutline', () => {
   it('closes both ends and gives the midpoint', () => {
-    const line = [[6, 46], [7, 46]]
+    const line = [
+      [6, 46],
+      [7, 46]
+    ]
     const hull = createHullOutline(line, 222)
 
     expect(hull.left).toHaveLength(2)
@@ -79,7 +120,11 @@ describe('createHullOutline', () => {
   })
 
   it('gives the same sides as createHullPaths', () => {
-    const line = [[6, 46], [6.5, 46.2], [7, 46]]
+    const line = [
+      [6, 46],
+      [6.5, 46.2],
+      [7, 46]
+    ]
     const [left, right] = createHullPaths(line, 8)
     const hull = createHullOutline(line, 8)
     expect(hull.left).toEqual(left)

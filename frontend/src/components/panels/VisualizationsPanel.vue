@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import MapLibreMap from '@/components/MapLibreMap.vue'
 import LegendMap from '@/components/LegendMap.vue'
-import TrafficDock from '@/components/dock/TrafficDock.vue'
+import MapLibreMap from '@/components/MapLibreMap.vue'
 import CvrpDock from '@/components/dock/CvrpDock.vue'
+import TrafficDock from '@/components/dock/TrafficDock.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
-import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { useCVRPStore } from '@/stores/cvrp'
-import { defineAsyncComponent, inject, watch, computed, ref, type Ref } from 'vue'
+import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { computed, defineAsyncComponent, inject, ref, watch, type Ref } from 'vue'
 
 // Use the map logic composable
 const { map, parameters, center, zoom, syncAllLayersVisibility, layersStore } = useMapLogic()

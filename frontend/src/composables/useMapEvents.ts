@@ -1,4 +1,4 @@
-import type { Map as MapLibre, MapLayerMouseEvent } from 'maplibre-gl'
+import type { MapLayerMouseEvent, Map as MapLibre } from 'maplibre-gl'
 import { Popup as MapLibrePopup } from 'maplibre-gl'
 import { onUnmounted, ref, type Ref } from 'vue'
 

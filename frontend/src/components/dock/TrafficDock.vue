@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useLayersStore } from '@/stores/layers'
-import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { recalculateRoutes } from '@/services/trafficAnalysis'
 import ImpactStatistics from '@/components/ImpactStatistics.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcRow from '@/components/ui/BcRow.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
+import { recalculateRoutes } from '@/services/trafficAnalysis'
+import { useLayersStore } from '@/stores/layers'
+import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { computed, onMounted, ref } from 'vue'
 
 const layersStore = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
@@ -464,7 +464,9 @@ async function calculateRoutes() {
   color: var(--bc-ink);
   padding: 3px 8px;
   cursor: pointer;
-  transition: background var(--bc-t), color var(--bc-t);
+  transition:
+    background var(--bc-t),
+    color var(--bc-t);
 }
 
 .clip__chip[data-on='true'] {

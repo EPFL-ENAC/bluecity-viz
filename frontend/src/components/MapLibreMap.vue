@@ -1,20 +1,22 @@
 <script setup lang="ts">
-import 'maplibre-gl/dist/maplibre-gl.css'
 import LoadingBar from '@/components/LoadingBar.vue'
-import { mapConfig } from '@/config/mapConfig'
-import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
 import { useMapEvents } from '@/composables/useMapEvents'
+import type { CustomSourceSpecification, MapLayerConfig } from '@/config/layerTypes'
+import { mapConfig } from '@/config/mapConfig'
 import {
+  theme as basemapTheme,
   buildStyle,
   clearPatterns,
   loadTiles,
   setMapTheme,
-  theme as basemapTheme,
   wirePatterns,
   type BasemapTheme
 } from '@/utils/epflBasemap'
+import 'maplibre-gl/dist/maplibre-gl.css'
 
+import type { LegendColor } from '@/utils/legendColor'
 import {
+  addProtocol,
   AttributionControl,
   Map as MapLibre,
   NavigationControl,
@@ -26,16 +28,14 @@ import {
   type SourceSpecification,
   type StyleSetterOptions,
   type StyleSpecification,
-  type TransformStyleFunction,
-  addProtocol
+  type TransformStyleFunction
 } from 'maplibre-gl'
-import type { LegendColor } from '@/utils/legendColor'
 import { markRaw, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 
-import { Protocol } from 'pmtiles'
 import { useApiKeyStore } from '@/stores/apiKey'
 import { useLayersStore } from '@/stores/layers'
 import { useThemeStore } from '@/stores/theme'
+import { Protocol } from 'pmtiles'
 
 const apiKeyStore = useApiKeyStore()
 const layersStore = useLayersStore()

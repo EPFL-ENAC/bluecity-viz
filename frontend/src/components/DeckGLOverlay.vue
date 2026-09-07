@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { MapboxOverlay } from '@deck.gl/mapbox'
-import { onUnmounted, watch, inject, type Ref } from 'vue'
 import type { Map as MapLibreMap } from 'maplibre-gl'
+import { inject, onUnmounted, watch, type Ref } from 'vue'
 
 const props = defineProps<{
   layers: any[]

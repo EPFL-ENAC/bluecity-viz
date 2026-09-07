@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { useCVRPStore } from '@/stores/cvrp'
 import BcRow from '@/components/ui/BcRow.vue'
+import { useCVRPStore } from '@/stores/cvrp'
+import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()

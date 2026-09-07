@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import BcDialogCard from '@/components/ui/BcDialogCard.vue'
 import { useLayersStore } from '@/stores/layers'
 import { splitSourceLabel } from '@/utils/sourceLabel'
-import BcDialogCard from '@/components/ui/BcDialogCard.vue'
+import { computed } from 'vue'
 
 defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
 import { useApiKeyStore } from '@/stores/apiKey'
+import { onMounted, ref } from 'vue'
 
 const emit = defineEmits(['apiKeySaved'])
 

@@ -1,4 +1,3 @@
-import type { FilterSpecification } from 'maplibre-gl'
 import { defineGroup, defineLayer } from '@/config/defineLayer'
 import type {
   CustomSourceSpecification,
@@ -6,6 +5,7 @@ import type {
   SequentialEncoding
 } from '@/config/layerTypes'
 import { baseUrl } from '@/config/layerTypes'
+import type { FilterSpecification } from 'maplibre-gl'
 
 // Local Pearson correlation, red is negative, blue is positive.
 const LOCAL_CORR_ENCODING: SequentialEncoding = {

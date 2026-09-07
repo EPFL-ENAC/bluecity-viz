@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useLayersStore } from '@/stores/layers'
 import AddSourceDialog from '@/components/dialogs/AddSourceDialog.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcRow from '@/components/ui/BcRow.vue'
+import { useLayersStore } from '@/stores/layers'
+import { ref } from 'vue'
 
 const layersStore = useLayersStore()
 const addSourceDialog = ref(false)

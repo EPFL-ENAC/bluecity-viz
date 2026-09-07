@@ -1,10 +1,10 @@
+import { fetchBaseline, fetchGraphInfo } from '@/services/trafficAnalysis'
 import {
   EXPECTED_PUBLIC_KEYS,
   EXPECTED_SCALES,
   EXPECTED_STATE_KEYS,
   makeUsage
 } from '@/stores/__tests__/fixtures/trafficScales'
-import { fetchBaseline, fetchGraphInfo } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

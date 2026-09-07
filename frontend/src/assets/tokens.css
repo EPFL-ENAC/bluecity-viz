@@ -185,7 +185,9 @@ a:hover {
   color: var(--bc-ink);
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--bc-t), color var(--bc-t);
+  transition:
+    background var(--bc-t),
+    color var(--bc-t);
 }
 .bc-btn:hover {
   background: var(--bc-hover);

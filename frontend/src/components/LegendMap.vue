@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { MapLayerConfig } from '@/config/layerTypes'
+import { getVehicleColor, useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { useCVRPStore, getVehicleColor } from '@/stores/cvrp'
-import { interpolateViridis } from 'd3-scale-chromatic'
 import {
-  datasetLegend,
   trafficLegend as buildTrafficLegend,
+  datasetLegend,
   type LegendColor,
   type TrafficLegendMode
 } from '@/utils/legendColor'
+import { interpolateViridis } from 'd3-scale-chromatic'
+import { computed } from 'vue'
 
 const props = defineProps<{
   layers: MapLayerConfig[]
