@@ -1,0 +1,24 @@
+# Local virtualenv and caches
+.venv/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Notebooks and their exports
+*.ipynb
+.ipynb_checkpoints/
+
+# Tests, dev scripts and worktree noise
+tests/
+scripts/
+.wt-logs/
+.env
+.env.*
+.git
+.gitignore
+.claude/
+
+# Docs (README.md is kept, pyproject reads it)
+RESEARCH_SAMPLING.md
