@@ -119,7 +119,8 @@ Python notebooks and scripts using GeoPandas/uv for converting raw datasets (sha
 
 Backend settings are in `backend/app/config.py` (pydantic-settings, reads `.env`):
 - `GRAPH_PATH` — path to GraphML file (default: `data/lausanne.graphml`)
-- `GEOJSON_PATH` — path to GeoJSON (default: `data/lausanne.geojson`)
+- `CORS_ORIGINS` — JSON list of allowed browser origins (default: the local dev ones)
+- `API_KEY` — shared key checked on `/api/v1/*` via `X-API-Key` (empty = no auth)
 
 The frontend always calls the backend on a relative `/api/v1/...` path. In dev,
 `frontend/vite.config.ts` proxies `/api` and `/data` to `127.0.0.1:$BACKEND_PORT`,

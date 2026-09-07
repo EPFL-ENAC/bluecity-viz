@@ -1,69 +1,97 @@
 """Main FastAPI application."""
 
+import logging
+import logging.config
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import cvrp as cvrp_router
 from app.api.v1 import routes
 from app.config import settings
+from app.security import require_api_key
+
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(levelname)s:     %(name)s: %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "stream": "ext://sys.stdout",
+        },
+    },
+    "root": {"handlers": ["console"], "level": settings.log_level},
+    "loggers": {
+        # uvicorn installs its own handlers; keep ours to avoid double lines.
+        "uvicorn": {"handlers": [], "propagate": True},
+        "uvicorn.error": {"handlers": [], "propagate": True},
+        "uvicorn.access": {"handlers": [], "propagate": True},
+    },
+}
+
+logging.config.dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
+
+
+def _resolve(path_setting: str) -> Path:
+    """Resolve a setting path, relative ones against the backend directory."""
+    path = Path(path_setting)
+    if path.is_absolute():
+        return path
+    return (Path(__file__).parent.parent / path).resolve()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup: Load the graph
-    graph_path = Path(settings.graph_path)
-    if graph_path.is_absolute():
-        full_path = graph_path
-    else:
-        # Relative to backend directory
-        backend_dir = Path(__file__).parent.parent
-        full_path = (backend_dir / graph_path).resolve()
+    full_path = _resolve(settings.graph_path)
 
     if full_path.exists():
-        print(f"Loading graph from: {full_path}")
+        logger.info("Loading graph from: %s", full_path)
         routes.graph_service.load_graph(str(full_path))
-        print("Graph loaded successfully")
+        logger.info("Graph loaded successfully")
 
         # Generate default OD pairs using research-based sampling
-        print("Initializing default routes with research-based sampling...")
+        logger.info("Initializing default routes with research-based sampling...")
         await routes.graph_service.initialize_default_routes(
             count=500,  # 500 OD pairs (research-based sampling is more intensive)
             seed=42,
             sampling_method="research",  # Use research-based method by default
             sampling_config=None,  # Use default configuration
         )
-        print("Default routes initialized")
+        logger.info("Default routes initialized")
 
         # Initialize CVRP service with waste centroid CSVs
-        backend_dir = Path(__file__).parent.parent
-        centroids_path_setting = settings.cvrp_centroids_dir
-        if Path(centroids_path_setting).is_absolute():
-            centroids_full_path = Path(centroids_path_setting)
-        else:
-            centroids_full_path = (backend_dir / centroids_path_setting).resolve()
+        centroids_full_path = _resolve(settings.cvrp_centroids_dir)
 
-        cvrp_router.cvrp_service.set_graph_service(routes.graph_service)
+        app.state.cvrp_service.set_graph_service(routes.graph_service)
         if centroids_full_path.exists():
-            print(f"Initializing CVRP service from: {centroids_full_path}")
-            cvrp_router.cvrp_service.initialize(str(centroids_full_path))
-            print("CVRP service initialized")
+            logger.info("Initializing CVRP service from: %s", centroids_full_path)
+            app.state.cvrp_service.initialize(str(centroids_full_path))
+            logger.info("CVRP service initialized")
         else:
-            print(f"Warning: Centroids directory not found at {centroids_full_path}")
-            print("CVRP endpoints will return errors until centroids are available")
+            logger.warning("Centroids directory not found at %s", centroids_full_path)
+            logger.warning("CVRP endpoints will return errors until centroids are available")
     else:
-        print(f"Warning: Graph file not found at {full_path}")
-        print("API will be available but route endpoints will fail")
+        logger.warning("Graph file not found at %s", full_path)
+        logger.warning("API will be available but route endpoints will fail")
 
     yield
 
     # Shutdown: cleanup if needed
-    print("Shutting down...")
+    logger.info("Shutting down...")
 
 
 app = FastAPI(
@@ -72,6 +100,9 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
 )
+
+# Services live on the app state so tests can swap them.
+app.state.cvrp_service = cvrp_router.cvrp_service
 
 # Add GZip compression middleware for responses >= 10KB
 app.add_middleware(
@@ -83,15 +114,23 @@ app.add_middleware(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Log the traceback and return a generic 500, never the exception text."""
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
 # Include routers
-app.include_router(routes.router, prefix="/api/v1")
-app.include_router(cvrp_router.router, prefix="/api/v1")
+app.include_router(routes.router, prefix="/api/v1", dependencies=[Depends(require_api_key)])
+app.include_router(cvrp_router.router, prefix="/api/v1", dependencies=[Depends(require_api_key)])
 
 # Mount static data directory for serving GeoJSON files
 data_dir = Path(__file__).parent.parent / "data"
@@ -105,7 +144,7 @@ async def root():
     return {
         "status": "ok",
         "service": "BlueCity Traffic Analysis API",
-        "version": "0.1.0",
+        "version": settings.app_version,
     }
 
 
