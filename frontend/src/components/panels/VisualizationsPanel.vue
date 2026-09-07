@@ -3,6 +3,7 @@ import LegendMap from '@/components/LegendMap.vue'
 import MapLibreMap from '@/components/MapLibreMap.vue'
 import CvrpDock from '@/components/dock/CvrpDock.vue'
 import TrafficDock from '@/components/dock/TrafficDock.vue'
+import GraphOverlay from '@/components/map/GraphOverlay.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
 import { useCVRPStore } from '@/stores/cvrp'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
@@ -74,6 +75,9 @@ watch(
         <legend-map :layers="layersStore.visibleLayers"></legend-map>
       </template>
     </MapLibreMap>
+
+    <!-- The street graph: MapLibre layers, the hover card and the editor -->
+    <GraphOverlay v-if="deckMounted" :class="{ 'is-docked': anyToolOpen }" />
 
     <!-- Deck.gl canvas, tooltips and analysis layers -->
     <DeckAnalysisLayer v-if="deckMounted" />

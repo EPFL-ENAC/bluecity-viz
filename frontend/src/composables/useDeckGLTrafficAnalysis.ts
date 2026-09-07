@@ -1,19 +1,8 @@
-import {
-  buildBaseLayer,
-  buildEdgeColors,
-  buildHoverLayer,
-  buildModifiedEdgeLayers,
-  buildRouteLayers,
-  hullFor,
-  type ModifiedEdge,
-  type RouteEdge
-} from '@/composables/buildTrafficLayers'
+import { buildEdgeColors, buildRouteLayers, type RouteEdge } from '@/composables/buildTrafficLayers'
 import { useEdgeTooltip, type EdgeTooltipData } from '@/composables/useEdgeTooltip'
 import { edgeKey, useGraphEdges } from '@/composables/useGraphEdges'
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
-import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore, type EdgeUsageStats } from '@/stores/trafficAnalysis'
-import type { HullOutline } from '@/utils/geometry'
 import { computed, shallowRef, watch } from 'vue'
 
 export type { EdgeTooltipData }
@@ -28,7 +17,6 @@ export type { EdgeTooltipData }
  */
 export function useDeckGLTrafficAnalysis() {
   const trafficStore = useTrafficAnalysisStore()
-  const scenarioStore = useScenarioStore()
   const { edges, edgeMap, loadGraphEdges, getEdge, getReverseEdge } = useGraphEdges()
   const { tooltipData, setTooltip, setTooltipMover, moveTooltip } = useEdgeTooltip()
 
@@ -36,8 +24,6 @@ export function useDeckGLTrafficAnalysis() {
   let hoveredKey: string | null = null
   let edgeClickCallback: ((u: number, v: number, name?: string) => void) | null = null
 
-  // hull outlines survive a click, only the list of modified edges changes
-  const hullCache = new Map<string, HullOutline>()
   // one color buffer per mode, thrown away when the numbers change
   let colorCache = new Map<string, Uint8Array>()
   let colorVersion = 0
@@ -99,29 +85,6 @@ export function useDeckGLTrafficAnalysis() {
     return out
   })
 
-  /** The modified edges with their hull, ready to draw. */
-  const modifiedEdges = computed<ModifiedEdge[]>(() => {
-    const map = edgeMap.value
-    if (map.size === 0) return []
-
-    const out: ModifiedEdge[] = []
-    // The scenario keys a street, the layer draws directed edges: one lane, or
-    // both when the modification applies to both.
-    for (const [streetKey, mod] of scenarioStore.edgeModifications) {
-      const [lo, hi] = streetKey.split('-')
-      const keys: string[] = []
-      if (mod.dir !== 'bwd') keys.push(`${lo}-${hi}`)
-      if (mod.dir !== 'fwd') keys.push(`${hi}-${lo}`)
-
-      for (const key of keys) {
-        const edge = map.get(key)
-        if (!edge) continue
-        out.push({ key, edge, action: mod.action, hull: hullFor(hullCache, key, edge) })
-      }
-    }
-    return out
-  })
-
   function colorsFor(mode: string, list: RouteEdge[]): Uint8Array {
     let colors = colorCache.get(mode)
     if (!colors) {
@@ -131,33 +94,21 @@ export function useDeckGLTrafficAnalysis() {
     return colors
   }
 
+  // Only the coloured result is left here. The graph, the pointer and the
+  // modifications are MapLibre layers now (utils/bluecityGraph.ts).
   const layers = computed<any[]>(() => {
-    const network = edges.value
-    if (network.length === 0) return []
-
-    const out: any[] = [buildBaseLayer(network)]
+    if (edges.value.length === 0) return []
 
     const mode = trafficStore.activeVisualization
     const list = displayEdges.value
-    if (mode !== 'none' && list.length > 0) {
-      out.push(
-        ...buildRouteLayers({
-          edges: list,
-          colors: colorsFor(mode, list),
-          mode,
-          colorVersion
-        })
-      )
-    }
+    if (mode === 'none' || list.length === 0) return []
 
-    out.push(buildHoverLayer(hoveredEdge.value))
-
-    const modified = modifiedEdges.value
-    if (modified.length > 0) {
-      out.push(...buildModifiedEdgeLayers(modified))
-    }
-
-    return out
+    return buildRouteLayers({
+      edges: list,
+      colors: colorsFor(mode, list),
+      mode,
+      colorVersion
+    })
   })
 
   /** Click an edge to cycle its modification, both directions together. */

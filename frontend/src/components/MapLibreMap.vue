@@ -167,13 +167,23 @@ function ensureLayer(entry: MapLayerConfig): boolean {
   }
 }
 
+// onMounted and the api key watcher can both call initMap. The tile fetch in
+// between is async, so a plain `if (map.value)` guard is not enough: a second
+// call would slip through and build a second map in the same container.
+let initStarted = false
+
 async function initMap() {
-  if (map.value) return
+  if (map.value || initStarted) return
+  initStarted = true
 
   // The Trait style needs the OpenFreeMap tile URLs (memoised fetch), so build
   // the style only after they arrived.
-  await loadTiles()
-  if (map.value) return
+  try {
+    await loadTiles()
+  } catch (error) {
+    initStarted = false
+    throw error
+  }
 
   const initialStyle = styleFor(themeStore.theme)
 
@@ -459,13 +469,19 @@ const configSourceIds = new Set(mapConfig.sources.map((source) => source.id))
  * setStyle drops everything the new style does not declare. Put our own
  * dataset sources and layers back, with the filter and the visibility they
  * had. Layers of other plugins (Deck.gl) are left alone, they re-add theirs.
+ *
+ * The graph overlay sources (bc-*) are carried too, with the same `data`
+ * object, so the 6 MB of edges are not fetched and tiled again. Its layers are
+ * not: useGraphOverlay re-adds them on style.load, under the street labels of
+ * the new style.
  */
-const carryDatasetLayers: TransformStyleFunction = (previous, next) => {
+const carryOverlay: TransformStyleFunction = (previous, next) => {
   if (!previous) return next
 
   const sources = { ...next.sources }
   for (const [id, source] of Object.entries(previous.sources)) {
-    if (configSourceIds.has(id) && !sources[id]) sources[id] = source
+    const keep = configSourceIds.has(id) || id.startsWith('bc-')
+    if (keep && !sources[id]) sources[id] = source
   }
 
   return {
@@ -496,7 +512,7 @@ watch(
       return
     }
 
-    mapInstance.setStyle(styleFor(next), { diff: true, transformStyle: carryDatasetLayers })
+    mapInstance.setStyle(styleFor(next), { diff: true, transformStyle: carryOverlay })
   }
 )
 </script>

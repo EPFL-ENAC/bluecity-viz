@@ -161,8 +161,17 @@ async function calculateRoutes() {
       </div>
 
       <p v-if="scenarioStore.count === 0" class="bc-empty edge-empty">
-        Click an edge on the map to cycle: remove → 50 → 30 → 10 km/h.
+        Turn on Edit graph, then click an edge on the map.
       </p>
+
+      <button
+        class="edit-graph"
+        type="button"
+        @click="scenarioStore.setEditMode(!scenarioStore.editMode)"
+      >
+        <span class="edit-graph__dot" :data-on="scenarioStore.editMode"></span>
+        {{ scenarioStore.editMode ? 'Leave edit mode' : 'Edit graph' }}
+      </button>
     </div>
 
     <!-- Routing model -->
@@ -379,6 +388,40 @@ async function calculateRoutes() {
 
 .edge-row__remove:hover {
   color: var(--bc-ink);
+}
+
+.edit-graph {
+  margin-top: 10px;
+  width: 100%;
+  font-family: var(--bc-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--bc-ink);
+  border: 1px solid var(--bc-ink);
+  padding: 9px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background var(--bc-t);
+}
+
+.edit-graph:hover {
+  background: var(--bc-hover);
+}
+
+.edit-graph__dot {
+  width: 5px;
+  height: 5px;
+  background: var(--bc-accent);
+  flex: none;
+}
+
+.edit-graph__dot[data-on='true'] {
+  background: var(--bc-ink);
 }
 
 .edge-empty {
