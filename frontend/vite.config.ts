@@ -9,6 +9,15 @@ import vuetify from 'vite-plugin-vuetify'
 // reads them from the environment. The main checkout keeps 5173 and 8000.
 const backendPort = process.env.BACKEND_PORT || '8000'
 
+// One vendor chunk per big library, so a change in app code does not
+// invalidate the cached maplibre / deck.gl / vuetify bundles.
+const vendorChunks: Record<string, RegExp> = {
+  maplibre: /[\\/]node_modules[\\/](maplibre-gl|pmtiles)[\\/]/,
+  deck: /[\\/]node_modules[\\/](@deck\.gl|@luma\.gl|@loaders\.gl|@math\.gl|@probe\.gl)[\\/]/,
+  vuetify: /[\\/]node_modules[\\/]vuetify[\\/]/,
+  d3: /[\\/]node_modules[\\/](d3-[a-z-]+|internmap)[\\/]/
+}
+
 export default defineConfig({
   base: process.env.BASE_URL || '/',
   server: {
@@ -25,19 +34,30 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/data/, '')
       }
-
-      //  UNCOMMENT THIS IF YOURE HUGO
-      // '^/geodata.*': {  // ADD THIS
-      //   target: 'http://127.0.0.1:8000/data',
-      //   changeOrigin: true,
-      //   rewrite: (path) => path.replace(/^\/geodata/, '')
-      // }
     }
   },
   plugins: [vue(), vuetify()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
+    }
+  },
+  css: {
+    preprocessorOptions: {
+      scss: { api: 'modern-compiler' }
+    }
+  },
+  build: {
+    // .map files are emitted but not referenced from the bundles
+    sourcemap: 'hidden',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          for (const [name, pattern] of Object.entries(vendorChunks)) {
+            if (pattern.test(id)) return name
+          }
+        }
+      }
     }
   }
 })
