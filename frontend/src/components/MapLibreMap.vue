@@ -95,24 +95,24 @@ let needsResync = false
 const LOADING_BAR_DELAY = 150
 let loadingTimer: number | undefined
 
-// Ink-on-paper themes of the Trait basemap. Both are the same engine and the
-// same layers, only the colours change.
-const TRAIT_THEMES: Record<string, BasemapTheme> = {
-  trait: basemapTheme({ ink: '#141414', paper: '#ffffff', density: 0.8 }),
-  'trait-dark': basemapTheme({ ink: '#E6E6E6', paper: '#141414', density: 0.8 })
+// Ink-on-paper themes of the Substrat basemap. Both are the same engine and
+// the same layers, only the colours change.
+const SUBSTRAT_THEMES: Record<string, BasemapTheme> = {
+  substrat: basemapTheme({ ink: '#141414', paper: '#ffffff', density: 0.8 }),
+  'substrat-dark': basemapTheme({ ink: '#F2F2F2', paper: '#141414', density: 0.8 })
 }
 
-function isTraitKey(key: string): boolean {
-  return key.startsWith('trait')
+function isSubstratKey(key: string): boolean {
+  return key.startsWith('substrat')
 }
 
 function themeFor(key: string): BasemapTheme {
-  return TRAIT_THEMES[key] ?? TRAIT_THEMES.trait
+  return SUBSTRAT_THEMES[key] ?? SUBSTRAT_THEMES.substrat
 }
 
 /** Either a style URL (public/style/*.json) or a style built by the EPFL engine. */
 function styleFor(key: string): string | StyleSpecification {
-  return isTraitKey(key) ? buildStyle('contour', themeFor(key)) : key
+  return isSubstratKey(key) ? buildStyle('substrat', themeFor(key)) : key
 }
 
 // Use the map events composable
@@ -485,13 +485,13 @@ watch(
     setMapTheme(mapInstance, themeFor(next))
     clearPatterns(mapInstance)
 
-    // Trait light to Trait dark: same style, other colours. No setStyle, so
-    // the dataset layers and their tiles are never touched.
-    if (isTraitKey(next) && isTraitKey(previous)) {
+    // Substrat light to Substrat dark: same style, other colours. No setStyle,
+    // so the dataset layers and their tiles are never touched.
+    if (isSubstratKey(next) && isSubstratKey(previous)) {
       applyPaintDiff(
         mapInstance,
-        buildStyle('contour', themeFor(previous)),
-        buildStyle('contour', themeFor(next))
+        buildStyle('substrat', themeFor(previous)),
+        buildStyle('substrat', themeFor(next))
       )
       return
     }

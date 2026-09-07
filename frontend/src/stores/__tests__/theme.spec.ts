@@ -20,19 +20,30 @@ describe('theme store', () => {
     setActivePinia(createPinia())
   })
 
-  it('defaults to the Trait basemap', () => {
+  it('defaults to the Substrat basemap', () => {
     vi.stubGlobal('localStorage', makeStorage())
     const store = useThemeStore()
-    expect(store.theme).toBe('trait')
+    expect(store.theme).toBe('substrat')
     expect(store.isDark).toBe(false)
-    expect(store.isTrait).toBe(true)
-    expect(store.themeLabel).toBe('Trait')
+    expect(store.isSubstrat).toBe(true)
+    expect(store.themeLabel).toBe('Substrat')
   })
 
   it('falls back to the default when the stored basemap is gone', () => {
     vi.stubGlobal('localStorage', makeStorage({ 'bluecity-viz-theme': 'style/dark.json' }))
     const store = useThemeStore()
-    expect(store.theme).toBe('trait')
+    expect(store.theme).toBe('substrat')
+  })
+
+  it('reads an old Trait value back as its Substrat counterpart', () => {
+    vi.stubGlobal('localStorage', makeStorage({ 'bluecity-viz-theme': 'trait' }))
+    expect(useThemeStore().theme).toBe('substrat')
+
+    setActivePinia(createPinia())
+    vi.stubGlobal('localStorage', makeStorage({ 'bluecity-viz-theme': 'trait-dark' }))
+    const dark = useThemeStore()
+    expect(dark.theme).toBe('substrat-dark')
+    expect(dark.isDark).toBe(true)
   })
 
   it('keeps a stored basemap that still exists', () => {
@@ -41,16 +52,16 @@ describe('theme store', () => {
     expect(store.theme).toBe('style/none.json')
   })
 
-  it('is dark only for the dark Trait basemap', () => {
+  it('is dark only for the dark Substrat basemap', () => {
     vi.stubGlobal('localStorage', makeStorage())
     const store = useThemeStore()
 
-    store.setTheme('trait-dark')
+    store.setTheme('substrat-dark')
     expect(store.isDark).toBe(true)
-    expect(store.isTrait).toBe(true)
+    expect(store.isSubstrat).toBe(true)
 
     store.setTheme('style/light.json')
     expect(store.isDark).toBe(false)
-    expect(store.isTrait).toBe(false)
+    expect(store.isSubstrat).toBe(false)
   })
 })
