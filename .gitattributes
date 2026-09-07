@@ -1,0 +1,14 @@
+# Big binaries go to git LFS (the endpoint is in .lfsconfig).
+# New files only. The history is not migrated, and the two backend fixtures
+# below were committed as plain blobs before these rules existed, so they are
+# opted out to keep them readable by git as they are.
+*.graphml filter=lfs diff=lfs merge=lfs -text
+*.geojson filter=lfs diff=lfs merge=lfs -text
+*.pmtiles filter=lfs diff=lfs merge=lfs -text
+*.pdf filter=lfs diff=lfs merge=lfs -text
+
+backend/data/lausanne.geojson -filter -diff -merge
+backend/data/lausanne.graphml -filter -diff -merge
+
+# Notebooks are JSON with embedded outputs, a diff is noise.
+*.ipynb -diff
