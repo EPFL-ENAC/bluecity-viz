@@ -158,7 +158,7 @@ tmux set-option -w -t "=$SESSION:dev" pane-border-status top
 
 tmux send-keys -t "$P_BACKEND" "$LOAD; make dev" C-m
 pipe_log backend "$P_BACKEND"
-tmux send-keys -t "$P_FRONTEND" "$LOAD; npm run dev" C-m   # no Makefile in frontend/
+tmux send-keys -t "$P_FRONTEND" "$LOAD; pnpm run dev" C-m   # no Makefile in frontend/
 pipe_log frontend "$P_FRONTEND"
 tmux send-keys -t "$P_CLAUDE" "$LOAD; $(claude_cmd)" C-m
 tmux send-keys -t "$P_SHELL" "$LOAD; clear" C-m
