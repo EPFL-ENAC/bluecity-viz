@@ -6,6 +6,8 @@ must be exactly what routing those first N pairs gives.
 The graph is the real one, but OD_PAIRS_MAX is lowered so the test stays fast.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -14,7 +16,8 @@ from app.models.route import EdgeModification, RecalculateRequest
 from app.services.graph_service import GraphService
 from app.services.routing_engine import route_pairs
 
-GRAPH = "data/lausanne.graphml"
+# Resolved from this file, so the suite runs from the repo root too.
+GRAPH = Path(__file__).resolve().parents[1] / "data" / "lausanne.graphml"
 MAX_PAIRS = 2000
 DEFAULT_PAIRS = 600
 
@@ -24,8 +27,10 @@ def service():
     """A service with a small OD sample, so the module runs in a few seconds."""
     old_max, old_default = settings.od_pairs_max, settings.od_pairs
     settings.od_pairs_max, settings.od_pairs = MAX_PAIRS, DEFAULT_PAIRS
+    if not GRAPH.exists():
+        pytest.skip(f"graph not found: {GRAPH}")
     svc = GraphService()
-    svc.load_graph(GRAPH)
+    svc.load_graph(str(GRAPH))
     svc.initialize_default_routes_sync(seed=42, sampling_method="research")
     yield svc
     settings.od_pairs_max, settings.od_pairs = old_max, old_default
