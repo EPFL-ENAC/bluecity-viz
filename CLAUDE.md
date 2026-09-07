@@ -32,10 +32,10 @@ pnpm run schema     # Regenerate frontend/schema/parameters.schema.json from Typ
 ### Backend (from `backend/`)
 ```bash
 uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload  # dev server
-uv run python test_with_data.py    # integration test (requires lausanne.graphml)
-uv run python test_api.py          # API tests
-uv run ruff check app              # lint
-uv run ruff format app             # format
+uv run pytest                      # unit tests (synthetic graph, no data needed)
+uv run ruff check --no-fix app tests scripts   # lint
+uv run ruff format app tests scripts           # format
+uv run python scripts/test_with_data.py        # manual check against a running server
 ```
 
 ## Architecture
