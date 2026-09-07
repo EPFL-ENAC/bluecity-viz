@@ -85,7 +85,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.9.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },
-    { name = "pyvrp", specifier = ">=0.13.3" },
+    { name = "pyvrp", specifier = ">=0.13.3,<0.14" },
     { name = "requests", specifier = ">=2.32.0" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "scipy", specifier = ">=1.11.0" },
