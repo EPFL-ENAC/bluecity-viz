@@ -2,6 +2,7 @@ import type { Street } from '@/stores/scenario'
 import {
   BEFORE_LAYER,
   buildGraphLayers,
+  cvrpHoverStates,
   drawFor,
   graphLayerIds,
   idFilter,
@@ -57,6 +58,31 @@ describe('buildGraphLayers', () => {
 
   it('inserts under the street names', () => {
     expect(BEFORE_LAYER).toBe('rd-label')
+  })
+
+  // A filter change makes MapLibre reload every tile of the source, which is
+  // far too slow for something that follows the mouse.
+  it('shows the pointer through feature state, never through a filter', () => {
+    const cases: Array<[string, string]> = [
+      ['bc-hover', 'h'],
+      ['bc-hover-halo', 'h'],
+      ['bc-selected', 's'],
+      ['bc-selected-ghost', 'g'],
+      ['bc-cvrp-halo', 'hl']
+    ]
+    for (const [id, state] of cases) {
+      const l = layer(id)
+      expect(l.filter).toBeUndefined()
+      expect(JSON.stringify(l.paint['line-opacity'])).toContain(`["feature-state","${state}"]`)
+    }
+  })
+
+  it('hides a pointer layer when its state is not set', () => {
+    // ['case', ['==', ['coalesce', ['feature-state', 'h'], 0], 0], 0, 1]
+    const opacity = layer('bc-hover').paint['line-opacity']
+    expect(opacity[0]).toBe('case')
+    expect(opacity[2]).toBe(0)
+    expect(opacity[3]).toBe(1)
   })
 
   it('splits the graph into one-way lines and two-way lanes', () => {
@@ -228,5 +254,27 @@ describe('idFilter', () => {
   it('matches by feature id, so a missing name cannot break it', () => {
     expect(idFilter([1, 2])).toEqual(['in', ['id'], ['literal', [1, 2]]])
     expect(idFilter([])).toEqual(['in', ['id'], ['literal', []]])
+  })
+})
+
+describe('cvrpHoverStates', () => {
+  const features = [
+    { id: 0, properties: { route_id: 1 } },
+    { id: 1, properties: { route_id: 2 } },
+    { id: 2, properties: { route_id: 1 } }
+  ]
+
+  it('lights the hovered vehicle and dims the others', () => {
+    expect(cvrpHoverStates(features, 1)).toEqual([
+      { id: 0, state: { hl: 1, dim: 0 } },
+      { id: 1, state: { hl: 0, dim: 1 } },
+      { id: 2, state: { hl: 1, dim: 0 } }
+    ])
+  })
+
+  it('clears every feature when the pointer leaves', () => {
+    for (const row of cvrpHoverStates(features, null)) {
+      expect(row.state).toEqual({ hl: 0, dim: 0 })
+    }
   })
 })

@@ -20,7 +20,8 @@ import {
   emptyPoints,
   GRAPH_SOURCE,
   graphLayerIds,
-  idFilter
+  idFilter,
+  type CvrpRouteRef
 } from '@/utils/bluecityGraph'
 import { GRAPH_COLORS } from '@/utils/epflBasemap'
 import { pointFeatures, routeFeatures } from '@/utils/cvrpSource'
@@ -78,6 +79,9 @@ export function useGraphOverlay(
   let ghostIds: number[] = []
   // the streets currently carrying a result colour
   let resultIds: number[] = []
+  // the route features on the map, and the vehicle the pointer is on
+  let routeRefs: CvrpRouteRef[] = []
+  let hoveredRoute: number | null = null
   // Which map instance carries our layers, so a new map remounts instead of
   // writing feature state into a style that no longer holds the source.
   let mountedOn: MapLibreMap | null = null
@@ -248,6 +252,13 @@ export function useGraphOverlay(
    */
   const EMPTY = { type: 'FeatureCollection' as const, features: [] }
 
+  /** New route lines mean the old pointer state points at nothing. */
+  function setRoutes(map: MapLibreMap, routes: { features: CvrpRouteRef[] }): void {
+    map.removeFeatureState({ source: CVRP_SOURCE })
+    routeRefs = routes.features
+    hoveredRoute = null
+  }
+
   function applyRoutes(): void {
     const map = mapRef.value
     if (!map || mountedOn !== map) return
@@ -260,22 +271,21 @@ export function useGraphOverlay(
       : []
 
     if (!show || !result) {
+      setRoutes(map, EMPTY)
       applyCvrp(map, points.length ? { routes: EMPTY, points, mode: 'routes', stale: false } : null)
       return
     }
 
     if (cvrpStore.visualizationMode === 'heatmap') {
+      setRoutes(map, EMPTY)
       applyCvrp(map, { routes: EMPTY, points, mode: 'routes', stale: false })
       applyLoads()
       return
     }
 
-    applyCvrp(map, {
-      routes: routeFeatures(result.route_segments, result.n_routes),
-      points,
-      mode: 'routes',
-      stale: cvrpStore.isStale
-    })
+    const routes = routeFeatures(result.route_segments, result.n_routes)
+    setRoutes(map, routes)
+    applyCvrp(map, { routes, points, mode: 'routes', stale: cvrpStore.isStale })
   }
 
   /** Edge load: viridis on the graph, through the same state as the result. */
@@ -307,7 +317,11 @@ export function useGraphOverlay(
   function hoverRoute(routeId: number | null): void {
     const map = mapRef.value
     if (!map || mountedOn !== map) return
-    applyCvrpHover(map, routeId)
+    // The pointer runs on every frame, the state only changes when the vehicle
+    // under it does.
+    if (routeId === hoveredRoute) return
+    hoveredRoute = routeId
+    applyCvrpHover(map, routeId, routeRefs)
   }
 
   function setDataFilter(map: MapLibreMap, ids: number[]): void {
@@ -324,23 +338,11 @@ export function useGraphOverlay(
     hoverIds = []
 
     const hovered = scenarioStore.hovered
-    if (!hovered) {
-      if (map.getLayer('bc-hover')) {
-        map.setFilter('bc-hover', ['in', ['id'], ['literal', []]])
-        map.setFilter('bc-hover-halo', ['in', ['id'], ['literal', []]])
-      }
-      return
-    }
+    if (!hovered) return
 
     hoverIds = idsFor(hovered.key, hovered.dir)
     // one lane hovered: offset onto it. Both: stay on the centre line.
     setState(map, hoverIds, { h: 1, hl: hovered.dir === 'both' ? 0 : 1 })
-
-    if (map.getLayer('bc-hover')) {
-      const filter = ['in', ['id'], ['literal', hoverIds]] as never
-      map.setFilter('bc-hover', filter)
-      map.setFilter('bc-hover-halo', filter)
-    }
   }
 
   function applySelection(): void {
@@ -353,15 +355,7 @@ export function useGraphOverlay(
     ghostIds = []
 
     const selected = scenarioStore.selected
-    const empty = ['in', ['id'], ['literal', []]] as never
-
-    if (!selected) {
-      if (map.getLayer('bc-selected')) {
-        map.setFilter('bc-selected', empty)
-        map.setFilter('bc-selected-ghost', empty)
-      }
-      return
-    }
+    if (!selected) return
 
     selectedIds = idsFor(selected.key, selected.dir)
     setState(map, selectedIds, { s: 1, sl: selected.dir === 'both' ? 0 : 1 })
@@ -372,11 +366,6 @@ export function useGraphOverlay(
       const other = selected.dir === 'fwd' ? 'bwd' : 'fwd'
       ghostIds = idsFor(selected.key, other)
       setState(map, ghostIds, { g: 1 })
-    }
-
-    if (map.getLayer('bc-selected')) {
-      map.setFilter('bc-selected', ['in', ['id'], ['literal', selectedIds]] as never)
-      map.setFilter('bc-selected-ghost', ['in', ['id'], ['literal', ghostIds]] as never)
     }
   }
 

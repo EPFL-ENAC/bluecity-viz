@@ -119,6 +119,17 @@ function stateOffset(name: string, k = 1): ExpressionSpecification {
   ])
 }
 
+/**
+ * Show a pointer layer only on the feature carrying the state.
+ *
+ * The pointer used to be a setFilter, but a filter change makes MapLibre
+ * reload every tile of the source, and bc-edges holds 10k edges under 14
+ * layers. Opacity from feature-state costs one paint value, no reload.
+ */
+function stateOpacity(name: string, on: number): ExpressionSpecification {
+  return ['case', ['==', ['coalesce', ['feature-state', name], 0], 0], 0, on]
+}
+
 export interface GraphLayerOptions {
   colors: GraphColors
   /** 'scenario' shows ink modifications, 'result' lets the data own the colour */
@@ -273,38 +284,36 @@ export function buildGraphLayers(options: GraphLayerOptions): LayerSpecification
       ...src,
       id: 'bc-hover-halo',
       type: 'line',
-      filter: NOTHING,
       layout: { 'line-cap': 'round' },
       paint: {
         'line-color': accent,
         'line-width': wGraph(2.2, 6),
         'line-offset': stateOffset('hl'),
-        'line-opacity': 0.18
+        'line-opacity': stateOpacity('h', 0.18)
       }
     },
     {
       ...src,
       id: 'bc-hover',
       type: 'line',
-      filter: NOTHING,
       layout: { 'line-cap': 'round' },
       paint: {
         'line-color': accent,
         'line-width': wGraph(2.2),
-        'line-offset': stateOffset('hl')
+        'line-offset': stateOffset('hl'),
+        'line-opacity': stateOpacity('h', 1)
       }
     },
     {
       ...src,
       id: 'bc-selected',
       type: 'line',
-      filter: NOTHING,
       layout: { 'line-cap': 'butt' },
       paint: {
         'line-color': accent,
         'line-width': wMod(1, 6),
         'line-offset': stateOffset('sl'),
-        'line-opacity': 0.25
+        'line-opacity': stateOpacity('s', 0.25)
       }
     },
     // the lane left out of a one-direction selection, so the exclusion shows
@@ -312,13 +321,12 @@ export function buildGraphLayers(options: GraphLayerOptions): LayerSpecification
       ...src,
       id: 'bc-selected-ghost',
       type: 'line',
-      filter: NOTHING,
       layout: { 'line-cap': 'butt' },
       paint: {
         'line-color': accent,
         'line-width': wGraph(1.4),
         'line-offset': laneOffset(),
-        'line-opacity': 0.35,
+        'line-opacity': stateOpacity('g', 0.35),
         'line-dasharray': [1, 1.5]
       }
     },
@@ -383,13 +391,12 @@ function cvrpLayers(colors: GraphColors): LayerSpecification[] {
       ...line,
       id: 'bc-cvrp-halo',
       type: 'line',
-      filter: NOTHING,
       layout: ROUND,
       paint: {
         'line-color': accent,
         'line-width': wCvrp(1, 8),
         'line-offset': cvrpOffset(),
-        'line-opacity': 0.16
+        'line-opacity': stateOpacity('hl', 0.16)
       }
     },
     {
@@ -716,6 +723,12 @@ export interface CvrpPointFeature {
   properties: { kind: 'point' | 'depot'; reached: number }
 }
 
+/** The little a route feature has to tell us to be pointed at. */
+export interface CvrpRouteRef {
+  id: number
+  properties: { route_id: number }
+}
+
 export interface CvrpDraw {
   /** the braided route lines, from routeFeatures() */
   routes: { type: 'FeatureCollection'; features: unknown[] }
@@ -756,21 +769,35 @@ export function applyCvrp(map: MapLibreMap, draw: CvrpDraw | null): void {
   if (map.getLayer('bc-cvrp')) map.setPaintProperty('bc-cvrp', 'line-opacity', opacity)
 }
 
-/** Highlight one vehicle: an accent halo on it, the others dimmed. */
-export function applyCvrpHover(map: MapLibreMap, routeId: number | null): void {
+/** What state each route feature carries when one vehicle is pointed at. */
+export function cvrpHoverStates(
+  features: CvrpRouteRef[],
+  routeId: number | null
+): Array<{ id: number; state: { hl: number; dim: number } }> {
+  return features.map((feature) => ({
+    id: feature.id,
+    state:
+      routeId === null
+        ? { hl: 0, dim: 0 }
+        : feature.properties.route_id === routeId
+          ? { hl: 1, dim: 0 }
+          : { hl: 0, dim: 1 }
+  }))
+}
+
+/**
+ * Highlight one vehicle: an accent halo on it, the others dimmed.
+ *
+ * Feature state again, not a filter: the halo and the dim are both read from
+ * paint expressions, so pointing at a route never reloads the source.
+ */
+export function applyCvrpHover(
+  map: MapLibreMap,
+  routeId: number | null,
+  features: CvrpRouteRef[]
+): void {
   if (!map.getLayer('bc-cvrp')) return
-
-  if (routeId === null) {
-    setFilter(map, 'bc-cvrp-halo', NOTHING)
-    map.setPaintProperty('bc-cvrp', 'line-opacity', 1)
-    return
+  for (const { id, state } of cvrpHoverStates(features, routeId)) {
+    map.setFeatureState({ source: CVRP_SOURCE, id }, state)
   }
-
-  setFilter(map, 'bc-cvrp-halo', ['==', ['get', 'route_id'], routeId])
-  map.setPaintProperty('bc-cvrp', 'line-opacity', [
-    'case',
-    ['==', ['get', 'route_id'], routeId],
-    1,
-    0.25
-  ] as unknown as number)
 }

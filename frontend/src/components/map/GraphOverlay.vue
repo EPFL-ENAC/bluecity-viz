@@ -44,34 +44,24 @@ const hoverData = ref<HoverCardData | null>(null)
 
 /**
  * The numbers for one street: both directed edges summed, as the design asks.
- * CO₂ per edge is a rate, so the change is the rate times the change in trips,
- * the same way the deck layers work it out.
+ * The store already sums them once per result, so the card just looks the
+ * street up instead of scanning every edge on every move of the mouse.
  */
+const totalsByStreet = computed(() => {
+  const rows = trafficStore.resultTotals
+  const map = new Map<string, (typeof rows)[number]>()
+  for (const row of rows) map.set(row.key, row)
+  return map
+})
+
 function usageFor(key: string) {
-  const rows = trafficStore.newEdgeUsage
-  if (!rows || rows.length === 0) return null
-
-  let vehicles = 0
-  let delta = 0
-  let co2 = 0
-  let found = false
-
-  for (const row of rows) {
-    const rowKey = row.u <= row.v ? `${row.u}-${row.v}` : `${row.v}-${row.u}`
-    if (rowKey !== key) continue
-    found = true
-    vehicles += row.count ?? 0
-    delta += row.delta_count ?? 0
-    co2 += (row.co2_per_km ?? 0) * (row.delta_frequency ?? 0)
-  }
-
-  if (!found) return null
-  const before = vehicles - delta
+  const row = totalsByStreet.value.get(key)
+  if (!row) return null
   return {
-    vehicles,
-    delta,
-    deltaRelative: before > 0 ? (delta / before) * 100 : undefined,
-    co2Delta: co2 || undefined
+    vehicles: row.count,
+    delta: row.delta_count,
+    deltaRelative: row.delta_relative || undefined,
+    co2Delta: row.co2_delta || undefined
   }
 }
 

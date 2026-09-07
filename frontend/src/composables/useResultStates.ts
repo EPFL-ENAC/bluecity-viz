@@ -20,6 +20,8 @@ export interface StreetTotals {
   /** the feature the colour is written on, and the one the data layers draw */
   id: number
   bus: boolean
+  /** vehicles on the street, both directions summed */
+  count: number
   frequency: number
   delta_count: number
   delta_relative: number
@@ -79,6 +81,7 @@ export function streetTotals(
         id,
         name: street.name,
         bus: street.bus,
+        count: 0,
         frequency: 0,
         delta_count: 0,
         delta_relative: 0,
@@ -94,6 +97,7 @@ export function streetTotals(
     const deltaFrequency = stat.delta_frequency ?? 0
     const co2PerKm = stat.co2_per_km ?? 0
 
+    row.count += stat.count ?? 0
     row.frequency += stat.frequency
     row.delta_frequency += deltaFrequency
     row.delta_count += stat.delta_count ?? 0
