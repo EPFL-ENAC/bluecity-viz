@@ -31,6 +31,8 @@ export interface TrafficAnalysisInputs {
   congestionIterations: number
   elasticDemand: boolean
   filterBusRoutes: boolean
+  /** how many OD pairs to route, null for the server default */
+  odPairs: number | null
 }
 
 // The results of a run. Big (about 10k rows per array), kept in memory only.
@@ -39,6 +41,8 @@ export interface TrafficResults {
   originalEdgeUsage: EdgeUsageRow[]
   newEdgeUsage: EdgeUsageRow[]
   impactStatistics: any | null
+  /** the OD pair count these results were computed with */
+  resultOdPairs: number | null
 }
 
 // Full state handed to trafficStore.restoreState(). The arrays are always
