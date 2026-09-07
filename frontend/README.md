@@ -5,7 +5,7 @@ analytics overlays, Pinia for the state, Vuetify for a few remaining widgets.
 
 ## Setup
 
-Node 22 (see `.nvmrc`) and pnpm. From this directory:
+Node 24 (see `.nvmrc`) and pnpm. From this directory:
 
 ```bash
 pnpm install
