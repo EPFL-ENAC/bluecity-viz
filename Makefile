@@ -1,5 +1,11 @@
 # BlueCity Viz - Root Makefile
 
+# Local settings, gitignored: one KEY=value per line, no quotes (make reads
+# this as a makefile, so quotes would end up in the value). `-` means it is
+# fine when the file is not there. Copy .env.example to start one. A value
+# given on the command line still wins.
+-include .env
+
 # Per-checkout overrides. Git worktrees export these from .env.worktree (see
 # docs/worktree-env/), the main checkout keeps the defaults. `?=` matters: the
 # value only applies when the environment does not already set one.
