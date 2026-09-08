@@ -2,6 +2,7 @@ import {
   ApiError,
   areaKey,
   createArea,
+  DEFAULT_AREA_ID,
   fetchArea,
   fetchAreaLimits,
   fetchBaseline,
@@ -510,7 +511,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   /** Read the OD pair counts of an area from the server, once per area. */
   function loadGraphInfo(): Promise<void> {
-    const key = areaId.value ?? 'lausanne'
+    const key = areaId.value ?? DEFAULT_AREA_ID
     let request = graphInfoPromises.get(key)
     if (!request) {
       request = fetchGraphInfo(areaId.value)
@@ -538,7 +539,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   function getBaseline(count?: number): Promise<BaselineResult> {
     // Every key carries the area: two areas have different numbers for the
     // same pair count.
-    const scope = areaId.value ?? 'lausanne'
+    const scope = areaId.value ?? DEFAULT_AREA_ID
     if (count !== undefined) {
       const cached = baselineCache.get(`${scope}:${count}`)
       if (cached) return Promise.resolve({ odPairs: count, rows: cached })
@@ -584,7 +585,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   function setArea(selection: AreaSelection | null) {
     if (areaKey(selection) === areaKey(area.value)) return
 
-    forgetArea(areaId.value ?? 'lausanne')
+    forgetArea(areaId.value ?? DEFAULT_AREA_ID)
     area.value = selection
     areaId.value = null
     areaInfo.value = null
@@ -687,7 +688,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   /** The area is gone from the server: build it again on the next call. */
   function forgetAreaId() {
-    forgetArea(areaId.value ?? 'lausanne')
+    forgetArea(areaId.value ?? DEFAULT_AREA_ID)
     areaId.value = null
     areaPromise = null
   }
@@ -758,7 +759,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     if (state.area !== undefined) {
       const next = state.area ?? null
       if (areaKey(next) !== areaKey(area.value)) {
-        forgetArea(areaId.value ?? 'lausanne')
+        forgetArea(areaId.value ?? DEFAULT_AREA_ID)
         area.value = next
         areaId.value = null
         areaInfo.value = null

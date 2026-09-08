@@ -52,6 +52,8 @@ describe('areaDensity', () => {
   it('knows what the store covers', () => {
     expect(insideCoverage([5.9, 45.8, 10.6, 47.9], 7.44, 46.95)).toBe(true)
     expect(insideCoverage([5.9, 45.8, 10.6, 47.9], 2.35, 48.85)).toBe(false)
+    // half over the border still touches it, and the server accepts that
+    expect(insideCoverage([5.9, 45.8, 10.6, 47.9], 5.88, 46.5, 3000)).toBe(true)
     // no bbox yet: do not block the user on a rule we have not read
     expect(insideCoverage(null, 2.35, 48.85)).toBe(true)
   })

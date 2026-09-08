@@ -122,7 +122,7 @@ function build() {
     if (unavailable.value) return { status: 'unavailable', estimate: null, exact: null }
 
     const coverageBbox = trafficStore.areaLimits?.coverage_bbox ?? null
-    if (!insideCoverage(coverageBbox, circle.lon, circle.lat)) {
+    if (!insideCoverage(coverageBbox, circle.lon, circle.lat, circle.radiusM)) {
       return { status: 'outside_coverage', estimate: estimate.value, exact: null }
     }
 

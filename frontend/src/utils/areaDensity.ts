@@ -149,12 +149,22 @@ export function estimateCircle(
   return { junctions: Math.round(junctions), edges: Math.round(edges) }
 }
 
-/** Is the point inside the part of the country the store covers. */
+/**
+ * Does the circle touch the part of the country the store covers.
+ *
+ * Overlap, not the centre: the backend applies the same rule on the circle
+ * bounding box, and a circle half over the border is fine for both.
+ */
 export function insideCoverage(
   bbox: [number, number, number, number] | null,
   lon: number,
-  lat: number
+  lat: number,
+  radiusM = 0
 ): boolean {
   if (!bbox) return true
-  return lon >= bbox[0] && lon <= bbox[2] && lat >= bbox[1] && lat <= bbox[3]
+  const dLat = radiusM / M_PER_DEG_LAT
+  const dLon = radiusM / Math.max(mPerDegLon(lat), 1)
+  return (
+    lon + dLon >= bbox[0] && lon - dLon <= bbox[2] && lat + dLat >= bbox[1] && lat - dLat <= bbox[3]
+  )
 }

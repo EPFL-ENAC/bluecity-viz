@@ -77,5 +77,5 @@ class AreaLimits(BaseModel):
     min_scc_fraction: float
     min_radius_m: float
     max_radius_m: float
+    # Where the network is. The picker refuses a circle outside it.
     coverage_bbox: Optional[List[float]] = None
-    density_url: str = "/geodata/swiss_graph_density.json"
