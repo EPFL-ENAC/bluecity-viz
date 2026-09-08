@@ -31,8 +31,10 @@ SWISS_DEM_DIR      := data/elevation-ch
 SWISS_DEM          := $(SWISS_DEM_DIR)/swissaltiregio.tif
 SWISS_PMTILES      := $(FRONTEND_GEODATA)/swiss_drive.pmtiles
 SWISS_DENSITY      := $(FRONTEND_GEODATA)/swiss_graph_density.json
-# A small region to try the pipeline on: minutes instead of an hour.
+# A small region to try the pipeline on: minutes instead of 20.
 SWISS_BBOX         :=
+# More tiles means less memory per tile, and a bit more work at the seams.
+SWISS_TILES        :=
 
 # ---------------------------------------------------------------------------
 # Help
@@ -55,11 +57,12 @@ help:
 	@echo ""
 	@echo "Whole country (pick any area):"
 	@echo "  make dem            Download the national elevation raster (~360 MB, 30 s)"
-	@echo "  make swiss-store    Build the country graph store (~1 h, 16 GB of RAM)"
+	@echo "  make swiss-store    Build the country graph store (~20 min, tile by tile)"
 	@echo "  make swiss-tiles    Cut the country network into PMTiles"
 	@echo "  make swiss-copy     Copy density.json to the frontend"
 	@echo "  make swiss-all      The three above"
 	@echo "  Try it small first:  make swiss-store SWISS_BBOX=6.4,46.4,6.9,46.7"
+	@echo "  Less memory:         make swiss-store SWISS_TILES=6x5"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  make clean       Remove generated GeoJSON and PMTiles"
@@ -154,12 +157,17 @@ copy: geojson
 # The whole country — the graph store the backend cuts areas from
 # ---------------------------------------------------------------------------
 #
-# Needs the Geofabrik PBF ('make pbf-download') and, for the slopes, the DHM25
-# tiles ('make dem'). The graph step is long and hungry: about an hour and
-# 16 GB of RAM for the country. Set SWISS_BBOX to try it on a region first.
+# Needs the Geofabrik PBF ('make pbf-download') and, for the slopes, the
+# elevation raster ('make dem'). The graph is built tile by tile: osmnx cannot
+# hold the country at once, it takes more than 20 GB and gets killed. The
+# densest tile peaks around 5 GB and the whole country takes about 20 minutes.
+# Each tile is cached, so a run that dies picks up where it stopped.
+# Set SWISS_BBOX to try it on a region first, or SWISS_TILES to cut smaller
+# tiles on a machine with less memory.
 # ---------------------------------------------------------------------------
 
 _SWISS_BBOX_FLAG = $(if $(SWISS_BBOX),--bbox $(SWISS_BBOX),)
+_SWISS_TILES_FLAG = $(if $(SWISS_TILES),--tiles $(SWISS_TILES),)
 # Always passed. make expands a wildcard before running anything, so testing
 # for the raster here would miss the one 'make dem' is about to download. The
 # script reads whatever .tif it finds in the directory, and says so when the
@@ -177,7 +185,7 @@ swiss-store: ## Build the country graph store the backend reads
 	uv run python build_swiss_graph.py \
 		--pbf $(OSM_PBF_SWISS) \
 		--store $(SWISS_STORE) \
-		$(_SWISS_DEM_FLAG) $(_SWISS_BBOX_FLAG)
+		$(_SWISS_DEM_FLAG) $(_SWISS_BBOX_FLAG) $(_SWISS_TILES_FLAG)
 	@echo "✓ Store written to $(SWISS_STORE)"
 
 swiss-tiles: ## Cut the country network into PMTiles for the picker backdrop

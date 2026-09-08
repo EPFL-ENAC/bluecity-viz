@@ -39,10 +39,11 @@ written as a **graph store**, two parquet files cut in about 5 km grid cells.
 The backend reads only the cells under the circle, which takes milliseconds.
 
 ```
-switzerland-latest.osm.pbf (Geofabrik, ~700 MB)
+switzerland-latest.osm.pbf (Geofabrik, ~520 MB)
     │
     ▼
-build_swiss_graph.py         ← osmium filter + osmnx + speeds + elevation
+build_swiss_graph.py         ← osmium filter, then tile by tile:
+    │                          osmnx + speeds + elevation
     │
     └── ../../backend/data/swiss_graph/
              ├── nodes.parquet    one row group per cell
@@ -62,8 +63,25 @@ make pbf-download          # once, ~520 MB from Geofabrik
 make swiss-all             # elevation + store + tiles + density, about an hour
 ```
 
-The graph step needs about 16 GB of RAM. Try it on a region first, it takes
-minutes:
+**The graph is built tile by tile.** osmnx cannot hold the country at once: fed
+the national XML it grows past 20 GB and the kernel kills it. So the country is
+cut in 4 by 3 tiles and each one is built on its own, on a rectangle a bit
+larger than the piece it keeps. The margin matters, osmnx merges chains of
+degree-2 nodes into one edge and a chain cut at a boundary would give a street
+that stops in the middle of nowhere. A node belongs to exactly one tile and an
+edge to the tile of its start node, so nothing is written twice or lost. On a
+seam that cuts through a test circle the result differs from a single build by
+one street out of 2959.
+
+The densest tile (Zurich to St. Gallen) peaks around 5 GB and takes 95 seconds.
+Each tile is cached in the work directory, so a run that dies picks up where it
+stopped. On a machine with less memory, cut smaller tiles:
+
+```bash
+make swiss-store SWISS_TILES=6x5
+```
+
+Try it on a region first, it takes a minute:
 
 ```bash
 make swiss-store SWISS_BBOX=6.4,46.4,6.9,46.7
