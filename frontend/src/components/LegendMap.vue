@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { useMapView } from '@/composables/useMapView'
 import type { MapLayerConfig } from '@/config/layerTypes'
 import { getVehicleColor, useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
-import { useMapView } from '@/composables/useMapView'
 import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { graphLegendRows } from '@/utils/graphLegend'
@@ -271,11 +271,7 @@ const shouldShowLegend = computed(() => {
 
 .key__mark--dashed::before {
   height: 2px;
-  background: repeating-linear-gradient(
-    to right,
-    var(--bc-ink) 0 2px,
-    transparent 2px 4px
-  );
+  background: repeating-linear-gradient(to right, var(--bc-ink) 0 2px, transparent 2px 4px);
 }
 
 .key__mark--arrows::before {

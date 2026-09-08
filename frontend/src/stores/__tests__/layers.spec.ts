@@ -285,4 +285,80 @@ describe('layers store persistence', () => {
     expect(traffic.resultOdPairs).toBe(76200)
     expect(traffic.newEdgeUsage).toHaveLength(20)
   })
+
+  it('keeps a saved area and drops a broken one', () => {
+    const withArea = (area: unknown) =>
+      migratePersistedState({
+        projects: [
+          {
+            id: 'project-1',
+            investigations: [
+              {
+                id: 'inv-1',
+                name: 'Investigation 1',
+                trafficAnalysis: { isOpen: true, area }
+              }
+            ]
+          }
+        ]
+      }).projects?.[0].investigations[0].trafficAnalysis
+
+    const bern = { kind: 'circle', lon: 7.44, lat: 46.95, radiusM: 3000 }
+    expect(withArea(bern)?.area).toEqual(bern)
+    // v3 and older knew nothing about areas, they read back as the default city
+    expect(withArea(undefined)?.area).toBeNull()
+    // outside the country, out of range, or the wrong shape
+    expect(withArea({ ...bern, lon: 2.35 })?.area).toBeNull()
+    expect(withArea({ ...bern, radiusM: 40000 })?.area).toBeNull()
+    expect(withArea({ ...bern, radiusM: 100 })?.area).toBeNull()
+    expect(withArea({ ...bern, lat: 'nope' })?.area).toBeNull()
+    expect(withArea({ ...bern, kind: 'polygon' })?.area).toBeNull()
+  })
+
+  it('keeps the area across a reload', async () => {
+    const storage = makeStorage()
+    vi.stubGlobal('localStorage', storage)
+
+    const store = useLayersStore()
+    const traffic = useTrafficAnalysisStore()
+    const bern = { kind: 'circle' as const, lon: 7.44, lat: 46.95, radiusM: 3000 }
+
+    traffic.openPanel()
+    traffic.setArea(bern)
+    await nextTick()
+    store.persistState()
+
+    setActivePinia(createPinia())
+    clearResultsCache()
+
+    const reloaded = useLayersStore()
+    reloaded.initializeInvestigations()
+    const reloadedTraffic = useTrafficAnalysisStore()
+
+    expect(reloadedTraffic.area).toEqual(bern)
+    // the id is not saved, the first Calculate asks the server for it
+    expect(reloadedTraffic.areaId).toBeNull()
+  })
+
+  it('does not show the results of another area', async () => {
+    vi.stubGlobal('localStorage', makeStorage())
+
+    const store = useLayersStore()
+    const traffic = useTrafficAnalysisStore()
+    const bern = { kind: 'circle' as const, lon: 7.44, lat: 46.95, radiusM: 3000 }
+
+    store.switchToInvestigation('inv-1')
+    traffic.setEdgeUsage(edgeRows(20), edgeRows(20), undefined, 20000)
+    await nextTick()
+
+    // the user moves this investigation to another area, then comes back
+    traffic.setArea(bern)
+    await nextTick()
+    store.switchToInvestigation('inv-2')
+    await nextTick()
+    store.switchToInvestigation('inv-1')
+
+    expect(traffic.area).toEqual(bern)
+    expect(traffic.newEdgeUsage).toHaveLength(0)
+  })
 })

@@ -1,11 +1,29 @@
-import { fetchBaseline, fetchGraphInfo, type ImpactStatistics } from '@/services/trafficAnalysis'
 import { streetTotals, type StreetTotals } from '@/composables/useResultStates'
+import {
+  ApiError,
+  areaKey,
+  createArea,
+  DEFAULT_AREA_ID,
+  fetchAreaLimits,
+  fetchBaseline,
+  fetchGraphInfo,
+  type AreaInfo,
+  type AreaLimits,
+  type AreaSelection,
+  type ImpactStatistics
+} from '@/services/trafficAnalysis'
+import { useCVRPStore } from '@/stores/cvrp'
 import { useScenarioStore } from '@/stores/scenario'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleDivergingSymlog, scaleSequential } from 'd3-scale'
 import { interpolateSpectral, interpolateViridis } from 'd3-scale-chromatic'
 import { defineStore } from 'pinia'
 import { computed, markRaw, ref, shallowRef } from 'vue'
+
+// Where the picker opens when the scenario has no area yet, and how big the
+// circle starts. The map centre wins when the caller knows it.
+const DEFAULT_CENTRE = { lon: 6.6323, lat: 46.5197 }
+const DEFAULT_RADIUS_M = 3000
 
 type ColorScale = ((value: number) => string) | null
 type LegendMode =
@@ -103,6 +121,30 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // How many OD pairs to route. null means the server default.
   const odPairs = ref<number | null>(null)
 
+  // The area the workbench runs on. null means the default city, which is
+  // what every investigation saved before this feature has.
+  const area = ref<AreaSelection | null>(null)
+  // Derived, never persisted: what the server told us about that area.
+  const areaId = ref<string | null>(null)
+  const areaInfo = shallowRef<AreaInfo | null>(null)
+  const isBuildingArea = ref(false)
+  const areaError = shallowRef<{ code?: string; message: string } | null>(null)
+
+  /**
+   * The name of the network the map has to show.
+   *
+   * The circle says it, not the server: the id the server mints for a circle
+   * is this same string, so the two can never disagree. `areaId` answers
+   * another question, "has the server built it", and is null until it has.
+   */
+  const graphKey = computed(() => areaKey(area.value))
+
+  // The picker. UI only, nothing here is saved: the circle being dragged, and
+  // the rules the server applies to it.
+  const pickMode = ref(false)
+  const draftArea = ref<AreaSelection | null>(null)
+  const areaLimits = shallowRef<AreaLimits | null>(null)
+
   // Filled once from /graph-info: the server default, the most it accepts, and
   // the count the "full" choice sends (the set really sampled at startup).
   const odPairsDefault = ref<number | null>(null)
@@ -115,9 +157,10 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // The baseline never changes while the server runs, so one fetch per count is
   // enough. Not reactive, nothing renders from it. Inside the setup so a fresh
   // pinia (the tests, a reload) starts with an empty cache.
-  const baselineCache = new Map<number, EdgeUsageStats[]>()
-  const baselinePending = new Map<number | 'default', Promise<BaselineResult>>()
-  let graphInfoPromise: Promise<void> | null = null
+  const baselineCache = new Map<string, EdgeUsageStats[]>()
+  const baselinePending = new Map<string, Promise<BaselineResult>>()
+  const graphInfoPromises = new Map<string, Promise<void>>()
+  let areaPromise: Promise<string | null> | null = null
 
   // Visualization state. Only the active scale is reactive; the per-mode scales
   // live in a plain object because switching mode only reads one of them.
@@ -401,10 +444,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     odPairs.value = count
   }
 
-  /** Read the OD pair counts from the server, once per session. */
+  /** Read the OD pair counts of an area from the server, once per area. */
   function loadGraphInfo(): Promise<void> {
-    if (!graphInfoPromise) {
-      graphInfoPromise = fetchGraphInfo()
+    const key = areaId.value ?? DEFAULT_AREA_ID
+    let request = graphInfoPromises.get(key)
+    if (!request) {
+      request = fetchGraphInfo(areaId.value)
         .then((info) => {
           odPairsDefault.value = info.od_pairs_default
           odPairsMax.value = info.od_pairs_max
@@ -414,11 +459,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         })
         .catch((error) => {
           // let a later call try again
-          graphInfoPromise = null
+          graphInfoPromises.delete(key)
           throw error
         })
+      graphInfoPromises.set(key, request)
     }
-    return graphInfoPromise
+    return request
   }
 
   /**
@@ -426,18 +472,21 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
    * Keyed by the count the server used, which is what the results carry.
    */
   function getBaseline(count?: number): Promise<BaselineResult> {
+    // Every key carries the area: two areas have different numbers for the
+    // same pair count.
+    const scope = areaId.value ?? DEFAULT_AREA_ID
     if (count !== undefined) {
-      const cached = baselineCache.get(count)
+      const cached = baselineCache.get(`${scope}:${count}`)
       if (cached) return Promise.resolve({ odPairs: count, rows: cached })
     }
 
-    const key = count ?? 'default'
+    const key = `${scope}:${count ?? 'default'}`
     const inFlight = baselinePending.get(key)
     if (inFlight) return inFlight
 
-    const request = fetchBaseline(count)
+    const request = fetchBaseline(count, areaId.value)
       .then((response) => {
-        baselineCache.set(response.od_pairs, response.edge_usage)
+        baselineCache.set(`${scope}:${response.od_pairs}`, response.edge_usage)
         baselinePending.delete(key)
         return { odPairs: response.od_pairs, rows: response.edge_usage }
       })
@@ -449,6 +498,141 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
     baselinePending.set(key, request)
     return request
+  }
+
+  /** Forget everything cached for one area. */
+  function forgetArea(scope: string) {
+    for (const key of [...baselineCache.keys()]) {
+      if (key.startsWith(`${scope}:`)) baselineCache.delete(key)
+    }
+    for (const key of [...baselinePending.keys()]) {
+      if (key.startsWith(`${scope}:`)) baselinePending.delete(key)
+    }
+    graphInfoPromises.delete(scope)
+  }
+
+  /**
+   * Change the area the workbench runs on.
+   *
+   * The scenario goes with it: a street key names streets of the old graph and
+   * means nothing in another area. Both results go too. The stores are read
+   * here and not at the top of the file, they need each other.
+   */
+  function setArea(selection: AreaSelection | null) {
+    if (areaKey(selection) === areaKey(area.value)) return
+
+    forgetArea(areaId.value ?? DEFAULT_AREA_ID)
+    area.value = selection
+    areaId.value = null
+    areaInfo.value = null
+    areaError.value = null
+    areaPromise = null
+    clearResults()
+
+    const scenario = useScenarioStore()
+    scenario.clear()
+    scenario.select(null)
+    scenario.hover(null)
+    scenario.setStreets(new Map())
+    // The waste routes are on the old streets too, and only the default city
+    // has the waste data, so a drawn area shows the routing tab alone.
+    useCVRPStore().clearResult()
+    if (selection) scenario.activeTab = 'routing'
+  }
+
+  /**
+   * Make sure the server has this area, and give back its id.
+   *
+   * Always a create: the server answers from its own cache when it still has
+   * the circle, so an area saved yesterday costs one round trip either way,
+   * and the id is minted in one place instead of two.
+   */
+  function ensureArea(): Promise<string | null> {
+    if (!area.value) return Promise.resolve(null)
+    if (areaId.value) return Promise.resolve(areaId.value)
+    if (areaPromise) return areaPromise
+
+    const selection = area.value
+    const wanted = areaKey(selection)
+
+    areaError.value = null
+    isBuildingArea.value = true
+    const request = createArea(selection)
+      .then((info) => {
+        // the user may have moved the circle while we were building
+        if (areaKey(area.value) !== wanted) return areaId.value
+        areaId.value = info.id
+        areaInfo.value = info
+        return info.id
+      })
+      .catch((error: unknown) => {
+        const failure =
+          error instanceof ApiError
+            ? { code: error.code, message: error.message }
+            : { message: String(error) }
+        areaError.value = failure
+        areaPromise = null
+        throw error
+      })
+      .finally(() => {
+        isBuildingArea.value = false
+      })
+
+    areaPromise = request
+    return request
+  }
+
+  /** Open the picker on the current circle, or on a fresh one. */
+  function enterPickMode(fallback?: { lon: number; lat: number }) {
+    draftArea.value = area.value
+      ? { ...area.value }
+      : {
+          kind: 'circle',
+          lon: fallback?.lon ?? DEFAULT_CENTRE.lon,
+          lat: fallback?.lat ?? DEFAULT_CENTRE.lat,
+          radiusM: DEFAULT_RADIUS_M
+        }
+    pickMode.value = true
+  }
+
+  /** Close the picker. Confirming makes the draft the area of the scenario. */
+  function exitPickMode(confirm: boolean) {
+    if (confirm && draftArea.value) setArea({ ...draftArea.value })
+    pickMode.value = false
+    draftArea.value = null
+  }
+
+  /** Back to the city the server loaded at startup. */
+  function useDefaultArea() {
+    setArea(null)
+    pickMode.value = false
+    draftArea.value = null
+  }
+
+  function moveDraft(lon: number, lat: number) {
+    if (draftArea.value) draftArea.value = { ...draftArea.value, lon, lat }
+  }
+
+  function setDraftRadius(radiusM: number) {
+    if (draftArea.value) draftArea.value = { ...draftArea.value, radiusM }
+  }
+
+  /** The rules the picker checks, read once from the server. */
+  function loadAreaLimits(): Promise<AreaLimits | null> {
+    if (areaLimits.value) return Promise.resolve(areaLimits.value)
+    return fetchAreaLimits()
+      .then((limits) => {
+        areaLimits.value = limits
+        return limits
+      })
+      .catch(() => null)
+  }
+
+  /** The area is gone from the server: build it again on the next call. */
+  function forgetAreaId() {
+    forgetArea(areaId.value ?? DEFAULT_AREA_ID)
+    areaId.value = null
+    areaPromise = null
   }
 
   function getColor(value: number): [number, number, number] {
@@ -506,11 +690,26 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     filterBusRoutes?: boolean
     odPairs?: number | null
     resultOdPairs?: number | null
+    area?: AreaSelection | null
     resultScenarioHash?: string | null
   }) {
     isRestoring.value = true
     isOpen.value = state.isOpen
     resultScenarioHash.value = state.resultScenarioHash ?? null
+
+    // The area comes first: the scenario and the results below belong to it.
+    // setArea would clear them, so we assign instead.
+    if (state.area !== undefined) {
+      const next = state.area ?? null
+      if (areaKey(next) !== areaKey(area.value)) {
+        forgetArea(areaId.value ?? DEFAULT_AREA_ID)
+        area.value = next
+        areaId.value = null
+        areaInfo.value = null
+        areaError.value = null
+        areaPromise = null
+      }
+    }
 
     nodePairs.value = state.nodePairs ?? []
 
@@ -566,6 +765,15 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     odPairsMax,
     odPairsFull,
     resultOdPairs,
+    area,
+    areaId,
+    areaInfo,
+    graphKey,
+    isBuildingArea,
+    areaError,
+    pickMode,
+    draftArea,
+    areaLimits,
 
     // Visualization state
     legendMode,
@@ -589,6 +797,15 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     setOdPairs,
     loadGraphInfo,
     getBaseline,
+    setArea,
+    ensureArea,
+    forgetAreaId,
+    enterPickMode,
+    exitPickMode,
+    useDefaultArea,
+    moveDraft,
+    setDraftRadius,
+    loadAreaLimits,
     setEdgeUsage,
     clearResults,
     getColor,

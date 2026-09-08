@@ -1,4 +1,5 @@
 import { layerGroups as configLayerGroups } from '@/config/mapConfig'
+import { areaKey } from '@/services/trafficAnalysis'
 import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { defineStore } from 'pinia'
@@ -108,7 +109,8 @@ export const useLayersStore = defineStore('layers', () => {
       congestionIterations: trafficStore.congestionIterations,
       elasticDemand: trafficStore.elasticDemand,
       filterBusRoutes: trafficStore.filterBusRoutes,
-      odPairs: trafficStore.odPairs
+      odPairs: trafficStore.odPairs,
+      area: trafficStore.area ? { ...trafficStore.area } : null
     }
   }
 
@@ -116,7 +118,11 @@ export const useLayersStore = defineStore('layers', () => {
   // investigation. The arrays are always passed, empty when we have nothing.
   function applyTrafficAnalysisState(inputs: TrafficAnalysisInputs, investigationId: string): void {
     const trafficStore = useTrafficAnalysisStore()
-    const results = getResults(investigationId)
+    const area = inputs.area ?? null
+    // Results of another area mean nothing here: the edge ids are not the same
+    // graph. Drop them and keep the inputs.
+    const saved = getResults(investigationId)
+    const results = saved && saved.resultAreaKey === areaKey(area) ? saved : null
 
     useScenarioStore().isOpen = inputs.isOpen
 
@@ -130,6 +136,7 @@ export const useLayersStore = defineStore('layers', () => {
       // an input, restoreState assigns it without clearing the results above
       odPairs: inputs.odPairs ?? null,
       resultOdPairs: results?.resultOdPairs ?? null,
+      area,
       resultScenarioHash: results?.resultScenarioHash ?? null
     })
 
@@ -270,6 +277,7 @@ export const useLayersStore = defineStore('layers', () => {
       () => trafficStore.elasticDemand,
       () => trafficStore.filterBusRoutes,
       () => trafficStore.odPairs,
+      () => trafficStore.area,
       () => trafficStore.newEdgeUsage
     ],
     () => {
@@ -284,6 +292,7 @@ export const useLayersStore = defineStore('layers', () => {
         newEdgeUsage: toRaw(trafficStore.newEdgeUsage),
         impactStatistics: toRaw(trafficStore.impactStatistics),
         resultOdPairs: trafficStore.resultOdPairs,
+        resultAreaKey: areaKey(trafficStore.area),
         resultScenarioHash: trafficStore.resultScenarioHash
       })
 

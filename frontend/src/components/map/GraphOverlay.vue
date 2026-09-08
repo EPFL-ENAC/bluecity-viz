@@ -5,8 +5,8 @@ import RouteHoverCard, { type RouteCardData } from '@/components/map/RouteHoverC
 import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useGraphOverlay, type EdgeHover, type RouteHover } from '@/composables/useGraphOverlay'
 import { useMapView } from '@/composables/useMapView'
-import { useScenarioStore, type ScenarioAction, type ScenarioDir } from '@/stores/scenario'
 import { useCVRPStore } from '@/stores/cvrp'
+import { useScenarioStore, type ScenarioAction, type ScenarioDir } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { routeSummaries } from '@/utils/cvrpSource'
 import { buildGraphSource, type GraphSource } from '@/utils/graphSource'
@@ -20,7 +20,7 @@ import { computed, inject, onUnmounted, ref, shallowRef, watch, type Ref } from 
 const scenarioStore = useScenarioStore()
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
-const { edges, loadGraphEdges } = useGraphEdges()
+const { edges, showArea } = useGraphEdges()
 const { shown } = useMapView()
 
 const mapComponentRef = inject<Ref<{ map?: MapLibreMap } | undefined>>('mapRef')
@@ -30,11 +30,32 @@ const graph = shallowRef<GraphSource | null>(null)
 watch(
   edges,
   (list) => {
-    if (list.length === 0) return
+    if (list.length === 0) {
+      // Another area, its network not here yet. Drawing the old streets would
+      // let the user click a street that is not in the new graph.
+      graph.value = null
+      scenarioStore.setStreets(new Map())
+      return
+    }
     const source = buildGraphSource(list)
     graph.value = source
     // The scenario needs the streets to expand 'both' and to fold a one-way.
     scenarioStore.setStreets(source.streets)
+  },
+  { immediate: true }
+)
+
+// The circle and the streets under it are one thing, so they read one key.
+// The default city comes from a static file, an area the user drew is built
+// by the server and then fetched. Both are cached, so going back is instant.
+watch(
+  () => trafficStore.graphKey,
+  (key) => {
+    void showArea(
+      key,
+      () => trafficStore.ensureArea(),
+      () => trafficStore.forgetAreaId()
+    )
   },
   { immediate: true }
 )
@@ -210,8 +231,6 @@ function reset() {
   if (!open) return
   scenarioStore.remove(open.key)
 }
-
-void loadGraphEdges()
 
 defineExpose({ hoverRoute: overlay.hoverRoute, focus: overlay.focus })
 

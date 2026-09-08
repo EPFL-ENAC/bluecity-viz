@@ -33,8 +33,8 @@ describe('buildStyle: substrat', () => {
     expect(byId('substrat', 'bld-fill').paint['fill-color']).toBeTypeOf('string')
   })
 
-  it('draws both labels at 50 % ink with a paper halo', () => {
-    for (const id of ['rd-label', 'place-label']) {
+  it('draws every label at 50 % ink with a paper halo', () => {
+    for (const id of ['rd-label', 'place-label', 'place-city']) {
       const layer = byId('substrat', id)
       expect(layer.paint['text-color']).toBe('#8a8a8a')
       expect(layer.paint['text-halo-color']).toBe('#ffffff')
@@ -43,7 +43,13 @@ describe('buildStyle: substrat', () => {
 
   it('keeps the label layers last so the overlay can insert before rd-label', () => {
     const ids = layers('substrat').map((l) => l.id)
-    expect(ids.slice(-2)).toEqual(['rd-label', 'place-label'])
+    expect(ids.slice(-3)).toEqual(['rd-label', 'place-label', 'place-city'])
+  })
+
+  it('names the big cities, which are their own place class', () => {
+    // Without this layer Genève and Zürich have no name while St-Sulpice does.
+    expect(byId('substrat', 'place-city').filter).toEqual(['==', 'class', 'city'])
+    expect(byId('substrat', 'place-label').filter).not.toContain('city')
   })
 
   it('swaps ink and paper in dark', () => {

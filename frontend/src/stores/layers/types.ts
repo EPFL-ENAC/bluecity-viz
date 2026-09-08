@@ -46,6 +46,16 @@ export interface TrafficAnalysisInputs {
   filterBusRoutes: boolean
   /** how many OD pairs to route, null for the server default */
   odPairs: number | null
+  /** the area the scenario runs on, null for the default city */
+  area: TrafficAreaSelection | null
+}
+
+// A circle on the map, the only shape the picker draws today.
+export interface TrafficAreaSelection {
+  kind: 'circle'
+  lon: number
+  lat: number
+  radiusM: number
 }
 
 // The results of a run. Big (about 10k rows per array), kept in memory only.
@@ -56,6 +66,8 @@ export interface TrafficResults {
   impactStatistics: any | null
   /** the OD pair count these results were computed with */
   resultOdPairs: number | null
+  /** the area these results were computed on, so we never show them on another */
+  resultAreaKey: string | null
   /** the scenario these results were computed on, to tell when they go stale */
   resultScenarioHash?: string | null
 }

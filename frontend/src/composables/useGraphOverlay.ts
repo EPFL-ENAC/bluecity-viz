@@ -1,37 +1,46 @@
-import type { FeatureCollection } from 'geojson'
 import { useMapView } from '@/composables/useMapView'
 import { valueOf } from '@/composables/useResultStates'
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
+import { useCVRPStore } from '@/stores/cvrp'
 import { streetKey, useScenarioStore, type ScenarioDir } from '@/stores/scenario'
 import { useThemeStore } from '@/stores/theme'
-import { useCVRPStore } from '@/stores/cvrp'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import {
+  AREA_RING_LAYER,
+  AREA_SOURCE,
+  areaFeatures,
+  areaRingLayer,
+  emptyArea
+} from '@/utils/areaCircle'
 import {
   addGraphImages,
   applyCvrp,
   applyCvrpHover,
   applyModifications,
   BADGE_SOURCE,
-  CVRP_POINT_SOURCE,
-  CVRP_SOURCE,
   BEFORE_LAYER,
   buildGraphLayers,
+  CVRP_POINT_SOURCE,
+  CVRP_SOURCE,
   drawFor,
   emptyBadges,
+  emptyPointer,
   emptyPoints,
   GRAPH_SOURCE,
   graphLayerIds,
   idFilter,
-  emptyPointer,
   POINTER_SOURCE,
+  setData,
+  setGraphEdges,
   setPointer,
   type CvrpRouteRef,
   type PointerFeature,
   type PointerRole
 } from '@/utils/bluecityGraph'
-import { GRAPH_COLORS } from '@/utils/epflBasemap'
 import { pointFeatures, routeFeatures } from '@/utils/cvrpSource'
+import { GRAPH_COLORS } from '@/utils/epflBasemap'
 import { buildGraphSource, pickLane, type GraphSource } from '@/utils/graphSource'
+import type { FeatureCollection } from 'geojson'
 import { LngLatBounds, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl'
 import { computed, watch, type Ref } from 'vue'
 
@@ -102,6 +111,9 @@ export function useGraphOverlay(
   // Which map instance carries our layers, so a new map remounts instead of
   // writing feature state into a style that no longer holds the source.
   let mountedOn: MapLibreMap | null = null
+  // Which network is on the map. addSource only runs once, so an area change
+  // has to push the new features into the source that is already there.
+  let mountedGraph: GraphSource | null = null
   // the map we already queued a retry for, so we register the listeners once
   let waiting: MapLibreMap | null = null
 
@@ -147,14 +159,84 @@ export function useGraphOverlay(
    * The network and the style arrive in either order, so this is called from
    * both sides and simply waits when the style is not ready yet.
    */
+  /**
+   * The circle of the area being studied, kept on the map.
+   *
+   * It says how big the area is, so it is drawn as soon as the area is known,
+   * without waiting for its streets: it only needs the map. Under the graph,
+   * so the streets and the result colours stay on top of it.
+   */
+  function drawArea(): void {
+    const map = mapRef.value
+    if (!map || !scenarioStore.isOpen || trafficStore.pickMode) return
+
+    const area = trafficStore.area
+    try {
+      if (!map.getSource(AREA_SOURCE)) {
+        map.addSource(AREA_SOURCE, {
+          type: 'geojson',
+          data: emptyArea() as unknown as FeatureCollection
+        })
+      }
+      if (!map.getLayer(AREA_RING_LAYER)) {
+        const under = map.getLayer('bc-graph-one')
+          ? 'bc-graph-one'
+          : map.getLayer(BEFORE_LAYER)
+            ? BEFORE_LAYER
+            : undefined
+        map.addLayer(areaRingLayer(colors.value), under)
+      }
+      // The default city is not a circle the user drew, so it has no ring.
+      setData(map, AREA_SOURCE, area ? areaFeatures(area, true) : emptyArea())
+    } catch {
+      retryLater(map)
+    }
+  }
+
+  /**
+   * Send the camera to the network that just landed, when it is off screen.
+   *
+   * The circle and its streets always change together now, but the camera
+   * does not: an investigation opens where the map was left, which can be
+   * another city. The ring would then sit outside the view, over an empty
+   * map. When the network is already in sight nothing moves, so opening the
+   * workbench, or confirming an area the picker has just framed, is still.
+   */
+  function frameGraph(source: GraphSource): void {
+    const map = mapRef.value
+    if (!map) return
+    const [[west, south], [east, north]] = source.bounds
+    if (west === east && south === north) return
+
+    const view = map.getBounds()
+    const seen =
+      east >= view.getWest() &&
+      west <= view.getEast() &&
+      north >= view.getSouth() &&
+      south <= view.getNorth()
+    if (seen) return
+
+    map.fitBounds(source.bounds, {
+      padding: { top: 80, bottom: 80, left: 80, right: 80 + DOCK_WIDTH },
+      maxZoom: 16,
+      duration: 600
+    })
+  }
+
   function mount(): void {
     const map = mapRef.value
-    const source = graph.value
-    if (!map || !source) return
+    if (!map) return
     // The workbench owns the graph, the scenario and the results. With it
     // closed the map goes back to the basemap and the datasets, as it was
     // before the workbench was ever opened.
     if (!scenarioStore.isOpen) return
+    // Picking an area shows the whole country, the city under it is noise.
+    if (trafficStore.pickMode) return
+
+    drawArea()
+
+    const source = graph.value
+    if (!source) return
 
     // MapLibre refuses addSource / addLayer until the style JSON is parsed, and
     // it has no public "is the style parsed" flag: isStyleLoaded() also waits
@@ -168,6 +250,12 @@ export function useGraphOverlay(
           type: 'geojson',
           data: source.collection as unknown as FeatureCollection
         })
+      } else if (mountedGraph !== source) {
+        // Another area: same source, other streets. The feature ids belong to
+        // the old network, so the states that name them go too.
+        setGraphEdges(map, source.collection)
+        resultIds = []
+        hoverIds = []
       }
       if (!map.getSource(BADGE_SOURCE)) {
         map.addSource(BADGE_SOURCE, {
@@ -202,7 +290,10 @@ export function useGraphOverlay(
       return
     }
 
+    const landed = mountedGraph !== source
     mountedOn = map
+    mountedGraph = source
+    if (landed) frameGraph(source)
     redraw()
     drawPointer(map)
     applyResult()
@@ -233,7 +324,7 @@ export function useGraphOverlay(
   function unmount(): void {
     const map = mapRef.value
     if (!map) return
-    for (const id of graphLayerIds()) {
+    for (const id of [...graphLayerIds(), AREA_RING_LAYER]) {
       if (map.getLayer(id)) map.removeLayer(id)
     }
     mountedOn = null
@@ -484,11 +575,12 @@ export function useGraphOverlay(
 
       // The workbench owns the graph. With it closed the map is a picture:
       // nothing to point at, and the card would offer a click that does
-      // nothing.
-      if (!scenarioStore.isOpen) {
+      // nothing. Same while the user picks an area: the circle owns the
+      // pointer then, and its grab cursor must not be wiped here.
+      if (!scenarioStore.isOpen || trafficStore.pickMode) {
         onMouseOut()
         const idle = mapRef.value
-        if (idle) idle.getCanvas().style.cursor = ''
+        if (idle && !trafficStore.pickMode) idle.getCanvas().style.cursor = ''
         return
       }
 
@@ -546,8 +638,9 @@ export function useGraphOverlay(
 
   function onClick(event: MapMouseEvent): void {
     // The graph is always editable while the workbench is open, there is no
-    // mode to turn on first.
-    if (!scenarioStore.isOpen) return
+    // mode to turn on first. Picking an area is the exception: a click moves
+    // the circle, it never touches a street.
+    if (!scenarioStore.isOpen || trafficStore.pickMode) return
     const hit = hitAt(event)
 
     if (!hit) {
@@ -645,6 +738,21 @@ export function useGraphOverlay(
     { immediate: true }
   )
 
+  // Picking an area takes the city off the map, confirming puts the new one on.
+  watch(
+    () => trafficStore.pickMode,
+    (picking) => {
+      if (picking) {
+        hoverFeatures = []
+        selectionFeatures = []
+        unmount()
+      } else {
+        mount()
+      }
+    }
+  )
+
+  watch(() => trafficStore.area, drawArea)
   watch(() => scenarioStore.edgeModifications, redraw)
   // Only a change of ink treatment needs the layers rebuilt, not every switch
   // of the lit zone.

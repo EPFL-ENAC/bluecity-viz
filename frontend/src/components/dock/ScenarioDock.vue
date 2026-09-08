@@ -1,15 +1,19 @@
 <script setup lang="ts">
+import AreaPicker from '@/components/dock/AreaPicker.vue'
 import CvrpTab from '@/components/dock/CvrpTab.vue'
 import RoutingTab from '@/components/dock/RoutingTab.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcTabs, { type BcTab } from '@/components/ui/BcTabs.vue'
+import { useAreaFeedback } from '@/composables/useAreaFeedback'
+import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useMapView } from '@/composables/useMapView'
 import { topAbsorbers, valueOf } from '@/composables/useResultStates'
 import { useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
 import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { computed } from 'vue'
+import type { Map as MapLibre } from 'maplibre-gl'
+import { computed, inject, type Ref } from 'vue'
 
 /**
  * The scenario workbench.
@@ -29,6 +33,8 @@ const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
 const scenarioStore = useScenarioStore()
 const { dimmed } = useMapView()
+const areaFeedback = useAreaFeedback()
+const mapRef = inject<Ref<{ map?: MapLibre } | undefined>>('mapRef')
 
 /**
  * The dock has two zones and the map draws the lit one: the ink scenario on
@@ -37,6 +43,30 @@ const { dimmed } = useMapView()
  */
 function light(zone: 'scenario' | 'tool'): void {
   scenarioStore.mapMode = zone === 'scenario' ? 'scenario' : 'result'
+}
+
+// The area the workbench runs on.
+const areaName = computed(() => {
+  const circle = trafficStore.area
+  if (!circle) return 'Lausanne (default)'
+  const km = (circle.radiusM / 1000).toFixed(1)
+  return `${km} km around ${circle.lat.toFixed(3)}, ${circle.lon.toFixed(3)}`
+})
+
+// The streets of this area are not on the map yet. The ring is already
+// there, so the dock says why it is empty instead of looking broken.
+const { edges: graphEdges } = useGraphEdges()
+const areaStatus = computed(() => {
+  if (trafficStore.areaError) return null
+  if (trafficStore.isBuildingArea) return 'Building the network for this area…'
+  if (graphEdges.value.length === 0) return 'Loading the streets…'
+  return null
+})
+
+/** Open the picker on the circle we have, or on what the map is looking at. */
+function changeArea(): void {
+  const centre = mapRef?.value?.map?.getCenter()
+  trafficStore.enterPickMode(centre ? { lon: centre.lng, lat: centre.lat } : undefined)
 }
 
 /** Fit the map on the modified streets, or on one of them. */
@@ -137,7 +167,9 @@ function barWidth(value: number): string {
 
 function deltaText(value: number): string {
   const sign = value > 0 ? '+' : ''
-  return `${sign}${Math.round(value).toLocaleString('fr-CH').replace(/[\u202f\u00a0\u2009]/g, ' ')}`
+  return `${sign}${Math.round(value)
+    .toLocaleString('fr-CH')
+    .replace(/[\u202f\u00a0\u2009]/g, ' ')}`
 }
 
 function rowFor(key: string) {
@@ -146,10 +178,32 @@ function rowFor(key: string) {
 </script>
 
 <template>
-  <div class="dock-panel">
+  <AreaPicker
+    v-if="trafficStore.pickMode"
+    :feedback="areaFeedback.feedback.value"
+    :can-use="areaFeedback.canUse.value"
+    :is-checking="areaFeedback.isChecking.value"
+    :limits="areaFeedback.limits.value"
+  />
+
+  <div v-else class="dock-panel">
     <div class="dock-head">
       <div class="bc-micro">Scenario</div>
       <div class="dock-title">{{ title }}</div>
+    </div>
+
+    <!-- The area both tools run on. Not a zone: it is neither the scenario
+         nor a result, and it never dims. -->
+    <div class="dock-section">
+      <div class="dock-section__head">
+        <span class="bc-micro">Area</span>
+        <button class="bc-micro clear-btn" @click="changeArea">Change area</button>
+      </div>
+      <div class="area-name">{{ areaName }}</div>
+      <p v-if="areaStatus" class="bc-empty area-note">{{ areaStatus }}</p>
+      <p v-if="trafficStore.areaError" class="bc-empty area-error">
+        {{ trafficStore.areaError.message }}
+      </p>
     </div>
 
     <!-- Modified edges: the scenario zone -->
@@ -213,7 +267,6 @@ function rowFor(key: string) {
       <p v-if="scenarioStore.count === 0" class="bc-empty edge-empty">
         Click a street on the map to close it or set a speed limit. ⇧-click picks one direction.
       </p>
-
     </section>
 
     <!-- The tool zone: the tabs and the body of the active one -->
@@ -227,6 +280,10 @@ function rowFor(key: string) {
       <BcTabs v-model="scenarioStore.activeTab" :tabs="tabs" />
 
       <RoutingTab v-if="scenarioStore.activeTab === 'routing'" />
+      <p v-else-if="trafficStore.area" class="bc-empty dock-section">
+        Waste collection runs on Lausanne only, it needs the bin data. Set the area back to Lausanne
+        to use it.
+      </p>
       <CvrpTab v-else @hover-route="(id) => emit('hover-route', id)" />
 
       <!-- Where the diverted traffic ended up. These streets were not touched,
@@ -342,6 +399,20 @@ function rowFor(key: string) {
 
 .dock-section__title {
   margin-bottom: 8px;
+}
+
+.area-name {
+  font-size: var(--bc-fs-body);
+  padding: 4px 0 0;
+}
+
+.area-note {
+  margin: 6px 0 0;
+}
+
+.area-error {
+  margin: 6px 0 0;
+  color: var(--bc-danger);
 }
 
 .clear-btn {

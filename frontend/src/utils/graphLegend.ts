@@ -9,12 +9,7 @@
 export type GraphMapMode = 'scenario' | 'result'
 
 /** How the sample on the left of a row is drawn. */
-export type GraphLegendMark =
-  | 'hairline'
-  | 'dashed'
-  | 'arrows'
-  | 'accent'
-  | 'lanes'
+export type GraphLegendMark = 'hairline' | 'dashed' | 'arrows' | 'accent' | 'lanes'
 
 export interface GraphLegendRow {
   mark: GraphLegendMark

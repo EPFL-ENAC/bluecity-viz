@@ -113,3 +113,6 @@ dmypy.json
 *.dbf
 *.prj
 *.cpg
+# Work directory of the country pipeline: the OSM extract, the XML and the
+# tile cache. Hundreds of MB, all rebuildable with make.
+.data/

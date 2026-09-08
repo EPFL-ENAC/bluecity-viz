@@ -36,6 +36,9 @@ processing/**/BlueCity_Demo2/**
 processing/**/*/*.pbf
 processing/traffic-analysis/cache/
 
+# Local settings, read by the root Makefile (see .env.example)
+.env
+
 # --- git worktree dev environment (docs/worktree-env/)
 
 # Claude Code local settings, rendered per worktree by scripts/wt-setup.sh

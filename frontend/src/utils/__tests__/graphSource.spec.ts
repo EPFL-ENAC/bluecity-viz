@@ -162,6 +162,35 @@ describe('buildGraphSource', () => {
     expect(collection.features[0].properties.bus).toBe(1)
     expect(collection.features[1].properties.bus).toBe(0)
   })
+
+  it('gives the corners of everything it draws', () => {
+    const { bounds } = buildGraphSource([
+      edge(1, 2, {
+        coordinates: [
+          [6.6, 46.5],
+          [6.8, 46.4]
+        ]
+      }),
+      edge(3, 4, {
+        coordinates: [
+          [6.5, 46.6],
+          [6.7, 46.55]
+        ]
+      })
+    ])
+
+    expect(bounds).toEqual([
+      [6.5, 46.4],
+      [6.8, 46.6]
+    ])
+  })
+
+  it('says nowhere for an empty network', () => {
+    expect(buildGraphSource([]).bounds).toEqual([
+      [0, 0],
+      [0, 0]
+    ])
+  })
 })
 
 describe('sideOfTravel', () => {

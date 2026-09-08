@@ -6,7 +6,9 @@ for backward compatibility.
 
 from app.services.sampling.betweenness import (
     assign_edge_weight,
+    considered_nodes_from_mirror,
     edge_betweenness_igraph,
+    edge_betweenness_mirror,
     get_considered_nodes,
     load_edge_attributes,
 )
@@ -18,22 +20,28 @@ from app.services.sampling.igraph_utils import (
 )
 from app.services.sampling.od_sampler import (
     generate_research_based_pairs,
+    generate_research_based_pairs_mirror,
     resample_od_destinations,
     sample_od_pairs,
+    sample_od_pairs_matrix,
     show_weight_info,
 )
 
 __all__ = [
     "SamplingConfig",
     "assign_edge_weight",
+    "considered_nodes_from_mirror",
     "edge_betweenness_igraph",
+    "edge_betweenness_mirror",
     "generate_research_based_pairs",
+    "generate_research_based_pairs_mirror",
     "get_considered_nodes",
     "igraph_matrix_to_dict",
     "load_edge_attributes",
     "networkx_to_igraph_with_indices",
     "resample_od_destinations",
     "sample_od_pairs",
+    "sample_od_pairs_matrix",
     "show_weight_info",
     "travel_time_matrix_igraph",
 ]

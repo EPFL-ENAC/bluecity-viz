@@ -1,9 +1,9 @@
-import type { FeatureCollection } from 'geojson'
 import type { CVRPSolveResponse } from '@/services/cvrp'
 import { fetchCVRPCentroids, solveCVRP } from '@/services/cvrp'
 import { useScenarioStore } from '@/stores/scenario'
 import { scaleSequential } from 'd3-scale'
 import { interpolateViridis } from 'd3-scale-chromatic'
+import type { FeatureCollection } from 'geojson'
 import { defineStore } from 'pinia'
 import { computed, markRaw, ref, shallowRef } from 'vue'
 

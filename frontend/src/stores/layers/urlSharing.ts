@@ -1,4 +1,5 @@
 import type { Ref } from 'vue'
+import { pickScenarioInputs, pickTrafficInputs } from './persistence'
 import type { Investigation } from './types'
 
 export function createUrlSharingComposable(
@@ -15,7 +16,14 @@ export function createUrlSharingComposable(
       name: currentInvestigation.name,
       selectedSources: currentInvestigation.selectedSources,
       selectedLayers: currentInvestigation.selectedLayers,
-      sp0Period: sp0Period.value
+      sp0Period: sp0Period.value,
+      // Inputs only, no results: the receiver runs them again. The area is one
+      // of them, and its id comes from its shape, so the server finds the same
+      // one or builds it back.
+      trafficAnalysis: currentInvestigation.trafficAnalysis,
+      // The modified edges live beside the tools, both of them read the same
+      // scenario, so a shared link carries it too.
+      scenario: currentInvestigation.scenario
     }
 
     try {
@@ -93,6 +101,19 @@ export function createUrlSharingComposable(
         selectedSources: decodedState.selectedSources || [],
         selectedLayers: decodedState.selectedLayers || [],
         createdAt: new Date()
+      }
+
+      if (decodedState.trafficAnalysis) {
+        sharedInvestigation.trafficAnalysis = pickTrafficInputs(decodedState.trafficAnalysis)
+      }
+
+      // A link made before the scenario moved out still has the edges inside
+      // trafficAnalysis, and pickScenarioInputs migrates those.
+      if (decodedState.scenario || decodedState.trafficAnalysis) {
+        sharedInvestigation.scenario = pickScenarioInputs(
+          decodedState.scenario,
+          decodedState.trafficAnalysis
+        )
       }
 
       // Add to first project or create a new one

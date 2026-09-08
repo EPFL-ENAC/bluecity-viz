@@ -5,10 +5,10 @@ import {
   cvrpHoverStates,
   drawFor,
   GRAPH_SOURCE,
-  POINTER_SOURCE,
   graphLayerIds,
   idFilter,
   laneOffset,
+  POINTER_SOURCE,
   wData,
   wGraph,
   wMod

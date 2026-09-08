@@ -96,6 +96,8 @@ export interface GraphSource {
   edgeById: Map<number, EdgeGeometry>
   /** node -> the street names that meet there, for the popover labels */
   nodeStreets: Map<number, string[]>
+  /** the corners of everything it draws, [[west, south], [east, north]] */
+  bounds: [[number, number], [number, number]]
 }
 
 function sameCoordinates(a: [number, number][], b: [number, number][]): boolean {
@@ -126,6 +128,11 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
   const streets = new Map<string, Street>()
   const edgeById = new Map<number, EdgeGeometry>()
   const nodeStreets = new Map<number, string[]>()
+  // Where this network is, so the camera can be sent to it.
+  let west = Infinity
+  let south = Infinity
+  let east = -Infinity
+  let north = -Infinity
 
   edges.forEach((edge, index) => {
     const { u, v } = edge
@@ -143,6 +150,13 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
 
     const name = edge.name && edge.name !== 'Unknown' ? edge.name : ''
     const cls = classFactor(edge.highway)
+
+    for (const [lon, lat] of edge.coordinates) {
+      if (lon < west) west = lon
+      if (lon > east) east = lon
+      if (lat < south) south = lat
+      if (lat > north) north = lat
+    }
 
     collection.features.push({
       type: 'Feature',
@@ -197,7 +211,20 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
     }
   })
 
-  return { collection, streets, edgeById, nodeStreets }
+  // An empty network has no corners; [0,0] twice keeps the type honest and
+  // says "nowhere", which is what the caller does nothing with.
+  const empty = west === Infinity
+  const bounds: [[number, number], [number, number]] = empty
+    ? [
+        [0, 0],
+        [0, 0]
+      ]
+    : [
+        [west, south],
+        [east, north]
+      ]
+
+  return { collection, streets, edgeById, nodeStreets, bounds }
 }
 
 /**

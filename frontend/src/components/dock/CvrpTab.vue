@@ -69,7 +69,6 @@ function handleClear() {
 </script>
 <template>
   <div>
-
     <p v-if="cvrpStore.isStale" class="stale-banner">
       Scenario changed since this result, shown at 40 % on the map.
     </p>

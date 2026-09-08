@@ -5,6 +5,7 @@ import type {
   ScenarioInputs,
   ScenarioModEntry,
   TrafficAnalysisInputs,
+  TrafficAreaSelection,
   TrafficVisualization
 } from './types'
 
@@ -13,10 +14,29 @@ const STORAGE_KEY = 'bluecity-layers-store'
 // v1 stored the full traffic results (edge usage, node pairs) inside every
 // investigation, which made the payload a few MB and blew the quota. v2 keeps
 // only the inputs, the results are recomputed on demand. v3 adds the OD pair
-// count (odPairs), missing in older entries and read back as null. v4 moves the
+// count (odPairs), missing in older entries and read back as null. v5 moves the
 // edge modifications out of the traffic tool into a scenario both tools share,
-// keyed by street instead of by directed edge.
-export const SCHEMA_VERSION = 4
+// keyed by street instead of by directed edge, and adds the area the scenario
+// runs on, missing in older entries and read back as null, the default city.
+export const SCHEMA_VERSION = 5
+
+// The area must sit inside the country and stay in the range the backend
+// accepts, else the first Calculate would fail on a saved circle.
+const SWISS_BOUNDS = { minLon: 5.8, minLat: 45.7, maxLon: 10.6, maxLat: 47.9 }
+const RADIUS_M = { min: 500, max: 10_000 }
+
+/** A saved circle, or null when it is missing or out of range. */
+export function pickArea(raw: any): TrafficAreaSelection | null {
+  if (!raw || typeof raw !== 'object' || raw.kind !== 'circle') return null
+  const lon = Number(raw.lon)
+  const lat = Number(raw.lat)
+  const radiusM = Number(raw.radiusM)
+  if (!Number.isFinite(lon) || !Number.isFinite(lat) || !Number.isFinite(radiusM)) return null
+  if (lon < SWISS_BOUNDS.minLon || lon > SWISS_BOUNDS.maxLon) return null
+  if (lat < SWISS_BOUNDS.minLat || lat > SWISS_BOUNDS.maxLat) return null
+  if (radiusM < RADIUS_M.min || radiusM > RADIUS_M.max) return null
+  return { kind: 'circle', lon, lat, radiusM }
+}
 
 export function defaultTrafficInputs(): TrafficAnalysisInputs {
   return {
@@ -26,7 +46,8 @@ export function defaultTrafficInputs(): TrafficAnalysisInputs {
     congestionIterations: 1,
     elasticDemand: false,
     filterBusRoutes: false,
-    odPairs: null
+    odPairs: null,
+    area: null
   }
 }
 
@@ -73,7 +94,7 @@ export function defaultScenarioInputs(): ScenarioInputs {
   return { edgeModifications: [] }
 }
 
-function pickScenarioInputs(raw: any, legacyTraffic: any): ScenarioInputs {
+export function pickScenarioInputs(raw: any, legacyTraffic: any): ScenarioInputs {
   // v4 and later keep their own block; older entries carry the modifications
   // inside the traffic tool.
   if (raw && typeof raw === 'object' && Array.isArray(raw.edgeModifications)) {
@@ -94,7 +115,7 @@ function pickScenarioInputs(raw: any, legacyTraffic: any): ScenarioInputs {
 
 // Keep the input fields only. Anything else (nodePairs, originalEdgeUsage,
 // newEdgeUsage, impactStatistics) is dropped here.
-function pickTrafficInputs(raw: any): TrafficAnalysisInputs {
+export function pickTrafficInputs(raw: any): TrafficAnalysisInputs {
   const defaults = defaultTrafficInputs()
   if (!raw || typeof raw !== 'object') return defaults
 
@@ -106,7 +127,9 @@ function pickTrafficInputs(raw: any): TrafficAnalysisInputs {
     elasticDemand: !!raw.elasticDemand,
     filterBusRoutes: !!raw.filterBusRoutes,
     // missing (v2 and older) or broken reads back as null, the server default
-    odPairs: Number.isInteger(raw.odPairs) && raw.odPairs > 0 ? raw.odPairs : null
+    odPairs: Number.isInteger(raw.odPairs) && raw.odPairs > 0 ? raw.odPairs : null,
+    // missing (v3 and older) or broken reads back as null, the default city
+    area: pickArea(raw.area)
   }
 }
 

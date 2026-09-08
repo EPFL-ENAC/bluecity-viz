@@ -15,7 +15,7 @@ import time
 import warnings
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence, Union
 
 import numpy as np
 
@@ -24,12 +24,68 @@ from app.models.route import NodePair, Route
 logger = logging.getLogger(__name__)
 
 
-def group_pairs_by_origin(pairs: List[NodePair]) -> dict:
-    """Group OD pairs by origin, so one Dijkstra call serves many destinations."""
-    origin_groups = defaultdict(list)
-    for pair in pairs:
-        origin_groups[pair.origin].append((pair.destination, pair))
-    return origin_groups
+@dataclass
+class PairArrays:
+    """OD pairs as two flat arrays of NetworkX node ids.
+
+    76,400 pydantic NodePair objects cost about 40 MB and every area would
+    keep its own set. The same pairs as two int64 arrays cost 1.2 MB. Route
+    objects are still built at the API boundary, for the few pairs a response
+    really returns.
+    """
+
+    origins: np.ndarray  # (R,) int64
+    destinations: np.ndarray  # (R,) int64
+
+    def __len__(self) -> int:
+        return len(self.origins)
+
+    def __iter__(self):
+        """Yield NodePair objects, for the code that still wants them."""
+        for o, d in zip(self.origins, self.destinations):
+            yield NodePair(origin=int(o), destination=int(d))
+
+    @property
+    def n_origins(self) -> int:
+        return int(len(np.unique(self.origins))) if len(self.origins) else 0
+
+    def prefix(self, n: int) -> "PairArrays":
+        """The first n pairs, sharing the parent arrays (no copy)."""
+        n = min(n, len(self))
+        return PairArrays(origins=self.origins[:n], destinations=self.destinations[:n])
+
+    def subset(self, indices: np.ndarray) -> "PairArrays":
+        """The pairs at these indices, keeping their order."""
+        idx = np.asarray(indices, dtype=np.int64)
+        return PairArrays(origins=self.origins[idx], destinations=self.destinations[idx])
+
+    def cache_key(self) -> bytes:
+        """A short, stable key for memoisation (the arrays can be huge)."""
+        import hashlib
+
+        h = hashlib.blake2b(digest_size=16)
+        h.update(np.ascontiguousarray(self.origins).tobytes())
+        h.update(np.ascontiguousarray(self.destinations).tobytes())
+        return h.digest()
+
+    @classmethod
+    def from_nodepairs(cls, pairs: Sequence[NodePair]) -> "PairArrays":
+        return cls(
+            origins=np.fromiter((p.origin for p in pairs), dtype=np.int64, count=len(pairs)),
+            destinations=np.fromiter(
+                (p.destination for p in pairs), dtype=np.int64, count=len(pairs)
+            ),
+        )
+
+    def to_nodepairs(self) -> List[NodePair]:
+        return list(self)
+
+    @classmethod
+    def coerce(cls, pairs: Union["PairArrays", Sequence[NodePair]]) -> "PairArrays":
+        """Accept either form, so the API layer can still pass NodePair lists."""
+        if isinstance(pairs, PairArrays):
+            return pairs
+        return cls.from_nodepairs(list(pairs))
 
 
 @dataclass
@@ -43,7 +99,7 @@ class RouteSet:
 
     origins: np.ndarray  # (R,) NetworkX node ids
     destinations: np.ndarray  # (R,)
-    edges: np.ndarray  # (total,) igraph edge ids
+    edges: np.ndarray  # (total,) igraph edge ids, int32
     offsets: np.ndarray  # (R + 1,)
     found: np.ndarray  # (R,) bool
     travel_time: Optional[np.ndarray] = None
@@ -171,84 +227,133 @@ class RouteSet:
         return routes
 
 
-def route_pairs(mirror, pairs: List[NodePair], weights: np.ndarray) -> RouteSet:
+def route_pairs(mirror, pairs, weights: np.ndarray) -> RouteSet:
     """Shortest path for every OD pair, one Dijkstra per origin.
 
-    `weights` is a per-edge array; an edge with weight +inf is never used, which
-    is how a removed edge is modelled.
+    `pairs` is a PairArrays or a list of NodePair. `weights` is a per-edge
+    array; an edge with weight +inf is never used, which is how a removed edge
+    is modelled.
+
+    Route i always describes pair i. Internally the pairs are grouped by
+    origin so one igraph call serves many destinations, then the results are
+    put back in the caller's order. Callers rely on that: the impact
+    statistics compare route j of the new set with route `affected_idx[j]` of
+    the old one.
     """
     t0 = time.perf_counter()
-    origin_groups = group_pairs_by_origin(pairs)
+    pa = PairArrays.coerce(pairs)
+    n = len(pa)
 
-    origins: List[int] = []
-    destinations: List[int] = []
-    found: List[bool] = []
-    # One flat python list, turned into an array once at the end. Building a
-    # small ndarray per route costs more than the routing itself at 76k pairs.
+    # Vertex id per pair, -1 when the node is not in this graph.
+    o_ig = np.fromiter(
+        (mirror.node_index.get(int(x), -1) for x in pa.origins), dtype=np.int64, count=n
+    )
+    d_ig = np.fromiter(
+        (mirror.node_index.get(int(x), -1) for x in pa.destinations), dtype=np.int64, count=n
+    )
+
+    # Group by origin, first-seen order, keeping the input order inside a group.
+    groups: Dict[int, List[int]] = defaultdict(list)
+    dropped: List[int] = []
+    for i in range(n):
+        if o_ig[i] >= 0 and d_ig[i] >= 0:
+            groups[int(o_ig[i])].append(i)
+        else:
+            dropped.append(i)
+    missing = len(dropped)
+
+    # Results are produced in this order, then permuted back to pair order.
+    seq_index: List[int] = []
+    seq_lengths: List[int] = []
+    seq_found: List[bool] = []
     flat: List[int] = []
-    offsets: List[int] = [0]
-    total = 0
-    missing = 0
 
-    for origin_nx, dest_pairs in origin_groups.items():
-        origin_ig = mirror.vertex_of(origin_nx)
-        dest_ig = []
-        kept = []
-        for dest_nx, _pair in dest_pairs:
-            v = mirror.vertex_of(dest_nx)
-            if origin_ig is not None and v is not None:
-                dest_ig.append(v)
-                kept.append(dest_nx)
-            else:
-                missing += 1
-                origins.append(origin_nx)
-                destinations.append(dest_nx)
-                found.append(False)
-                offsets.append(total)
-
-        if not dest_ig:
-            continue
-
+    for origin_ig, members in groups.items():
+        targets = [int(d_ig[i]) for i in members]
         with warnings.catch_warnings():
             # igraph warns once per call when a destination is unreachable.
             # That is normal here (removed edges, disconnected corners).
             warnings.simplefilter("ignore", RuntimeWarning)
             paths = mirror.h.get_shortest_paths(
-                v=origin_ig, to=dest_ig, weights=weights, output="epath"
+                v=origin_ig, to=targets, weights=weights, output="epath"
             )
-        for path, dest_nx in zip(paths, kept):
-            origins.append(origin_nx)
-            destinations.append(dest_nx)
+        for i, path in zip(members, paths):
+            seq_index.append(i)
             if path:
                 flat.extend(path)
-                total += len(path)
-                found.append(True)
+                seq_lengths.append(len(path))
+                seq_found.append(True)
             else:
-                found.append(False)
-            offsets.append(total)
+                seq_lengths.append(0)
+                seq_found.append(False)
 
-    rs = RouteSet(
-        origins=np.asarray(origins, dtype=np.int64),
-        destinations=np.asarray(destinations, dtype=np.int64),
-        edges=np.asarray(flat, dtype=np.int64),
-        offsets=np.asarray(offsets, dtype=np.int64),
-        found=np.asarray(found, dtype=bool),
-    )
+    for i in dropped:
+        seq_index.append(i)
+        seq_lengths.append(0)
+        seq_found.append(False)
+
+    rs = _reorder(pa, np.asarray(seq_index, dtype=np.int64), seq_lengths, seq_found, flat)
+
     if missing:
         logger.warning("[ROUTING] %d pairs had a node outside the graph", missing)
     logger.debug(
         "[ROUTING] %d pairs, %d origins, %d found, %.0f ms",
-        len(pairs),
-        len(origin_groups),
+        n,
+        len(groups),
         rs.n_found,
         (time.perf_counter() - t0) * 1000,
     )
     return rs
 
 
-def routed_pairs_subset(pairs: List[NodePair], indices: np.ndarray) -> List[NodePair]:
+def _reorder(
+    pa: PairArrays,
+    seq_index: np.ndarray,
+    seq_lengths: List[int],
+    seq_found: List[bool],
+    flat: List[int],
+) -> RouteSet:
+    """Turn the grouped results into a RouteSet in pair order."""
+    n = len(pa)
+    lengths_seq = np.asarray(seq_lengths, dtype=np.int64)
+    edges_seq = np.asarray(flat, dtype=np.int32)
+
+    lengths = np.zeros(n, dtype=np.int64)
+    lengths[seq_index] = lengths_seq
+    found = np.zeros(n, dtype=bool)
+    found[seq_index] = np.asarray(seq_found, dtype=bool)
+
+    offsets = np.zeros(n + 1, dtype=np.int64)
+    np.cumsum(lengths, out=offsets[1:])
+
+    # Where each pair's block sits in the grouped array.
+    seq_offsets = np.zeros(len(lengths_seq) + 1, dtype=np.int64)
+    np.cumsum(lengths_seq, out=seq_offsets[1:])
+    start_in_seq = np.zeros(n, dtype=np.int64)
+    start_in_seq[seq_index] = seq_offsets[:-1]
+
+    total = int(offsets[-1])
+    if total:
+        # For every slot of the output, the slot to read in the grouped array:
+        # block start + offset inside the block.
+        block_start = np.repeat(start_in_seq, lengths)
+        inside = np.arange(total, dtype=np.int64) - np.repeat(offsets[:-1], lengths)
+        edges = edges_seq[block_start + inside]
+    else:
+        edges = np.empty(0, dtype=np.int32)
+
+    return RouteSet(
+        origins=pa.origins,
+        destinations=pa.destinations,
+        edges=edges,
+        offsets=offsets,
+        found=found,
+    )
+
+
+def routed_pairs_subset(pairs, indices: np.ndarray) -> PairArrays:
     """Pick the OD pairs at these indices, keeping their order."""
-    return [pairs[int(i)] for i in indices]
+    return PairArrays.coerce(pairs).subset(indices)
 
 
 def build_route_edge_index(routes: List[Route]) -> Dict[tuple, list]:

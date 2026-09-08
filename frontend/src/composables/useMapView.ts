@@ -37,9 +37,13 @@ export function useMapView(): MapView {
   )
 
   // Closing the workbench takes the overlay off the map, so nothing is shown
-  // and the legend has nothing to explain.
+  // and the legend has nothing to explain. Picking an area does the same: the
+  // map is the whole country then, and the result belongs to the old one.
   const shown = computed<ShownResult>(() =>
-    scenarioStore.isOpen && scenarioStore.mapMode === 'result' && activeHasResult.value
+    scenarioStore.isOpen &&
+    !trafficStore.pickMode &&
+    scenarioStore.mapMode === 'result' &&
+    activeHasResult.value
       ? scenarioStore.activeTab
       : null
   )
@@ -47,7 +51,7 @@ export function useMapView(): MapView {
   // Nothing to compete with means nothing to dim: with no result the map can
   // only show the scenario, so both zones stay full ink.
   const dimmed = computed<DimmedZone>(() => {
-    if (!activeHasResult.value) return null
+    if (!activeHasResult.value || trafficStore.pickMode) return null
     return scenarioStore.mapMode === 'result' ? 'scenario' : 'tool'
   })
 
