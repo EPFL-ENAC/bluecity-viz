@@ -21,8 +21,8 @@ import osmnx as ox
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.graph_mirror import parse_lanes, parse_street_count  # noqa: E402
 from app.services.graph_store import Grid, write_store  # noqa: E402
+from app.services.osm_values import parse_lanes, parse_street_count  # noqa: E402
 
 
 def first_value(value, default=""):

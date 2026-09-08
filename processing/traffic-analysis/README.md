@@ -58,9 +58,8 @@ build_swiss_graph.py         ← osmium filter + osmnx + speeds + elevation
 ```
 
 ```bash
-make pbf-download          # once, ~700 MB
-make dem                   # once, the DHM25 tiles (read download_swiss_dem.py first)
-make swiss-all             # store + tiles + density, about an hour
+make pbf-download          # once, ~520 MB from Geofabrik
+make swiss-all             # elevation + store + tiles + density, about an hour
 ```
 
 The graph step needs about 16 GB of RAM. Try it on a region first, it takes
@@ -69,6 +68,12 @@ minutes:
 ```bash
 make swiss-store SWISS_BBOX=6.4,46.4,6.9,46.7
 ```
+
+Elevation comes from swissALTIRegio, the national model swisstopo publishes as
+one cloud optimised GeoTIFF. `make dem` does not fetch the 10 GB file: it reads
+the 40 m overview the file already carries and writes a 360 MB local raster in
+about 30 seconds. 40 m is the right scale for the slope of a street. DHM25 is
+retired and its old URL now serves the 200 m model, which is too coarse.
 
 Lausanne keeps its own GraphML: it is the default area, it has the finer
 swissALTI3D elevation, and nothing about it changes.

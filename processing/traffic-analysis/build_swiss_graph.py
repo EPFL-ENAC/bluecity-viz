@@ -125,6 +125,21 @@ def build_graph(xml: Path) -> nx.MultiDiGraph:
     return graph
 
 
+# Switzerland goes from 193 m (Lake Maggiore) to 4634 m (Dufourspitze). Outside
+# that it is the raster's nodata sentinel, which is 3.4e38 on swissALTIRegio.
+MIN_ELEVATION_M, MAX_ELEVATION_M = -100.0, 5000.0
+
+
+def clean_elevation(value) -> float:
+    """A real height, or 0 when the raster had nothing there."""
+    if value is None:
+        return 0.0
+    value = float(value)
+    if value != value or not (MIN_ELEVATION_M <= value <= MAX_ELEVATION_M):
+        return 0.0
+    return value
+
+
 def add_elevation(graph: nx.MultiDiGraph, dem: str, dem_crs: str) -> nx.MultiDiGraph:
     """Node elevations from DEM rasters. No raster means flat ground.
 
@@ -146,10 +161,12 @@ def add_elevation(graph: nx.MultiDiGraph, dem: str, dem_crs: str) -> nx.MultiDiG
 
     print(f"Reading elevations from {len(rasters)} raster(s) ...")
     projected = ox.projection.project_graph(graph, to_crs=dem_crs)
-    projected = ox.elevation.add_node_elevations_raster(projected, rasters, cpus=1)
+    # One file goes in as a path. Handing osmnx a list of one makes it build a
+    # VRT, and rio-vrt cannot merge a single raster (min() on one bound).
+    source = rasters[0] if len(rasters) == 1 else rasters
+    projected = ox.elevation.add_node_elevations_raster(projected, source, cpus=1)
     for node_id, data in projected.nodes(data=True):
-        value = data.get("elevation")
-        graph.nodes[node_id]["elevation"] = 0.0 if value is None or value != value else float(value)
+        graph.nodes[node_id]["elevation"] = clean_elevation(data.get("elevation"))
 
     missing = sum(1 for _n, d in graph.nodes(data=True) if d["elevation"] == 0.0)
     print(f"  {len(graph.nodes) - missing:,} nodes got an elevation")

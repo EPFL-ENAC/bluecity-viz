@@ -118,6 +118,7 @@ def geojson_to_pmtiles(
     pmtiles_path: str,
     max_zoom: str = "20",
     line_delimited: bool = False,
+    tmpdir: str = None,
 ) -> None:
     """
     Convert GeoJSON to PMTiles using tippecanoe.
@@ -131,6 +132,9 @@ def geojson_to_pmtiles(
         line_delimited: The input is one feature per line (GeoJSONSeq), which
             lets tippecanoe read it in parallel (-P). That is what the country
             store produces.
+        tmpdir: Where tippecanoe spools. Its pool for the country is tens of
+            GB, and /tmp is often a small tmpfs, so this defaults to the
+            directory the tiles are written to.
     """
     print("Converting to PMTiles using tippecanoe...")
 
@@ -147,6 +151,11 @@ def geojson_to_pmtiles(
     ]
     if line_delimited:
         command.append("-P")
+
+    spool = tmpdir or str(Path(pmtiles_path).resolve().parent)
+    Path(spool).mkdir(parents=True, exist_ok=True)
+    command += ["-t", spool]
+
     command.append(geojson_path)
 
     try:
@@ -255,6 +264,11 @@ def main() -> None:
         default=None,
         help="Highest zoom to cut (default 20 for a city, 14 for a store)",
     )
+    parser.add_argument(
+        "--tmpdir",
+        default=None,
+        help="Where tippecanoe spools (default: next to the output, not /tmp)",
+    )
     args = parser.parse_args()
 
     if args.store:
@@ -311,13 +325,25 @@ def main() -> None:
 
 def main_store(args) -> None:
     """The country: store -> line-delimited GeoJSON -> PMTiles."""
-    pmtiles_path = args.output_pmtiles or str(Path(args.store) / "graph.pmtiles")
+    # With --store there is no input file, so the one positional the user gives
+    # is the output. argparse cannot know that, it filled input_graphml.
+    pmtiles_path = (
+        args.output_pmtiles
+        or args.input_graphml
+        or str(Path(args.store) / "graph.pmtiles")
+    )
 
     if args.geojson:
         seq_path = args.geojson
         use_temp = False
     else:
-        tmp_file = tempfile.NamedTemporaryFile(suffix=".geojsonseq", delete=False)
+        # Next to the output too: a country as one feature per line is several
+        # GB, which is more than a /tmp tmpfs usually holds.
+        spool = Path(args.tmpdir or Path(pmtiles_path).resolve().parent)
+        spool.mkdir(parents=True, exist_ok=True)
+        tmp_file = tempfile.NamedTemporaryFile(
+            suffix=".geojsonseq", delete=False, dir=str(spool)
+        )
         seq_path = tmp_file.name
         tmp_file.close()
         use_temp = True
@@ -329,6 +355,7 @@ def main_store(args) -> None:
             pmtiles_path,
             max_zoom=args.max_zoom or "14",
             line_delimited=True,
+            tmpdir=args.tmpdir,
         )
         size = Path(pmtiles_path).stat().st_size / (1024 * 1024)
         print(f"\n  PMTiles : {size:.1f} MB  →  {pmtiles_path}")

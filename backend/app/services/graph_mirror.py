@@ -29,36 +29,17 @@ from typing import Dict, List, Optional, Tuple
 import igraph as ig
 import numpy as np
 
+# Re-exported: the rest of the app has always imported them from here.
+from app.services.osm_values import parse_lanes, parse_street_count
+
+__all__ = ["GraphMirror", "parse_lanes", "parse_street_count"]
+
 logger = logging.getLogger(__name__)
 
 # Speed used when an edge has no usable speed_kph.
 # Two different values on purpose: they reproduce what the old code did.
 CO2_FALLBACK_SPEED_KPH = 40.0  # CO2Calculator.DEFAULT_SPEED_KPH
 BPR_FALLBACK_SPEED_KPH = 30.0  # bpr.write_bc_duration / apply_congestion_weights
-
-
-def parse_lanes(value, default: int = 2) -> int:
-    """Read a lane count from an OSM attribute, which can be a list or a string."""
-    if isinstance(value, list):
-        value = value[0] if value else default
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return default
-
-
-def parse_street_count(value) -> int:
-    """Read street_count from a node attribute. Missing or unreadable means 0.
-
-    0 keeps the node out of the OD sampling pool, which is what a missing
-    value did before (NaN >= 3 is False).
-    """
-    if isinstance(value, list):
-        value = value[0] if value else 0
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return 0
 
 
 class GraphMirror:

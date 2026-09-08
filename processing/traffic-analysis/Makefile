@@ -28,6 +28,7 @@ BACKEND_GEOJSON    := $(BACKEND_DATA)/lausanne.geojson
 # The whole country, for the "pick any area" feature
 SWISS_STORE        := $(BACKEND_DATA)/swiss_graph
 SWISS_DEM_DIR      := data/elevation-ch
+SWISS_DEM          := $(SWISS_DEM_DIR)/swissaltiregio.tif
 SWISS_PMTILES      := $(FRONTEND_GEODATA)/swiss_drive.pmtiles
 SWISS_DENSITY      := $(FRONTEND_GEODATA)/swiss_graph_density.json
 # A small region to try the pipeline on: minutes instead of an hour.
@@ -53,7 +54,7 @@ help:
 	@echo "  make copy        Copy outputs to backend/ and frontend/"
 	@echo ""
 	@echo "Whole country (pick any area):"
-	@echo "  make dem            Download the DHM25 elevation tiles (needs a CSV, see the script)"
+	@echo "  make dem            Download the national elevation raster (~360 MB, 30 s)"
 	@echo "  make swiss-store    Build the country graph store (~1 h, 16 GB of RAM)"
 	@echo "  make swiss-tiles    Cut the country network into PMTiles"
 	@echo "  make swiss-copy     Copy density.json to the frontend"
@@ -159,10 +160,16 @@ copy: geojson
 # ---------------------------------------------------------------------------
 
 _SWISS_BBOX_FLAG = $(if $(SWISS_BBOX),--bbox $(SWISS_BBOX),)
-_SWISS_DEM_FLAG  = $(if $(wildcard $(SWISS_DEM_DIR)/*.tif),--dem $(SWISS_DEM_DIR),)
+# Always passed. make expands a wildcard before running anything, so testing
+# for the raster here would miss the one 'make dem' is about to download. The
+# script reads whatever .tif it finds in the directory, and says so when the
+# directory is empty.
+_SWISS_DEM_FLAG  = --dem $(SWISS_DEM_DIR)
 
-dem: ## Download the national elevation tiles (DHM25)
-	uv run python download_swiss_dem.py --output $(SWISS_DEM_DIR)
+dem: $(SWISS_DEM) ## Download the national elevation raster (swissALTIRegio at 40 m)
+
+$(SWISS_DEM):
+	uv run python download_swiss_dem.py --output $(SWISS_DEM)
 
 swiss-store: ## Build the country graph store the backend reads
 	@test -f $(OSM_PBF_SWISS) || (echo "Missing $(OSM_PBF_SWISS). Run 'make pbf-download'." && exit 1)
@@ -185,7 +192,7 @@ swiss-copy: ## The small file the picker sums under the circle
 	@cp $(SWISS_STORE)/density.json $(SWISS_DENSITY)
 	@echo "✓ $(SWISS_DENSITY)"
 
-swiss-all: swiss-store swiss-tiles swiss-copy
+swiss-all: dem swiss-store swiss-tiles swiss-copy
 
 # ---------------------------------------------------------------------------
 # Full pipeline
