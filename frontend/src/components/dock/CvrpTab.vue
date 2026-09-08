@@ -3,17 +3,13 @@ import BcIcon from '@/components/ui/BcIcon.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
 import { useCVRPStore } from '@/stores/cvrp'
+import { routeSummaries } from '@/utils/cvrpSource'
 import { computed, ref } from 'vue'
+
+// The waste collection tool, inside the scenario workbench.
 
 const cvrpStore = useCVRPStore()
 const errorMessage = ref('')
-
-const WASTE_LABELS: Record<string, string> = {
-  DI: 'Incinerable',
-  DV: 'Vegetable',
-  PC: 'Paper / cardboard',
-  VE: 'Glass'
-}
 
 const wasteTypeOptions = [
   { value: 'DI', label: 'DI' },
@@ -32,10 +28,12 @@ const displayOptions = [
   { value: 'heatmap', label: 'Edge load' }
 ]
 
-const title = computed(
-  () =>
-    `${WASTE_LABELS[cvrpStore.wasteType] ?? cvrpStore.wasteType}, ${cvrpStore.nVehicles} vehicles`
+// One row per vehicle: hue, trips, load, distance.
+const routes = computed(() =>
+  cvrpStore.lastResult ? routeSummaries(cvrpStore.lastResult.route_segments) : []
 )
+
+const emit = defineEmits<{ (event: 'hover-route', routeId: number | null): void }>()
 
 // thousands separator with a plain space, like the design ("8 000 kg")
 const capacityDisplay = computed(
@@ -69,24 +67,11 @@ function handleClear() {
   errorMessage.value = ''
 }
 </script>
-
 <template>
-  <div class="dock-panel">
-    <div class="dock-head">
-      <div class="bc-micro">Waste collection · CVRP</div>
-      <div class="dock-head__title">
-        <span class="dock-title">{{ title }}</span>
-        <button
-          v-if="cvrpStore.hasResult"
-          class="icon-btn"
-          title="Clear result"
-          @click="handleClear"
-        >
-          <BcIcon name="x" />
-        </button>
-      </div>
-    </div>
-
+  <div>
+    <p v-if="cvrpStore.isStale" class="stale-banner">
+      Scenario changed since this result, shown at 40 % on the map.
+    </p>
     <div class="dock-section">
       <div class="bc-micro dock-section__title">Waste type</div>
       <BcSeg v-model="cvrpStore.wasteType" :options="wasteTypeOptions" equal />
@@ -144,7 +129,12 @@ function handleClear() {
     </div>
 
     <div v-if="cvrpStore.hasResult && cvrpStore.lastResult" class="dock-section">
-      <div class="bc-micro dock-section__title">Solution</div>
+      <div class="section-head">
+        <span class="bc-micro">Solution</span>
+        <button class="icon-btn" title="Clear result" @click="handleClear">
+          <BcIcon name="x" />
+        </button>
+      </div>
 
       <div class="kv">
         <span class="kv__key">Routes</span>
@@ -172,10 +162,78 @@ function handleClear() {
         <BcSeg v-model="cvrpStore.visualizationMode" :options="displayOptions" />
       </div>
     </div>
+
+    <div v-if="routes.length" class="dock-section">
+      <div class="bc-micro dock-section__title">Vehicles</div>
+      <div
+        v-for="route in routes"
+        :key="route.route_id"
+        class="veh"
+        @mouseenter="emit('hover-route', route.route_id)"
+        @mouseleave="emit('hover-route', null)"
+      >
+        <span class="veh__hue" :style="{ background: route.color }"></span>
+        <span class="veh__id">{{ route.route_id + 1 }}</span>
+        <span class="veh__trips">{{ route.trips }} trip{{ route.trips > 1 ? 's' : '' }}</span>
+        <span class="veh__num">{{ Math.round(route.load_kg).toLocaleString('en-US') }} kg</span>
+        <span class="veh__num">{{ (route.distance_m / 1000).toFixed(1) }} km</span>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.stale-banner {
+  margin: 16px 22px 0;
+  padding: 8px 10px;
+  border: 1px solid #b51f1f;
+  color: #b51f1f;
+  font-size: var(--bc-fs-small);
+}
+
+/* one row per vehicle: hue, number, trips, load, distance */
+.veh {
+  display: grid;
+  grid-template-columns: 16px 28px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--bc-line);
+  font-size: var(--bc-fs-body);
+  cursor: default;
+}
+
+.veh:hover {
+  background: var(--bc-hover);
+}
+
+.veh__hue {
+  height: 3px;
+}
+
+.veh__id {
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  color: var(--bc-grey);
+}
+
+.veh__trips {
+  color: var(--bc-grey);
+  font-size: var(--bc-fs-small);
+}
+
+.veh__num {
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+}
+
 .dock-head {
   padding: 18px 22px 14px;
   border-bottom: 1px solid var(--bc-line);

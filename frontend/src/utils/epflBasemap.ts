@@ -222,11 +222,15 @@ export function setMapTheme(map: MapLibreMap, T: BasemapTheme): void {
 // ---------- variants ----------
 // bld:  outline | hatch | cross | dot | solid | ink
 // land / wood: none | tint | hatch | dot   ·   water: line | tint | hatch
+// roads: 'none' drops every road line, quiet mutes what is left. Both together
+// give "Substrat": a basemap made to sit under the street graph overlay.
 interface Variant {
   wood: string
   land: string
   water: string
   bld: string
+  roads?: string
+  quiet?: boolean
 }
 
 export const VARIANTS: Record<string, Variant> = {
@@ -235,10 +239,37 @@ export const VARIANTS: Record<string, Variant> = {
   croisillon: { wood: 'none', land: 'dot', water: 'line', bld: 'cross' },
   trame: { wood: 'dot', land: 'dot', water: 'line', bld: 'dot' },
   aplat: { wood: 'tint', land: 'tint', water: 'tint', bld: 'solid' },
-  gravure: { wood: 'hatch', land: 'hatch', water: 'hatch', bld: 'hatch' }
+  gravure: { wood: 'hatch', land: 'hatch', water: 'hatch', bld: 'hatch' },
+  // Substrat: flat tints only, no line at all. The graph overlay owns every
+  // line on the map, so nothing in the basemap may compete with it.
+  substrat: {
+    wood: 'tint',
+    land: 'tint',
+    water: 'tint',
+    bld: 'solid',
+    roads: 'none',
+    quiet: true
+  }
 }
 
-export const ORDER = ['contour', 'hachure', 'croisillon', 'trame', 'aplat', 'gravure']
+export const ORDER = ['contour', 'hachure', 'croisillon', 'trame', 'aplat', 'gravure', 'substrat']
+
+/**
+ * Colours the graph overlay draws with. The basemap gives ink and paper, the
+ * graph adds its own grey (lighter than the UI grey, it must stay behind the
+ * data) and the Blue City accent, which is only ever the pointer.
+ */
+export interface GraphColors {
+  ink: string
+  paper: string
+  grey: string
+  accent: string
+}
+
+export const GRAPH_COLORS: Record<'light' | 'dark', GraphColors> = {
+  light: { ink: '#141414', paper: '#ffffff', grey: '#B8B8B8', accent: '#0500E1' },
+  dark: { ink: '#F2F2F2', paper: '#141414', grey: '#5C5C5C', accent: '#8583FF' }
+}
 
 const fade = ['interpolate', ['linear'], ['zoom'], 13, 0, 14, 1]
 
@@ -248,6 +279,11 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
   const v = VARIANTS[key] || VARIANTS.contour
   const INK = T.ink
   const PAPER = T.paper
+  // A quiet variant keeps the ink for the fills but mutes every stroke and
+  // label, so the overlay drawn on top stays the loudest thing on the map.
+  const Q = !!v.quiet
+  const MUTE = faint(T, 0.5)
+  const OUT = Q ? faint(T, 0.72) : INK
   // MapLibre's own types for hand-written layer arrays are very strict, the
   // shapes below come straight from the design engine and are known good.
   /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -363,14 +399,14 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
       type: 'fill',
       source: 'openmaptiles',
       'source-layer': 'water',
-      paint: { 'fill-color': faint(T, 0.9) }
+      paint: { 'fill-color': Q ? faint(T, 0.93) : faint(T, 0.9) }
     })
     L.push({
       id: 'water-line',
       type: 'line',
       source: 'openmaptiles',
       'source-layer': 'water',
-      paint: { 'line-color': INK, 'line-width': 0.6 }
+      paint: { 'line-color': OUT, 'line-width': 0.6 }
     })
   } else {
     L.push({
@@ -386,46 +422,50 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
     type: 'line',
     source: 'openmaptiles',
     'source-layer': 'waterway',
-    paint: { 'line-color': INK, 'line-width': 0.6 }
+    paint: { 'line-color': OUT, 'line-width': 0.6 }
   })
 
   const W = 0.6
-  L.push({
-    id: 'rd-minor',
-    type: 'line',
-    source: 'openmaptiles',
-    'source-layer': 'transportation',
-    filter: ['in', 'class', 'minor', 'service'],
-    layout: { 'line-cap': 'round' },
-    paint: { 'line-color': INK, 'line-width': W }
-  })
-  L.push({
-    id: 'rd-sec',
-    type: 'line',
-    source: 'openmaptiles',
-    'source-layer': 'transportation',
-    filter: ['in', 'class', 'secondary', 'tertiary'],
-    layout: { 'line-cap': 'round' },
-    paint: { 'line-color': INK, 'line-width': W }
-  })
-  L.push({
-    id: 'rd-path',
-    type: 'line',
-    source: 'openmaptiles',
-    'source-layer': 'transportation',
-    filter: ['in', 'class', 'path', 'track', 'pedestrian'],
-    minzoom: 14,
-    paint: { 'line-color': INK, 'line-width': W, 'line-dasharray': [2, 2] }
-  })
-  L.push({
-    id: 'rd-major',
-    type: 'line',
-    source: 'openmaptiles',
-    'source-layer': 'transportation',
-    filter: ['in', 'class', 'motorway', 'trunk', 'primary'],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': INK, 'line-width': W }
-  })
+  if (v.roads !== 'none') {
+    L.push({
+      id: 'rd-minor',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      filter: ['in', 'class', 'minor', 'service'],
+      layout: { 'line-cap': 'round' },
+      paint: { 'line-color': INK, 'line-width': W }
+    })
+    L.push({
+      id: 'rd-sec',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      filter: ['in', 'class', 'secondary', 'tertiary'],
+      layout: { 'line-cap': 'round' },
+      paint: { 'line-color': INK, 'line-width': W }
+    })
+    L.push({
+      id: 'rd-path',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      filter: ['in', 'class', 'path', 'track', 'pedestrian'],
+      minzoom: 14,
+      paint: { 'line-color': INK, 'line-width': W, 'line-dasharray': [2, 2] }
+    })
+    L.push({
+      id: 'rd-major',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      filter: ['in', 'class', 'motorway', 'trunk', 'primary'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': INK, 'line-width': W }
+    })
+  }
+  // The rail line is the one stroke Substrat keeps, faint: without it the
+  // tracks read as a hole in the fabric.
   L.push({
     id: 'rail',
     type: 'line',
@@ -433,14 +473,14 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
     'source-layer': 'transportation',
     filter: ['==', 'class', 'rail'],
     minzoom: 13,
-    paint: { 'line-color': INK, 'line-width': W, 'line-dasharray': [3, 2] }
+    paint: { 'line-color': OUT, 'line-width': W, 'line-dasharray': [3, 2] }
   })
 
   const bldFill: Record<string, Record<string, unknown>> = {
     hatch: { 'fill-pattern': 'hatch-bld', 'fill-opacity': fade },
     cross: { 'fill-pattern': 'cross-bld', 'fill-opacity': fade },
     dot: { 'fill-pattern': 'dot-bld', 'fill-opacity': fade },
-    solid: { 'fill-color': faint(T, 0.85), 'fill-opacity': fade },
+    solid: { 'fill-color': Q ? faint(T, 0.9) : faint(T, 0.85), 'fill-opacity': fade },
     ink: { 'fill-color': INK, 'fill-opacity': fade }
   }
   if (bldFill[v.bld])
@@ -452,14 +492,15 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
       minzoom: 13,
       paint: bldFill[v.bld]
     })
-  L.push({
-    id: 'bld-line',
-    type: 'line',
-    source: 'openmaptiles',
-    'source-layer': 'building',
-    minzoom: 13,
-    paint: { 'line-color': INK, 'line-width': 0.7, 'line-opacity': fade }
-  })
+  if (!Q)
+    L.push({
+      id: 'bld-line',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'building',
+      minzoom: 13,
+      paint: { 'line-color': INK, 'line-width': 0.7, 'line-opacity': fade }
+    })
 
   L.push({
     id: 'rd-label',
@@ -474,7 +515,7 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
       'text-size': 10,
       'text-letter-spacing': 0.02
     },
-    paint: { 'text-color': INK, 'text-halo-color': PAPER, 'text-halo-width': 1.4 }
+    paint: { 'text-color': Q ? MUTE : INK, 'text-halo-color': PAPER, 'text-halo-width': 1.4 }
   })
   L.push({
     id: 'place-label',
@@ -489,7 +530,7 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
       'text-letter-spacing': 0.08,
       'text-transform': 'uppercase'
     },
-    paint: { 'text-color': INK, 'text-halo-color': PAPER, 'text-halo-width': 1.6 }
+    paint: { 'text-color': Q ? MUTE : INK, 'text-halo-color': PAPER, 'text-halo-width': 1.6 }
   })
 
   return {

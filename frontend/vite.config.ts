@@ -11,10 +11,9 @@ import { configDefaults, defineConfig } from 'vitest/config'
 const backendPort = process.env.BACKEND_PORT || '8000'
 
 // One vendor chunk per big library, so a change in app code does not
-// invalidate the cached maplibre / deck.gl / vuetify bundles.
+// invalidate the cached maplibre / vuetify bundles.
 const vendorChunks: Record<string, RegExp> = {
   maplibre: /[\\/]node_modules[\\/](maplibre-gl|pmtiles)[\\/]/,
-  deck: /[\\/]node_modules[\\/](@deck\.gl|@luma\.gl|@loaders\.gl|@math\.gl|@probe\.gl)[\\/]/,
   vuetify: /[\\/]node_modules[\\/]vuetify[\\/]/,
   d3: /[\\/]node_modules[\\/](d3-[a-z-]+|internmap)[\\/]/
 }

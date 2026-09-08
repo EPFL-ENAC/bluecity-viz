@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { useMapView } from '@/composables/useMapView'
 import type { MapLayerConfig } from '@/config/layerTypes'
 import { getVehicleColor, useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { graphLegendRows } from '@/utils/graphLegend'
 import {
   trafficLegend as buildTrafficLegend,
   datasetLegend,
@@ -19,6 +22,18 @@ const props = defineProps<{
 const store = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
+const scenarioStore = useScenarioStore()
+// The legend explains the map, so it reads the same source of truth.
+const { shown } = useMapView()
+
+// The key to the graph vocabulary. Shown whenever a tool draws on the graph.
+const graphRows = computed(() => {
+  if (!scenarioStore.isOpen) return []
+  return graphLegendRows({
+    mode: shown.value ? 'result' : 'scenario',
+    hasModifications: scenarioStore.hasModifications
+  })
+})
 
 const generatedLayersWithColors = computed(() => {
   return props.layers
@@ -34,7 +49,8 @@ const trafficLegend = computed(() => {
   const min = trafficStore.minValue
   const max = trafficStore.maxValue
 
-  if (!trafficStore.isOpen || mode === 'none' || !scale) {
+  // The ramp explains the colour on the map, so it goes with the colour.
+  if (shown.value !== 'routing' || mode === 'none' || !scale) {
     return null
   }
 
@@ -42,7 +58,7 @@ const trafficLegend = computed(() => {
 })
 // Generate CVRP legend
 const cvrpLegend = computed(() => {
-  if (!cvrpStore.isOpen || !cvrpStore.hasResult || !cvrpStore.lastResult) return null
+  if (shown.value !== 'cvrp' || !cvrpStore.lastResult) return null
 
   if (cvrpStore.visualizationMode === 'heatmap') {
     const steps = 40
@@ -122,7 +138,7 @@ const toggleCategory = (
 }
 
 const shouldShowLegend = computed(() => {
-  return allLegends.value.length > 0 || trafficLegend.value !== null
+  return allLegends.value.length > 0 || trafficLegend.value !== null || graphRows.value.length > 0
 })
 </script>
 
@@ -189,6 +205,15 @@ const shouldShowLegend = computed(() => {
         </div>
       </div>
     </div>
+
+    <!-- What the shapes on the graph mean -->
+    <div v-if="graphRows.length" class="block">
+      <div class="bc-micro block__title">Graph</div>
+      <div v-for="row in graphRows" :key="row.label" class="key">
+        <span class="key__mark" :class="`key__mark--${row.mark}`"></span>
+        <span class="key__label">{{ row.label }}</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -215,6 +240,69 @@ const shouldShowLegend = computed(() => {
 .ramp {
   width: 220px;
   height: 6px;
+}
+
+/* graph key: a 22px sample of the stroke, then what it means */
+.key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11px;
+  color: var(--bc-ink);
+}
+
+.key__mark {
+  width: 22px;
+  flex: none;
+  position: relative;
+  height: 8px;
+}
+
+.key__mark::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 1px;
+  background: var(--bc-graph-grey);
+}
+
+.key__mark--dashed::before {
+  height: 2px;
+  background: repeating-linear-gradient(to right, var(--bc-ink) 0 2px, transparent 2px 4px);
+}
+
+.key__mark--arrows::before {
+  height: 2px;
+  background: var(--bc-ink);
+}
+
+.key__mark--accent {
+  height: 8px;
+}
+
+.key__mark--accent::before {
+  top: 0;
+  right: 14px;
+  height: 8px;
+  background: var(--bc-accent);
+}
+
+/* two hairlines, one per direction */
+.key__mark--lanes::before {
+  top: 1px;
+}
+
+.key__mark--lanes::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 5px;
+  height: 1px;
+  background: var(--bc-graph-grey);
 }
 
 .ramp__labels {

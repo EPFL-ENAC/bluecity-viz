@@ -1,16 +1,11 @@
-import {
-  ApiError,
-  createArea,
-  fetchArea,
-  fetchBaseline,
-  fetchGraphInfo
-} from '@/services/trafficAnalysis'
+import { ApiError, createArea, fetchBaseline, fetchGraphInfo } from '@/services/trafficAnalysis'
 import {
   EXPECTED_PUBLIC_KEYS,
   EXPECTED_SCALES,
   EXPECTED_STATE_KEYS,
   makeUsage
 } from '@/stores/__tests__/fixtures/trafficScales'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,7 +18,6 @@ vi.mock('@/services/trafficAnalysis', async () => ({
   )),
   fetchBaseline: vi.fn(),
   fetchGraphInfo: vi.fn(),
-  fetchArea: vi.fn(),
   createArea: vi.fn(),
   fetchAreaLimits: vi.fn().mockRejectedValue(new Error('not in this test'))
 }))
@@ -34,20 +28,14 @@ const BERN_ID = 'c_7.4400_46.9500_3000'
 function areaInfo(id: string) {
   return {
     id,
-    kind: 'circle',
-    name: id,
-    circle: null,
-    polygon: null,
+    circle: { lon: BERN.lon, lat: BERN.lat, radius_m: BERN.radiusM },
     bbox: null,
     node_count: 5000,
     edge_count: 9000,
     scc_fraction: 1,
     od_pairs: 40000,
     od_pairs_default: 20000,
-    od_pairs_max: 40000,
-    status: 'ready',
-    build_ms: 100,
-    cached: false
+    od_pairs_max: 40000
   }
 }
 
@@ -67,7 +55,7 @@ describe('traffic analysis store', () => {
     setActivePinia(createPinia())
     vi.mocked(fetchBaseline).mockReset()
     vi.mocked(fetchGraphInfo).mockReset()
-    vi.mocked(fetchArea).mockReset()
+
     vi.mocked(createArea).mockReset()
   })
 
@@ -149,14 +137,18 @@ describe('traffic analysis store', () => {
     expect(Object.keys(store.$state).sort()).toEqual([...EXPECTED_STATE_KEYS].sort())
   })
 
-  it('cycles a modification remove then 50 then 30 then 10 then off', () => {
+  it('is stale when the scenario moved after the run', () => {
     const store = useTrafficAnalysisStore()
-    const actions = []
-    for (let i = 0; i < 5; i++) {
-      store.cycleEdgeModification(1, 2, 'Rue de Test')
-      actions.push(store.getEdgeModification(1, 2))
-    }
-    expect(actions).toEqual(['remove', 'speed50', 'speed30', 'speed10', null])
+    const scenario = useScenarioStore()
+
+    // nothing computed yet, so nothing to be stale about
+    expect(store.isStale).toBe(false)
+
+    store.setEdgeUsage([{ u: 1, v: 2, count: 1, frequency: 1 }], [], undefined, null, scenario.hash)
+    expect(store.isStale).toBe(false)
+
+    scenario.set('1-2', { action: 'remove', dir: 'both', name: 'Rue de Test' })
+    expect(store.isStale).toBe(true)
   })
   it('restores without the bulk arrays', () => {
     const store = useTrafficAnalysisStore()
@@ -164,7 +156,6 @@ describe('traffic analysis store', () => {
     expect(() =>
       store.restoreState({
         isOpen: true,
-        edgeModifications: [{ u: 1, v: 2, action: 'remove', name: 'Rue de Test' }],
         activeVisualization: 'none'
       })
     ).not.toThrow()
@@ -174,7 +165,6 @@ describe('traffic analysis store', () => {
     expect(store.originalEdgeUsage).toEqual([])
     expect(store.newEdgeUsage).toEqual([])
     expect(store.impactStatistics).toBeNull()
-    expect(store.getEdgeModification(1, 2)).toBe('remove')
     expect(store.isRestoring).toBe(false)
   })
 
@@ -182,7 +172,6 @@ describe('traffic analysis store', () => {
     const store = useTrafficAnalysisStore()
     store.restoreState({
       isOpen: true,
-      edgeModifications: [],
       nodePairs: [],
       originalEdgeUsage: [],
       newEdgeUsage: [],
@@ -308,7 +297,6 @@ describe('traffic analysis store', () => {
 
     store.restoreState({
       isOpen: true,
-      edgeModifications: [],
       originalEdgeUsage: usage,
       newEdgeUsage: usage,
       activeVisualization: 'frequency',
@@ -340,7 +328,6 @@ describe('traffic analysis store', () => {
 
     store.restoreState({
       isOpen: true,
-      edgeModifications: [],
       nodePairs: [],
       originalEdgeUsage: usage,
       newEdgeUsage: usage,
@@ -354,28 +341,30 @@ describe('traffic analysis store', () => {
     expect(store.minValue).toBeCloseTo(EXPECTED_SCALES.perMode.co2.min, 10)
   })
 
-  it('drops the results and the modifications when the area changes', () => {
+  it('drops the results and the scenario when the area changes', () => {
     const store = useTrafficAnalysisStore()
+    const scenario = useScenarioStore()
     const usage = makeUsage()
     store.setEdgeUsage(usage, usage, undefined, 20000)
-    store.cycleEdgeModification(1, 2, 'Rue de Bourg')
+    scenario.set('1-2', { action: 'remove', dir: 'both', name: 'Rue de Bourg' })
 
     store.setArea(BERN)
 
     expect(store.area).toEqual(BERN)
     expect(store.areaId).toBeNull()
     expect(store.newEdgeUsage).toHaveLength(0)
-    expect(store.edgeModificationsCount).toBe(0)
+    expect(scenario.count).toBe(0)
   })
 
   it('does nothing when the same circle is set again', () => {
     const store = useTrafficAnalysisStore()
+    const scenario = useScenarioStore()
     store.setArea(BERN)
-    store.cycleEdgeModification(1, 2, 'a street')
+    scenario.set('1-2', { action: 'remove', dir: 'both', name: 'a street' })
 
     store.setArea({ ...BERN })
 
-    expect(store.edgeModificationsCount).toBe(1)
+    expect(scenario.count).toBe(1)
   })
 
   it('caches the baseline per area', async () => {
@@ -392,7 +381,7 @@ describe('traffic analysis store', () => {
 
     // another area, same count: the numbers are not the same, ask again
     store.setArea(BERN)
-    vi.mocked(fetchArea).mockResolvedValue(areaInfo(BERN_ID))
+    vi.mocked(createArea).mockResolvedValue(areaInfo(BERN_ID))
     await store.ensureArea()
 
     await store.getBaseline(20000)
@@ -400,34 +389,29 @@ describe('traffic analysis store', () => {
     expect(vi.mocked(fetchBaseline).mock.calls[1][1]).toBe(BERN_ID)
   })
 
-  it('asks the server once for an area, and builds it when it is gone', async () => {
+  it('asks the server once for an area, whatever the number of callers', async () => {
     const store = useTrafficAnalysisStore()
     store.setArea(BERN)
-    vi.mocked(fetchArea).mockResolvedValue(areaInfo(BERN_ID))
+    vi.mocked(createArea).mockResolvedValue(areaInfo(BERN_ID))
 
     const [a, b] = await Promise.all([store.ensureArea(), store.ensureArea()])
 
     expect(a).toBe(BERN_ID)
     expect(b).toBe(BERN_ID)
-    expect(fetchArea).toHaveBeenCalledTimes(1)
-    expect(fetchArea).toHaveBeenCalledWith(BERN_ID)
-    expect(createArea).not.toHaveBeenCalled()
+    expect(createArea).toHaveBeenCalledTimes(1)
+    expect(createArea).toHaveBeenCalledWith(BERN)
     expect(store.areaId).toBe(BERN_ID)
     expect(store.isBuildingArea).toBe(false)
 
     // it was evicted: the next call builds it back from the geometry
     store.forgetAreaId()
-    vi.mocked(fetchArea).mockRejectedValue(new ApiError('gone', 404, 'area_not_loaded'))
-    vi.mocked(createArea).mockResolvedValue(areaInfo(BERN_ID))
-
     expect(await store.ensureArea()).toBe(BERN_ID)
-    expect(createArea).toHaveBeenCalledWith(BERN)
+    expect(createArea).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the error of a refused area and lets the next call try again', async () => {
     const store = useTrafficAnalysisStore()
     store.setArea(BERN)
-    vi.mocked(fetchArea).mockRejectedValue(new ApiError('gone', 404, 'area_not_loaded'))
     vi.mocked(createArea).mockRejectedValue(
       new ApiError('not enough junctions here', 422, 'too_sparse')
     )
@@ -444,7 +428,7 @@ describe('traffic analysis store', () => {
   it('needs no area for the default city', async () => {
     const store = useTrafficAnalysisStore()
     expect(await store.ensureArea()).toBeNull()
-    expect(fetchArea).not.toHaveBeenCalled()
+    expect(createArea).not.toHaveBeenCalled()
   })
 
   it('restores an area without dropping the restored results', () => {
@@ -454,7 +438,6 @@ describe('traffic analysis store', () => {
     store.restoreState({
       isOpen: true,
       activeVisualization: 'frequency',
-      edgeModifications: [{ u: 1, v: 2, action: 'remove' }],
       newEdgeUsage: usage,
       originalEdgeUsage: usage,
       area: BERN
@@ -462,7 +445,6 @@ describe('traffic analysis store', () => {
 
     expect(store.area).toEqual(BERN)
     expect(store.newEdgeUsage).toHaveLength(usage.length)
-    expect(store.edgeModificationsCount).toBe(1)
   })
 
   it('opens the picker on the current circle', () => {

@@ -35,3 +35,4 @@ htmlcov/
 data/swiss_graph/
 !data/lausanne.geojson
 !data/lausanne.graphml
+!data/*_final_clustered_centroids.csv

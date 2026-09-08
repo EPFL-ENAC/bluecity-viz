@@ -2,7 +2,6 @@ import {
   ApiError,
   areaKey,
   createArea,
-  fetchArea,
   fetchAreaEdges,
   fetchBaseline,
   fetchGraphInfo,
@@ -155,14 +154,10 @@ describe('traffic analysis service', () => {
     expect(info.id).toBe('c_7.4400_46.9500_3000')
   })
 
-  it('reads an area and its streets by id', async () => {
-    fetchMock().mockResolvedValue(okResponse({ id: 'c_7.4400_46.9500_3000' }))
-    await fetchArea('c_7.4400_46.9500_3000')
-    expect(calledUrl()).toBe('/api/v1/areas/c_7.4400_46.9500_3000')
-
+  it('reads the streets of an area by id', async () => {
     fetchMock().mockResolvedValue(okResponse([]))
     await fetchAreaEdges('c_7.4400_46.9500_3000')
-    expect(calledUrl(1)).toBe('/api/v1/areas/c_7.4400_46.9500_3000/edges')
+    expect(calledUrl()).toBe('/api/v1/areas/c_7.4400_46.9500_3000/edges')
   })
 
   it('keeps the rejection code of a preview error', async () => {

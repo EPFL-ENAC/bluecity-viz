@@ -21,11 +21,24 @@ export type TrafficVisualization =
   | 'betweenness'
   | 'betweenness_delta'
 
+// One modified street: both directed edges of `key`, or one of them.
+export interface ScenarioModEntry {
+  key: string
+  action: string
+  dir: string
+  name?: string
+}
+
+// The modified graph. Shared by every tool, so it sits beside the tool inputs
+// rather than inside them.
+export interface ScenarioInputs {
+  edgeModifications: ScenarioModEntry[]
+}
+
 // The inputs of a traffic analysis. This is all we keep in an investigation and
 // all we write to localStorage. Results are recomputed on demand.
 export interface TrafficAnalysisInputs {
   isOpen: boolean
-  edgeModifications: Array<{ u: number; v: number; action: string; name?: string }>
   activeVisualization: TrafficVisualization
   useCongestionModel: boolean
   congestionIterations: number
@@ -55,6 +68,8 @@ export interface TrafficResults {
   resultOdPairs: number | null
   /** the area these results were computed on, so we never show them on another */
   resultAreaKey: string | null
+  /** the scenario these results were computed on, to tell when they go stale */
+  resultScenarioHash?: string | null
 }
 
 // Full state handed to trafficStore.restoreState(). The arrays are always
@@ -69,6 +84,7 @@ export interface Investigation {
   selectedLayers: string[]
   createdAt: Date
   trafficAnalysis?: TrafficAnalysisInputs
+  scenario?: ScenarioInputs
 }
 
 // Project interface

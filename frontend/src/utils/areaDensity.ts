@@ -40,10 +40,10 @@ export interface DensityEstimate {
   edges: number
 }
 
-const M_PER_DEG_LAT = 111320
+export const mPerDegLat = 111320
 
 export function mPerDegLon(lat: number): number {
-  return M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180)
+  return mPerDegLat * Math.cos((lat * Math.PI) / 180)
 }
 
 function densityUrl(): string {
@@ -98,7 +98,7 @@ function coverage(
   let inside = 0
   for (let i = 0; i < steps; i++) {
     const sampleLat = minLat + ((i + 0.5) / steps) * dlat
-    const dy = (sampleLat - lat) * M_PER_DEG_LAT
+    const dy = (sampleLat - lat) * mPerDegLat
     for (let j = 0; j < steps; j++) {
       const sampleLon = minLon + ((j + 0.5) / steps) * dlon
       const dx = (sampleLon - lon) * perLon
@@ -116,7 +116,7 @@ export function estimateCircle(
   radiusM: number
 ): DensityEstimate {
   const { grid } = density
-  const dLatDeg = radiusM / M_PER_DEG_LAT
+  const dLatDeg = radiusM / mPerDegLat
   const dLonDeg = radiusM / Math.max(mPerDegLon(lat), 1)
 
   const col0 = Math.max(0, Math.floor((lon - dLonDeg - grid.lon0) / grid.dlon))
@@ -162,7 +162,7 @@ export function insideCoverage(
   radiusM = 0
 ): boolean {
   if (!bbox) return true
-  const dLat = radiusM / M_PER_DEG_LAT
+  const dLat = radiusM / mPerDegLat
   const dLon = radiusM / Math.max(mPerDegLon(lat), 1)
   return (
     lon + dLon >= bbox[0] && lon - dLon <= bbox[2] && lat + dLat >= bbox[1] && lat - dLat <= bbox[3]

@@ -1,18 +1,19 @@
+import { streetTotals, type StreetTotals } from '@/composables/useResultStates'
 import {
   ApiError,
   areaKey,
   createArea,
   DEFAULT_AREA_ID,
-  fetchArea,
   fetchAreaLimits,
   fetchBaseline,
   fetchGraphInfo,
   type AreaInfo,
   type AreaLimits,
   type AreaSelection,
-  type EdgeModification,
   type ImpactStatistics
 } from '@/services/trafficAnalysis'
+import { useCVRPStore } from '@/stores/cvrp'
+import { useScenarioStore } from '@/stores/scenario'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleDivergingSymlog, scaleSequential } from 'd3-scale'
 import { interpolateSpectral, interpolateViridis } from 'd3-scale-chromatic'
@@ -34,33 +35,15 @@ type LegendMode =
   | 'co2_delta'
   | 'betweenness'
   | 'betweenness_delta'
-export type ModificationAction = 'remove' | 'speed50' | 'speed30' | 'speed10'
 
 /** The visualization modes, 'none' included. */
 export type VisualizationMode = LegendMode
 /** The modes that have a color scale. */
 type ScaledMode = Exclude<VisualizationMode, 'none'>
 
-// Cycle order for edge modification actions
-export const MODIFICATION_CYCLE: (ModificationAction | null)[] = [
-  'remove',
-  'speed50',
-  'speed30',
-  'speed10',
-  null
-]
-
 export interface NodePair {
   origin: number
   destination: number
-}
-
-export interface EdgeModificationDisplay {
-  u: number
-  v: number
-  name: string
-  action: ModificationAction
-  isBidirectional: boolean
 }
 
 export interface EdgeUsageStats {
@@ -125,10 +108,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const isLoading = ref(false)
   const isCalculating = ref(false)
   const isRestoring = ref(false)
-  // Map of edge key -> { action, name }
-  const edgeModifications = ref<Map<string, { action: ModificationAction; name: string }>>(
-    new Map()
-  )
   const nodePairs = shallowRef<NodePair[]>([])
   const originalEdgeUsage = shallowRef<EdgeUsageStats[]>([])
   const newEdgeUsage = shallowRef<EdgeUsageStats[]>([])
@@ -190,67 +169,32 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   let colorCacheScale: ColorScale = null
   let colorCache = new Map<string, [number, number, number]>()
 
-  // Computed: convert edgeModifications to API format
-  const edgeModificationsArray = computed(() => {
-    const result: EdgeModification[] = []
-    edgeModifications.value.forEach((mod, key) => {
-      const [u, v] = key.split('-').map(Number)
-      if (mod.action === 'remove') {
-        result.push({ u, v, action: 'remove' })
-      } else {
-        const speed = mod.action === 'speed10' ? 10 : mod.action === 'speed30' ? 30 : 50
-        result.push({ u, v, action: 'modify', speed_kph: speed })
-      }
-    })
-    return result
-  })
-
-  const edgeModificationsForDisplay = computed(() => {
-    const entries = Array.from(edgeModifications.value.entries())
-    const displayed = new Set<string>()
-    const result: EdgeModificationDisplay[] = []
-
-    entries.forEach(([key, mod]) => {
-      if (displayed.has(key)) return
-
-      const [u, v] = key.split('-').map(Number)
-      const reverseKey = `${v}-${u}`
-      const reverseExists = edgeModifications.value.has(reverseKey)
-
-      result.push({
-        u,
-        v,
-        name: mod.name || `Edge ${u}→${v}`,
-        action: mod.action,
-        isBidirectional: reverseExists
-      })
-
-      displayed.add(key)
-      if (reverseExists) displayed.add(reverseKey)
-    })
-
-    return result.sort((a, b) => a.name.localeCompare(b.name))
-  })
-
-  const edgeModificationsCount = computed(() => {
-    const counted = new Set<string>()
-    let count = 0
-    edgeModifications.value.forEach((_, key) => {
-      if (counted.has(key)) return
-      const [u, v] = key.split('-')
-      counted.add(key)
-      counted.add(`${v}-${u}`)
-      count++
-    })
-    return count
-  })
-
-  // Helper to get modification for an edge
-  function getEdgeModification(u: number, v: number): ModificationAction | null {
-    return edgeModifications.value.get(`${u}-${v}`)?.action ?? null
-  }
+  // The scenario the results on screen were computed with. A result is stale
+  // when the scenario moved since, and the tool says so instead of quietly
+  // answering an old question.
+  const resultScenarioHash = ref<string | null>(null)
 
   const hasCalculatedRoutes = computed(() => originalEdgeUsage.value.length > 0)
+
+  /**
+   * The result per street, both directions summed. The map colours from it and
+   * the dock lists from it, so the sum runs once per result, not once per view.
+   */
+  const resultTotals = computed<StreetTotals[]>(() => {
+    const streets = useScenarioStore().streets
+    if (newEdgeUsage.value.length === 0 || streets.size === 0) return []
+    return streetTotals(newEdgeUsage.value, streets)
+  })
+
+  /**
+   * True when the graph was edited after this result was computed. The result
+   * stays on the map, faded, until it is run again.
+   */
+  const isStale = computed(() => {
+    if (!hasCalculatedRoutes.value) return false
+    const scenario = useScenarioStore()
+    return resultScenarioHash.value !== scenario.hash
+  })
 
   // Available visualization modes based on calculated data
   const availableVisualizations = computed(() => {
@@ -303,33 +247,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   function closePanel() {
     isOpen.value = false
-  }
-
-  // Cycle through modification actions: remove → speed10 → speed30 → speed50 → (none)
-  function cycleEdgeModification(u: number, v: number, name?: string) {
-    const key = `${u}-${v}`
-    const current = edgeModifications.value.get(key)
-    const currentAction = current?.action ?? null
-    const currentIndex = MODIFICATION_CYCLE.indexOf(currentAction)
-    const nextAction = MODIFICATION_CYCLE[(currentIndex + 1) % MODIFICATION_CYCLE.length]
-
-    const newMap = new Map(edgeModifications.value)
-    if (nextAction === null) {
-      newMap.delete(key)
-    } else {
-      newMap.set(key, { action: nextAction, name: name || current?.name || `Edge ${u}→${v}` })
-    }
-    edgeModifications.value = newMap
-  }
-
-  function removeEdgeModification(u: number, v: number) {
-    const newMap = new Map(edgeModifications.value)
-    newMap.delete(`${u}-${v}`)
-    edgeModifications.value = newMap
-  }
-
-  function clearEdgeModifications() {
-    edgeModifications.value = new Map()
   }
 
   function setNodePairs(pairs: NodePair[]) {
@@ -464,12 +381,14 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     original: EdgeUsageStats[],
     newUsage: EdgeUsageStats[],
     impact?: ImpactStatistics,
-    usedOdPairs?: number | null
+    usedOdPairs?: number | null,
+    scenarioHash?: string | null
   ) {
     originalEdgeUsage.value = original
     newEdgeUsage.value = newUsage
     impactStatistics.value = impact ? markRaw(impact) : null
     resultOdPairs.value = usedOdPairs ?? null
+    if (scenarioHash !== undefined) resultScenarioHash.value = scenarioHash
 
     scales = buildScales(newUsage)
 
@@ -480,6 +399,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
     // Delta is the interesting view when the routes moved, otherwise frequency
     activeVisualization.value = scales.delta ? 'delta' : 'frequency'
+
+    // A fresh result is what the user asked for, so light the tool zone.
+    if (useScenarioStore().activeTab === 'routing') useScenarioStore().mapMode = 'result'
 
     updateActiveColorScale()
   }
@@ -492,6 +414,10 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     scales = emptyScales()
     activeVisualization.value = 'none'
     filterBusRoutes.value = false
+    resultScenarioHash.value = null
+    // Nothing left to read in colour, back to the scenario. Only if the user
+    // is looking at this tab, the other tool may still have a result up.
+    if (useScenarioStore().activeTab === 'routing') useScenarioStore().mapMode = 'scenario'
     updateActiveColorScale()
   }
 
@@ -579,8 +505,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   /**
    * Change the area the workbench runs on.
    *
-   * The edge modifications go with it: they name streets of the old graph, and
-   * a street id means nothing in another area. The results go too.
+   * The scenario goes with it: a street key names streets of the old graph and
+   * means nothing in another area. Both results go too. The stores are read
+   * here and not at the top of the file, they need each other.
    */
   function setArea(selection: AreaSelection | null) {
     if (areaKey(selection) === areaKey(area.value)) return
@@ -592,15 +519,24 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     areaError.value = null
     areaPromise = null
     clearResults()
-    clearEdgeModifications()
+
+    const scenario = useScenarioStore()
+    scenario.clear()
+    scenario.select(null)
+    scenario.hover(null)
+    scenario.setStreets(new Map())
+    // The waste routes are on the old streets too, and only the default city
+    // has the waste data, so a drawn area shows the routing tab alone.
+    useCVRPStore().clearResult()
+    if (selection) scenario.activeTab = 'routing'
   }
 
   /**
    * Make sure the server has this area, and give back its id.
    *
-   * The id comes from the geometry, so an area saved yesterday is asked for
-   * by shape: if the server still has it the call is free, if it dropped it
-   * we build it again.
+   * Always a create: the server answers from its own cache when it still has
+   * the circle, so an area saved yesterday costs one round trip either way,
+   * and the id is minted in one place instead of two.
    */
   function ensureArea(): Promise<string | null> {
     if (!area.value) return Promise.resolve(null)
@@ -612,11 +548,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
     areaError.value = null
     isBuildingArea.value = true
-    areaPromise = fetchArea(wanted)
-      .catch((error) => {
-        if (error instanceof ApiError && error.status === 404) return createArea(selection)
-        throw error
-      })
+    const request = createArea(selection)
       .then((info) => {
         // the user may have moved the circle while we were building
         if (areaKey(area.value) !== wanted) return areaId.value
@@ -637,7 +569,8 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         isBuildingArea.value = false
       })
 
-    return areaPromise
+    areaPromise = request
+    return request
   }
 
   /** Open the picker on the current circle, or on a fresh one. */
@@ -737,7 +670,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // Batch restore function for investigation switching (avoids multiple reactive updates)
   function restoreState(state: {
     isOpen: boolean
-    edgeModifications?: Array<{ u: number; v: number; action: string; name?: string }>
     nodePairs?: Array<{ origin: number; destination: number }>
     originalEdgeUsage?: EdgeUsageStats[]
     newEdgeUsage?: EdgeUsageStats[]
@@ -750,12 +682,14 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     odPairs?: number | null
     resultOdPairs?: number | null
     area?: AreaSelection | null
+    resultScenarioHash?: string | null
   }) {
     isRestoring.value = true
     isOpen.value = state.isOpen
+    resultScenarioHash.value = state.resultScenarioHash ?? null
 
-    // The area comes first: the modifications and the results below belong to
-    // it. setArea would clear them, so we assign instead.
+    // The area comes first: the scenario and the results below belong to it.
+    // setArea would clear them, so we assign instead.
     if (state.area !== undefined) {
       const next = state.area ?? null
       if (areaKey(next) !== areaKey(area.value)) {
@@ -767,19 +701,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         areaPromise = null
       }
     }
-
-    // Restore edge modifications
-    const modMap = new Map<string, { action: ModificationAction; name: string }>()
-    ;(state.edgeModifications ?? []).forEach(
-      (edge: { u: number; v: number; action: string; name?: string }) => {
-        const key = `${edge.u}-${edge.v}`
-        modMap.set(key, {
-          action: (edge.action as ModificationAction) || 'remove',
-          name: edge.name || `Edge ${edge.u}→${edge.v}`
-        })
-      }
-    )
-    edgeModifications.value = modMap
 
     nodePairs.value = state.nodePairs ?? []
 
@@ -822,7 +743,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     isLoading,
     isCalculating,
     isRestoring,
-    edgeModifications,
     nodePairs,
     originalEdgeUsage,
     newEdgeUsage,
@@ -853,20 +773,16 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     activeVisualization,
 
     // Computed
-    edgeModificationsArray,
-    edgeModificationsForDisplay,
-    edgeModificationsCount,
     hasCalculatedRoutes,
+    resultTotals,
+    resultScenarioHash,
+    isStale,
     availableVisualizations,
 
     // Actions
     togglePanel,
     openPanel,
     closePanel,
-    cycleEdgeModification,
-    removeEdgeModification,
-    clearEdgeModifications,
-    getEdgeModification,
     setNodePairs,
     setOdPairs,
     loadGraphInfo,

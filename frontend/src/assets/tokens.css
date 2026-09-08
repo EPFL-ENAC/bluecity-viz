@@ -33,6 +33,7 @@
   --bc-panel: #ffffff; /* sidebar, dock, dialogs */
   --bc-panel-translucent: rgba(255, 255, 255, 0.96); /* analysis dock over the map */
   --bc-legend-bg: rgba(255, 255, 255, 0.9); /* legend over the map */
+  --bc-graph-grey: #b8b8b8; /* the street graph hairline, for the legend */
   --bc-ink: #141414; /* primary text, filled checkboxes, primary buttons */
   --bc-grey: #8e8e8e; /* secondary text, micro-labels, inactive rows */
   --bc-grey-2: #b6b6b6; /* tertiary text, separators in breadcrumbs */
@@ -71,6 +72,7 @@
   --bc-panel: #1b1b1b;
   --bc-panel-translucent: rgba(27, 27, 27, 0.96);
   --bc-legend-bg: rgba(27, 27, 27, 0.9);
+  --bc-graph-grey: #5c5c5c;
   --bc-ink: #f2f2f2;
   --bc-grey: #8e8e8e;
   --bc-grey-2: #5c5c5c;

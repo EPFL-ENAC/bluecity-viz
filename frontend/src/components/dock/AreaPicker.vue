@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import BcRow from '@/components/ui/BcRow.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
-import type { AreaFeedback } from '@/composables/useAreaPicker'
+import type { AreaFeedback } from '@/composables/useAreaFeedback'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { computed } from 'vue'
 
-// The circle itself lives on the map, drawn by useAreaPicker from the deck.gl
-// layer list. This panel is the numbers and the two buttons.
+// The circle itself lives on the map, drawn by AreaPickerOverlay. This panel
+// is the numbers and the two buttons.
 const props = defineProps<{
   feedback: AreaFeedback
   canUse: boolean
@@ -62,7 +62,7 @@ const centre = computed(() => {
 <template>
   <div class="dock-panel">
     <div class="dock-head">
-      <div class="bc-micro">Traffic analysis</div>
+      <div class="bc-micro">Scenario</div>
       <div class="dock-title">Pick an area</div>
     </div>
 

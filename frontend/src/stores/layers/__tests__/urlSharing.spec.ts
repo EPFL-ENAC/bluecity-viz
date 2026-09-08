@@ -64,8 +64,31 @@ describe('share link', () => {
     expect(shared.name).toBe('Bern closure (Shared)')
     expect(shared.trafficAnalysis.area).toEqual(BERN)
     expect(shared.trafficAnalysis.odPairs).toBe(76200)
-    expect(shared.trafficAnalysis.edgeModifications).toEqual([
-      { u: 1, v: 2, action: 'remove', name: 'Rue X' }
+    // The link was made before the scenario moved out of the traffic inputs,
+    // so the edges arrive in the old shape and come back as street keys.
+    expect(shared.scenario.edgeModifications).toEqual([
+      { key: '1-2', action: 'remove', dir: 'fwd', name: 'Rue X' }
+    ])
+  })
+
+  it('carries the scenario of a link made today', () => {
+    const investigation: Investigation = {
+      id: 'inv-1',
+      name: 'Bern closure',
+      selectedSources: [],
+      selectedLayers: [],
+      createdAt: new Date(),
+      trafficAnalysis: trafficInputs(BERN),
+      scenario: { edgeModifications: [{ key: '4-9', action: '30', dir: 'both', name: 'Rue Y' }] }
+    }
+
+    vi.stubGlobal('location', { origin: 'http://x', pathname: '/', search: '' })
+    const url = makeSharing(investigation).sharing.generateShareableUrl()
+    vi.unstubAllGlobals()
+
+    const shared = receive(url).projects.value[0].investigations[0]
+    expect(shared.scenario.edgeModifications).toEqual([
+      { key: '4-9', action: '30', dir: 'both', name: 'Rue Y' }
     ])
   })
 

@@ -34,6 +34,8 @@ export interface EdgeGeometry {
   length?: number
   name?: string
   highway?: string
+  /** the posted speed, shown in the hover card and the edit popover */
+  speed_kph?: number
   bus_route_count?: number
   bus_route_refs?: string
 }
@@ -61,6 +63,7 @@ export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[
       length: feature.properties.length,
       name: feature.properties.name,
       highway: feature.properties.highway,
+      speed_kph: feature.properties.speed_kph,
       bus_route_count: feature.properties.bus_route_count ?? 0,
       bus_route_refs: feature.properties.bus_route_refs ?? ''
     }))
@@ -261,10 +264,7 @@ export interface AreaSelection {
 /** An area the server has in memory and can route on. */
 export interface AreaInfo {
   id: string
-  kind: string
-  name: string
-  circle: { lon: number; lat: number; radius_m: number } | null
-  polygon: [number, number][] | null
+  circle: { lon: number; lat: number; radius_m: number }
   bbox: [number, number, number, number] | null
   node_count: number
   edge_count: number
@@ -272,9 +272,6 @@ export interface AreaInfo {
   od_pairs: number
   od_pairs_default: number
   od_pairs_max: number
-  status: string
-  build_ms: number
-  cached: boolean
 }
 
 export type AreaRejectionCode = 'too_sparse' | 'too_large' | 'disconnected' | 'outside_coverage'
@@ -293,7 +290,8 @@ export interface AreaPreview {
 
 /** The rules the picker checks while the circle is dragged. */
 export interface AreaLimits {
-  min_nodes: number
+  /** junctions, not nodes: a dead end helps nobody route */
+  min_junctions: number
   max_nodes: number
   max_edges: number
   min_scc_fraction: number
@@ -320,12 +318,6 @@ export function areaKey(area: AreaSelection | null): string {
 export async function fetchAreaLimits(): Promise<AreaLimits> {
   const response = await fetch(`${AREAS_BASE_URL}/limits`)
   if (!response.ok) await throwHttpError(response, 'Failed to fetch the area limits')
-  return response.json()
-}
-
-export async function fetchArea(areaId: string): Promise<AreaInfo> {
-  const response = await fetch(`${AREAS_BASE_URL}/${encodeURIComponent(areaId)}`)
-  if (!response.ok) await throwHttpError(response, 'Failed to fetch the area')
   return response.json()
 }
 
