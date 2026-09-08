@@ -532,6 +532,26 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
     },
     paint: { 'text-color': Q ? MUTE : INK, 'text-halo-color': PAPER, 'text-halo-width': 1.6 }
   })
+  // The big cities are class 'city', not in the list above, so without this
+  // layer Genève, Lausanne and Zürich have no name while their villages do.
+  // Last, so MapLibre places it first and a village never pushes a city out.
+  // Inside the layer, 'rank' puts Zürich before a small city.
+  L.push({
+    id: 'place-city',
+    type: 'symbol',
+    source: 'openmaptiles',
+    'source-layer': 'place',
+    filter: ['==', 'class', 'city'],
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Noto Sans Bold'],
+      'text-size': 13,
+      'text-letter-spacing': 0.1,
+      'text-transform': 'uppercase',
+      'symbol-sort-key': ['get', 'rank']
+    },
+    paint: { 'text-color': Q ? MUTE : INK, 'text-halo-color': PAPER, 'text-halo-width': 1.6 }
+  })
 
   return {
     version: 8,
