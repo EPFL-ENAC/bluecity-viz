@@ -14,6 +14,7 @@ from typing import Dict, Optional, Sequence
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
+import shapely
 
 from app.services.graph_store import (
     DENSITY_FILE,
@@ -32,6 +33,57 @@ logger = logging.getLogger(__name__)
 
 
 DENSITY_REFINE = 5
+
+# How far a drawn street may move when the shape points it does not need are
+# dropped. A road is stored with a point every few metres, twice what it takes
+# to draw it. Douglas-Peucker at half a metre keeps two thirds of them and the
+# file loses a third of its size. Nothing else changes: the two ends of an edge
+# are its nodes and are never moved, and length, travel_time and every routing
+# number are stored in their own columns.
+SIMPLIFY_M = 0.5
+
+# One degree of latitude in metres, near enough anywhere in Switzerland.
+M_PER_DEG = 111_320.0
+
+# The coordinates are the file, four fifths of it, and plain float32 hardly
+# compresses at all. Byte stream split puts the bytes of the same weight
+# together, which gives zstd something to work with: a third off, and the
+# reader does not even know, parquet undoes the encoding on its own.
+EDGE_PARQUET = {
+    "compression": "zstd",
+    "column_encoding": {"geom_xy.list.element": "BYTE_STREAM_SPLIT"},
+    # everything else is a number, only these two repeat themselves
+    "use_dictionary": ["highway", "name"],
+}
+NODE_PARQUET = {
+    "compression": "zstd",
+    "column_encoding": {name: "BYTE_STREAM_SPLIT" for name in ("x", "y", "elevation")},
+    "use_dictionary": False,
+}
+
+
+def simplify_geometry(geometry: Sequence[np.ndarray], metres: float = SIMPLIFY_M) -> list:
+    """The same lines with the points a road does not need dropped.
+
+    One shapely call for the whole country: a loop over the edges took longer
+    than everything else in the build.
+    """
+    pairs = [np.asarray(g, dtype=np.float64).reshape(-1, 2) for g in geometry]
+    if not metres or not pairs:
+        return [p.astype(np.float32).reshape(-1) for p in pairs]
+
+    counts = np.fromiter((len(p) for p in pairs), dtype=np.int64, count=len(pairs))
+    index = np.repeat(np.arange(len(pairs)), counts)
+    lines = shapely.linestrings(np.concatenate(pairs), indices=index)
+    # preserve_topology=False is Douglas-Peucker, which keeps both ends.
+    simple = shapely.simplify(lines, metres / M_PER_DEG, preserve_topology=False)
+
+    coords, back = shapely.get_coordinates(simple, return_index=True)
+    kept = np.bincount(back, minlength=len(pairs))
+    ends = np.zeros(len(pairs) + 1, dtype=np.int64)
+    np.cumsum(kept, out=ends[1:])
+    flat = coords.astype(np.float32).reshape(-1)
+    return [flat[2 * ends[i] : 2 * ends[i + 1]] for i in range(len(pairs))]
 
 
 def density_grid(grid: Grid, refine: int = DENSITY_REFINE) -> Grid:
@@ -141,7 +193,7 @@ def write_store(
     elev_gain = np.asarray(edges["elev_gain"], dtype=np.float32)
     highway = edges.get("highway")
     name = edges.get("name")
-    geom32 = [np.asarray(g, dtype=np.float32).reshape(-1) for g in geometry]
+    geom32 = simplify_geometry(geometry)
 
     index = {
         "format_version": FORMAT_VERSION,
@@ -156,12 +208,8 @@ def write_store(
     steps = cells + [cells[-1] + 1] if cells else []
     node_bounds = np.searchsorted(node_cell[node_order], steps)
     edge_bounds = np.searchsorted(edge_cell[edge_order], steps)
-    node_writer = pq.ParquetWriter(
-        directory / NODES_FILE, pa.schema(NODE_COLUMNS), compression="zstd"
-    )
-    edge_writer = pq.ParquetWriter(
-        directory / EDGES_FILE, pa.schema(EDGE_COLUMNS), compression="zstd"
-    )
+    node_writer = pq.ParquetWriter(directory / NODES_FILE, pa.schema(NODE_COLUMNS), **NODE_PARQUET)
+    edge_writer = pq.ParquetWriter(directory / EDGES_FILE, pa.schema(EDGE_COLUMNS), **EDGE_PARQUET)
     node_rg = edge_rg = 0
     try:
         for i, cell in enumerate(cells):
