@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import ImpactStatistics from '@/components/ImpactStatistics.vue'
+import AreaPicker from '@/components/dock/AreaPicker.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcRow from '@/components/ui/BcRow.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
+import { useAreaPicker } from '@/composables/useAreaPicker'
 import { ApiError, recalculateRoutes } from '@/services/trafficAnalysis'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { computed, onMounted, ref, watch } from 'vue'
+import type { Map as MapLibre } from 'maplibre-gl'
+import { computed, inject, onMounted, ref, watch, type Ref } from 'vue'
 
 const layersStore = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
+const areaPicker = useAreaPicker()
+const mapRef = inject<Ref<{ map?: MapLibre }>>('mapRef')
 
 const loadingMessage = ref('')
 
@@ -25,6 +30,20 @@ function refreshGraphInfo() {
 }
 onMounted(refreshGraphInfo)
 watch(() => trafficStore.areaId, refreshGraphInfo)
+
+// The area line at the top of the dock.
+const areaName = computed(() => {
+  const circle = trafficStore.area
+  if (!circle) return 'Lausanne (default)'
+  const km = (circle.radiusM / 1000).toFixed(1)
+  return `${km} km around ${circle.lat.toFixed(3)}, ${circle.lon.toFixed(3)}`
+})
+
+/** Open the picker on the circle we have, or on what the map is looking at. */
+function changeArea() {
+  const centre = mapRef?.value?.map?.getCenter()
+  trafficStore.enterPickMode(centre ? { lon: centre.lng, lat: centre.lat } : undefined)
+}
 
 function formatTrips(count: number): string {
   return count.toLocaleString('en-US')
@@ -155,10 +174,30 @@ async function calculateRoutes() {
 </script>
 
 <template>
-  <div class="dock-panel">
+  <AreaPicker
+    v-if="trafficStore.pickMode"
+    :feedback="areaPicker.feedback.value"
+    :can-use="areaPicker.canUse.value"
+    :is-checking="areaPicker.isChecking.value"
+    :limits="areaPicker.limits.value"
+  />
+
+  <div v-else class="dock-panel">
     <div class="dock-head">
       <div class="bc-micro">Traffic analysis</div>
       <div class="dock-title">{{ title }}</div>
+    </div>
+
+    <!-- Area -->
+    <div class="dock-section">
+      <div class="dock-section__head">
+        <span class="bc-micro">Area</span>
+        <button class="bc-micro clear-btn" @click="changeArea">Change area</button>
+      </div>
+      <div class="area-name">{{ areaName }}</div>
+      <p v-if="trafficStore.areaError" class="bc-empty area-error">
+        {{ trafficStore.areaError.message }}
+      </p>
     </div>
 
     <!-- Modified edges -->
@@ -414,6 +453,16 @@ async function calculateRoutes() {
 
 .edge-empty {
   margin: 8px 0 0;
+}
+
+.area-name {
+  font-size: var(--bc-fs-body);
+  padding: 4px 0 0;
+}
+
+.area-error {
+  margin: 6px 0 0;
+  color: var(--bc-danger);
 }
 
 .info-icon {

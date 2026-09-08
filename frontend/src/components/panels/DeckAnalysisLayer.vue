@@ -2,6 +2,7 @@
 import CVRPTooltip from '@/components/CVRPTooltip.vue'
 import DeckGLOverlay from '@/components/DeckGLOverlay.vue'
 import EdgeTooltip from '@/components/EdgeTooltip.vue'
+import { useAreaPicker } from '@/composables/useAreaPicker'
 import { useDeckGLCVRP } from '@/composables/useDeckGLCVRP'
 import { useDeckGLTrafficAnalysis } from '@/composables/useDeckGLTrafficAnalysis'
 import { useCVRPStore } from '@/stores/cvrp'
@@ -17,6 +18,7 @@ const cvrpStore = useCVRPStore()
 
 const deckGLTraffic = useDeckGLTrafficAnalysis()
 const deckGLCVRP = useDeckGLCVRP(deckGLTraffic.edgeMap)
+const areaPicker = useAreaPicker()
 
 const edgeTooltip = ref<InstanceType<typeof EdgeTooltip> | null>(null)
 const cvrpTooltip = ref<InstanceType<typeof CVRPTooltip> | null>(null)
@@ -29,6 +31,10 @@ const anyToolOpen = computed(() => trafficStore.isOpen || cvrpStore.isOpen)
 const combinedLayers = computed(() => {
   if (!anyToolOpen.value) return []
 
+  // Picking an area: the circle over the country, nothing of the current one.
+  // Its streets are about to be replaced anyway.
+  if (trafficStore.pickMode) return areaPicker.layers.value
+
   const trafficLayers = cvrpStore.hasResult
     ? deckGLTraffic.layers.value.filter((l: any) => !l.id.startsWith('traffic-routes'))
     : deckGLTraffic.layers.value
@@ -37,12 +43,18 @@ const combinedLayers = computed(() => {
 })
 
 function handleDeckClick(info: any) {
+  // In pick mode a click on the map moves the circle, it never edits a street.
+  if (areaPicker.handleMapClick(info)) return
   deckGLTraffic.handleClick(info)
 }
 
 // The CVRP route layer shows its own tooltip through its onHover, so the edge
 // tooltip stands down while a CVRP result is on screen.
 function handleDeckHover(info: any) {
+  if (trafficStore.pickMode) {
+    deckGLTraffic.clearHover()
+    return
+  }
   if (cvrpStore.hasResult) {
     deckGLTraffic.clearHover()
     return

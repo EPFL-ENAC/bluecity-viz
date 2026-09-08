@@ -300,7 +300,6 @@ export interface AreaLimits {
   min_radius_m: number
   max_radius_m: number
   coverage_bbox: [number, number, number, number] | null
-  density_url: string
 }
 
 function areaBody(area: AreaSelection): string {

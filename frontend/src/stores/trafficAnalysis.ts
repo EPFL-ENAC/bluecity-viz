@@ -3,9 +3,11 @@ import {
   areaKey,
   createArea,
   fetchArea,
+  fetchAreaLimits,
   fetchBaseline,
   fetchGraphInfo,
   type AreaInfo,
+  type AreaLimits,
   type AreaSelection,
   type EdgeModification,
   type ImpactStatistics
@@ -15,6 +17,11 @@ import { scaleDiverging, scaleDivergingSymlog, scaleSequential } from 'd3-scale'
 import { interpolateSpectral, interpolateViridis } from 'd3-scale-chromatic'
 import { defineStore } from 'pinia'
 import { computed, markRaw, ref, shallowRef } from 'vue'
+
+// Where the picker opens when the scenario has no area yet, and how big the
+// circle starts. The map centre wins when the caller knows it.
+const DEFAULT_CENTRE = { lon: 6.6323, lat: 46.5197 }
+const DEFAULT_RADIUS_M = 3000
 
 type ColorScale = ((value: number) => string) | null
 type LegendMode =
@@ -142,6 +149,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const areaInfo = shallowRef<AreaInfo | null>(null)
   const isBuildingArea = ref(false)
   const areaError = shallowRef<{ code?: string; message: string } | null>(null)
+
+  // The picker. UI only, nothing here is saved: the circle being dragged, and
+  // the rules the server applies to it.
+  const pickMode = ref(false)
+  const draftArea = ref<AreaSelection | null>(null)
+  const areaLimits = shallowRef<AreaLimits | null>(null)
 
   // Filled once from /graph-info: the server default, the most it accepts, and
   // the count the "full" choice sends (the set really sampled at startup).
@@ -626,6 +639,52 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     return areaPromise
   }
 
+  /** Open the picker on the current circle, or on a fresh one. */
+  function enterPickMode(fallback?: { lon: number; lat: number }) {
+    draftArea.value = area.value
+      ? { ...area.value }
+      : {
+          kind: 'circle',
+          lon: fallback?.lon ?? DEFAULT_CENTRE.lon,
+          lat: fallback?.lat ?? DEFAULT_CENTRE.lat,
+          radiusM: DEFAULT_RADIUS_M
+        }
+    pickMode.value = true
+  }
+
+  /** Close the picker. Confirming makes the draft the area of the scenario. */
+  function exitPickMode(confirm: boolean) {
+    if (confirm && draftArea.value) setArea({ ...draftArea.value })
+    pickMode.value = false
+    draftArea.value = null
+  }
+
+  /** Back to the city the server loaded at startup. */
+  function useDefaultArea() {
+    setArea(null)
+    pickMode.value = false
+    draftArea.value = null
+  }
+
+  function moveDraft(lon: number, lat: number) {
+    if (draftArea.value) draftArea.value = { ...draftArea.value, lon, lat }
+  }
+
+  function setDraftRadius(radiusM: number) {
+    if (draftArea.value) draftArea.value = { ...draftArea.value, radiusM }
+  }
+
+  /** The rules the picker checks, read once from the server. */
+  function loadAreaLimits(): Promise<AreaLimits | null> {
+    if (areaLimits.value) return Promise.resolve(areaLimits.value)
+    return fetchAreaLimits()
+      .then((limits) => {
+        areaLimits.value = limits
+        return limits
+      })
+      .catch(() => null)
+  }
+
   /** The area is gone from the server: build it again on the next call. */
   function forgetAreaId() {
     forgetArea(areaId.value ?? 'lausanne')
@@ -781,6 +840,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     areaInfo,
     isBuildingArea,
     areaError,
+    pickMode,
+    draftArea,
+    areaLimits,
 
     // Visualization state
     legendMode,
@@ -811,6 +873,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     setArea,
     ensureArea,
     forgetAreaId,
+    enterPickMode,
+    exitPickMode,
+    useDefaultArea,
+    moveDraft,
+    setDraftRadius,
+    loadAreaLimits,
     setEdgeUsage,
     clearResults,
     getColor,

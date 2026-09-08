@@ -24,7 +24,8 @@ vi.mock('@/services/trafficAnalysis', async () => ({
   fetchBaseline: vi.fn(),
   fetchGraphInfo: vi.fn(),
   fetchArea: vi.fn(),
-  createArea: vi.fn()
+  createArea: vi.fn(),
+  fetchAreaLimits: vi.fn().mockRejectedValue(new Error('not in this test'))
 }))
 
 const BERN = { kind: 'circle' as const, lon: 7.44, lat: 46.95, radiusM: 3000 }
@@ -462,5 +463,62 @@ describe('traffic analysis store', () => {
     expect(store.area).toEqual(BERN)
     expect(store.newEdgeUsage).toHaveLength(usage.length)
     expect(store.edgeModificationsCount).toBe(1)
+  })
+
+  it('opens the picker on the current circle', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+
+    store.enterPickMode()
+
+    expect(store.pickMode).toBe(true)
+    expect(store.draftArea).toEqual(BERN)
+    // a copy, so dragging does not change the area behind it
+    expect(store.draftArea).not.toBe(store.area)
+  })
+
+  it('opens the picker where the map looks when there is no circle yet', () => {
+    const store = useTrafficAnalysisStore()
+
+    store.enterPickMode({ lon: 8.54, lat: 47.37 })
+
+    expect(store.draftArea).toEqual({ kind: 'circle', lon: 8.54, lat: 47.37, radiusM: 3000 })
+    expect(store.area).toBeNull()
+  })
+
+  it('keeps the draft out of the scenario until it is confirmed', () => {
+    const store = useTrafficAnalysisStore()
+    store.enterPickMode()
+    store.moveDraft(7.44, 46.95)
+    store.setDraftRadius(5000)
+
+    store.exitPickMode(false)
+
+    expect(store.pickMode).toBe(false)
+    expect(store.draftArea).toBeNull()
+    expect(store.area).toBeNull()
+  })
+
+  it('makes the draft the area when it is confirmed', () => {
+    const store = useTrafficAnalysisStore()
+    store.enterPickMode()
+    store.moveDraft(7.44, 46.95)
+    store.setDraftRadius(3000)
+
+    store.exitPickMode(true)
+
+    expect(store.pickMode).toBe(false)
+    expect(store.area).toEqual(BERN)
+  })
+
+  it('goes back to the default city and closes the picker', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    store.enterPickMode()
+
+    store.useDefaultArea()
+
+    expect(store.area).toBeNull()
+    expect(store.pickMode).toBe(false)
   })
 })
