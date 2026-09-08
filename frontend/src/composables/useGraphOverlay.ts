@@ -6,6 +6,13 @@ import { streetKey, useScenarioStore, type ScenarioDir } from '@/stores/scenario
 import { useThemeStore } from '@/stores/theme'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import {
+  AREA_RING_LAYER,
+  AREA_SOURCE,
+  areaFeatures,
+  areaRingLayer,
+  emptyArea
+} from '@/utils/areaCircle'
+import {
   addGraphImages,
   applyCvrp,
   applyCvrpHover,
@@ -23,6 +30,7 @@ import {
   graphLayerIds,
   idFilter,
   POINTER_SOURCE,
+  setData,
   setGraphEdges,
   setPointer,
   type CvrpRouteRef,
@@ -151,16 +159,54 @@ export function useGraphOverlay(
    * The network and the style arrive in either order, so this is called from
    * both sides and simply waits when the style is not ready yet.
    */
+  /**
+   * The circle of the area being studied, kept on the map.
+   *
+   * It says how big the area is, so it is drawn as soon as the area is known,
+   * without waiting for its streets: it only needs the map. Under the graph,
+   * so the streets and the result colours stay on top of it.
+   */
+  function drawArea(): void {
+    const map = mapRef.value
+    if (!map || !scenarioStore.isOpen || trafficStore.pickMode) return
+
+    const area = trafficStore.area
+    try {
+      if (!map.getSource(AREA_SOURCE)) {
+        map.addSource(AREA_SOURCE, {
+          type: 'geojson',
+          data: emptyArea() as unknown as FeatureCollection
+        })
+      }
+      if (!map.getLayer(AREA_RING_LAYER)) {
+        const under = map.getLayer('bc-graph-one')
+          ? 'bc-graph-one'
+          : map.getLayer(BEFORE_LAYER)
+            ? BEFORE_LAYER
+            : undefined
+        map.addLayer(areaRingLayer(colors.value), under)
+      }
+      // The default city is not a circle the user drew, so it has no ring.
+      setData(map, AREA_SOURCE, area ? areaFeatures(area, true) : emptyArea())
+    } catch {
+      retryLater(map)
+    }
+  }
+
   function mount(): void {
     const map = mapRef.value
-    const source = graph.value
-    if (!map || !source) return
+    if (!map) return
     // The workbench owns the graph, the scenario and the results. With it
     // closed the map goes back to the basemap and the datasets, as it was
     // before the workbench was ever opened.
     if (!scenarioStore.isOpen) return
     // Picking an area shows the whole country, the city under it is noise.
     if (trafficStore.pickMode) return
+
+    drawArea()
+
+    const source = graph.value
+    if (!source) return
 
     // MapLibre refuses addSource / addLayer until the style JSON is parsed, and
     // it has no public "is the style parsed" flag: isStyleLoaded() also waits
@@ -246,7 +292,7 @@ export function useGraphOverlay(
   function unmount(): void {
     const map = mapRef.value
     if (!map) return
-    for (const id of graphLayerIds()) {
+    for (const id of [...graphLayerIds(), AREA_RING_LAYER]) {
       if (map.getLayer(id)) map.removeLayer(id)
     }
     mountedOn = null
@@ -674,6 +720,7 @@ export function useGraphOverlay(
     }
   )
 
+  watch(() => trafficStore.area, drawArea)
   watch(() => scenarioStore.edgeModifications, redraw)
   // Only a change of ink treatment needs the layers rebuilt, not every switch
   // of the lit zone.

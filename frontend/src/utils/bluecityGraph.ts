@@ -798,7 +798,8 @@ export function emptyPoints(): { type: 'FeatureCollection'; features: CvrpPointF
   return { type: 'FeatureCollection', features: [] }
 }
 
-function setData(map: MapLibreMap, id: string, data: unknown): void {
+/** Write a GeoJSON source, if it is on the map. */
+export function setData(map: MapLibreMap, id: string, data: unknown): void {
   const source = map.getSource(id)
   if (source && 'setData' in source) {
     ;(source as { setData: (value: unknown) => void }).setData(data)

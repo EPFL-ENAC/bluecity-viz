@@ -8,9 +8,11 @@ import {
   AREA_SOURCE,
   areaFeatures,
   areaLayerIds,
-  areaLayers
+  areaLayers,
+  emptyArea
 } from '@/utils/areaCircle'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
+import { BEFORE_LAYER, setData } from '@/utils/bluecityGraph'
 import { GRAPH_COLORS } from '@/utils/epflBasemap'
 import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl'
 import { computed, inject, onMounted, onUnmounted, watch, type Ref } from 'vue'
@@ -37,17 +39,29 @@ const DOCK_PADDING = { top: 80, bottom: 80, left: 80, right: 420 }
 let mountedOn: MapLibreMap | null = null
 let waiting: MapLibreMap | null = null
 let dragging = false
-let moved = false
+// Where the button went down, to tell a click from the end of a drag.
+let downAt: { x: number; y: number } | null = null
+// the colour the network carries, so a drag does not set the same one again
+let painted = ''
 let savedCamera: { center: [number, number]; zoom: number } | null = null
 
 function draw(): void {
   const current = map.value
   const circle = trafficStore.draftArea
   if (!current || mountedOn !== current || !circle) return
-  const source = current.getSource(AREA_SOURCE)
-  if (source && 'setData' in source) {
-    ;(source as { setData: (value: unknown) => void }).setData(areaFeatures(circle, canUse.value))
-  }
+  // One setData for the mask, the ring and the handle: the drag costs three
+  // features, the country network on the map below is never touched.
+  setData(current, AREA_SOURCE, areaFeatures(circle, canUse.value))
+  paintNetwork(current)
+}
+
+/** The streets inside the circle are the answer, so they carry its colour. */
+function paintNetwork(current: MapLibreMap): void {
+  if (!current.getLayer(swissNetworkLayer.layer.id)) return
+  const tint = canUse.value ? colors.value.accent : colors.value.grey
+  if (tint === painted) return
+  painted = tint
+  current.setPaintProperty(swissNetworkLayer.layer.id, 'line-color', tint)
 }
 
 /**
@@ -59,23 +73,23 @@ function mount(): void {
   if (!current) return
   try {
     if (!current.getSource(AREA_SOURCE)) {
-      current.addSource(AREA_SOURCE, { type: 'geojson', data: emptyCollection() })
+      current.addSource(AREA_SOURCE, { type: 'geojson', data: emptyArea() as never })
     }
+    // Under the names, so the user can still read where they are outside the
+    // circle. The network goes first, the mask covers it, the ring sits on top.
+    const under = current.getLayer(BEFORE_LAYER) ? BEFORE_LAYER : undefined
+    showSwissNetwork(current, true)
     for (const layer of areaLayers(colors.value)) {
       if (current.getLayer(layer.id)) current.removeLayer(layer.id)
-      current.addLayer(layer)
+      current.addLayer(layer, under)
     }
-    showSwissNetwork(current, true)
   } catch {
     retryLater(current)
     return
   }
   mountedOn = current
+  painted = ''
   draw()
-}
-
-function emptyCollection() {
-  return { type: 'FeatureCollection', features: [] } as never
 }
 
 function retryLater(current: MapLibreMap): void {
@@ -99,7 +113,8 @@ function showSwissNetwork(current: MapLibreMap, visible: boolean): void {
         current.addSource(swissNetworkLayer.sourceId, swissNetworkLayer.source)
       }
       if (!current.getLayer(swissNetworkLayer.layer.id)) {
-        current.addLayer(swissNetworkLayer.layer)
+        const under = current.getLayer(BEFORE_LAYER) ? BEFORE_LAYER : undefined
+        current.addLayer(swissNetworkLayer.layer, under)
       }
       current.setLayoutProperty(swissNetworkLayer.layer.id, 'visibility', 'visible')
     } else if (current.getLayer(swissNetworkLayer.layer.id)) {
@@ -130,10 +145,11 @@ function overCircle(current: MapLibreMap, event: MapMouseEvent): boolean {
 
 function onMouseDown(event: MapMouseEvent): void {
   const current = map.value
-  if (!current || !overCircle(current, event)) return
+  if (!current) return
+  downAt = { x: event.point.x, y: event.point.y }
+  if (!overCircle(current, event)) return
   event.preventDefault()
   dragging = true
-  moved = false
   current.dragPan.disable()
   current.getCanvas().style.cursor = 'grabbing'
 }
@@ -145,7 +161,6 @@ function onMouseMove(event: MapMouseEvent): void {
     current.getCanvas().style.cursor = overCircle(current, event) ? 'grab' : ''
     return
   }
-  moved = true
   trafficStore.moveDraft(event.lngLat.lng, event.lngLat.lat)
   invalidate()
 }
@@ -156,14 +171,24 @@ function onMouseUp(): void {
   dragging = false
   current.dragPan.enable()
   current.getCanvas().style.cursor = 'grab'
-  if (moved) checkNow()
+  // Same circle means the same key, and checkNow answers from what it has.
+  checkNow()
 }
 
-/** A click away from the circle moves it there, so no long drag is needed. */
+/**
+ * A click away from the circle moves it there, so no long drag is needed.
+ *
+ * A drag ends with a click too, and MapLibre does not always send it, so a
+ * flag set during the drag would stay on and eat the next real click. The
+ * distance from the button going down says it: a click does not move.
+ */
 function onClick(event: MapMouseEvent): void {
-  if (moved) {
-    moved = false
-    return
+  const from = downAt
+  downAt = null
+  if (from) {
+    const dx = event.point.x - from.x
+    const dy = event.point.y - from.y
+    if (dx * dx + dy * dy > 9) return
   }
   trafficStore.moveDraft(event.lngLat.lng, event.lngLat.lat)
   invalidate()
@@ -205,6 +230,7 @@ function attach(current: MapLibreMap): void {
 }
 
 function detach(current: MapLibreMap): void {
+  downAt = null
   current.off('mousedown', onMouseDown)
   current.off('mousemove', onMouseMove)
   current.off('mouseup', onMouseUp)

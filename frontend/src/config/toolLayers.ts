@@ -16,8 +16,10 @@ export interface ToolLayer {
 }
 
 /**
- * The Swiss road network, so the user can see where the tool has streets
- * before picking a circle. Ink hairlines, no colour: it is a backdrop.
+ * The Swiss road network, the preview of the area being picked.
+ *
+ * The picker filters it on the circle and colours it, so on the map it is the
+ * streets the tool would take, not a backdrop of the whole country.
  */
 export const swissNetworkLayer: ToolLayer = {
   sourceId: 'tool-swiss-network',
@@ -32,9 +34,10 @@ export const swissNetworkLayer: ToolLayer = {
     source: 'tool-swiss-network',
     'source-layer': 'graph_edges',
     paint: {
+      // The picker sets the colour: accent when the tool can run in the
+      // circle, grey when it cannot.
       'line-color': '#8a8a8a',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.3, 10, 0.5, 14, 1],
-      'line-opacity': 0.7
+      'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.5, 10, 0.8, 14, 1.2]
     }
   } as LayerSpecification
 }
