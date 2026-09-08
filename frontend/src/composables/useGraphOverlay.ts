@@ -497,11 +497,12 @@ export function useGraphOverlay(
 
       // The workbench owns the graph. With it closed the map is a picture:
       // nothing to point at, and the card would offer a click that does
-      // nothing.
-      if (!scenarioStore.isOpen) {
+      // nothing. Same while the user picks an area: the circle owns the
+      // pointer then, and its grab cursor must not be wiped here.
+      if (!scenarioStore.isOpen || trafficStore.pickMode) {
         onMouseOut()
         const idle = mapRef.value
-        if (idle) idle.getCanvas().style.cursor = ''
+        if (idle && !trafficStore.pickMode) idle.getCanvas().style.cursor = ''
         return
       }
 
@@ -559,8 +560,9 @@ export function useGraphOverlay(
 
   function onClick(event: MapMouseEvent): void {
     // The graph is always editable while the workbench is open, there is no
-    // mode to turn on first.
-    if (!scenarioStore.isOpen) return
+    // mode to turn on first. Picking an area is the exception: a click moves
+    // the circle, it never touches a street.
+    if (!scenarioStore.isOpen || trafficStore.pickMode) return
     const hit = hitAt(event)
 
     if (!hit) {
