@@ -35,6 +35,7 @@ import { markRaw, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 import { useApiKeyStore } from '@/stores/apiKey'
 import { useLayersStore } from '@/stores/layers'
 import { useThemeStore } from '@/stores/theme'
+import { cdnRequest } from '@/utils/cdnRequest'
 import { Protocol } from 'pmtiles'
 
 const apiKeyStore = useApiKeyStore()
@@ -195,25 +196,7 @@ async function initMap() {
     minZoom: props.minZoom,
     maxZoom: props.maxZoom,
     attributionControl: false,
-    transformRequest: function (url, resourceType) {
-      const apiKey = apiKeyStore.apiKey
-
-      if (resourceType === 'Tile' && url.includes('pmtiles://')) {
-        return {
-          url: url + '?apikey=' + apiKey,
-          credentials: 'include'
-        }
-      }
-
-      if (url.includes('/bluecity/')) {
-        return {
-          url: url + '?apikey=' + apiKey,
-          credentials: 'include'
-        }
-      }
-
-      return { url: url }
-    }
+    transformRequest: cdnRequest(() => apiKeyStore.apiKey)
   })
 
   map.value = markRaw(newMap)
