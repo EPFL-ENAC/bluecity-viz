@@ -57,4 +57,49 @@ describe('areaDensity', () => {
     // no bbox yet: do not block the user on a rule we have not read
     expect(insideCoverage(null, 2.35, 48.85)).toBe(true)
   })
+
+  it('needs cells small next to the circle, which is why the file is fine', () => {
+    // Streets are not spread evenly. A town fills a small part of its cell and
+    // the fields around it are empty. On coarse cells the sum weights each
+    // cell by how much of it the circle covers, which reads far too low over a
+    // town. This is why density.json has its own grid, five times finer than
+    // the store's. See _density in backend/app/services/graph_store.py.
+    //
+    // A town of 2000 junctions packed around the corner where four 5 km cells
+    // meet, and a 3 km circle on that corner.
+    const lon0 = 7.436
+    const lat0 = 46.9225
+    const corner = { lon: 7.5, lat: 46.9675 }
+    const junctions = 2000
+
+    const coarse: Density = {
+      format_version: 1,
+      grid: { lon0, lat0, dlon: 0.064, dlat: 0.045, ncols: 2, nrows: 2 },
+      coverage_bbox: null,
+      // spread over the four cells, as a coarse file has to record it
+      nodes_sc3: [500, 500, 500, 500],
+      edges: [1000, 1000, 1000, 1000]
+    }
+
+    // Same town on 1 km cells: it really sits in the four cells at the corner.
+    const ncols = 10
+    const fineNodes = new Array(ncols * ncols).fill(0)
+    for (const row of [4, 5]) {
+      for (const col of [4, 5]) fineNodes[row * ncols + col] = 500
+    }
+    const fine: Density = {
+      format_version: 1,
+      grid: { lon0, lat0, dlon: 0.0128, dlat: 0.009, ncols, nrows: 10 },
+      coverage_bbox: null,
+      nodes_sc3: fineNodes,
+      edges: fineNodes.map((n) => n * 2)
+    }
+
+    const coarseGuess = estimateCircle(coarse, corner.lon, corner.lat, 3000).junctions
+    const fineGuess = estimateCircle(fine, corner.lon, corner.lat, 3000).junctions
+
+    // the coarse grid loses most of the town, the fine one keeps it
+    expect(coarseGuess).toBeLessThan(junctions * 0.5)
+    expect(fineGuess).toBeGreaterThan(junctions * 0.95)
+  })
 })

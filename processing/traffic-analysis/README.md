@@ -49,7 +49,7 @@ build_swiss_graph.py         ← osmium filter, then tile by tile:
              ├── nodes.parquet    one row group per cell
              ├── edges.parquet    one row group per cell
              ├── index.json       the grid and the counts per cell
-             └── density.json     the small file the picker reads
+             └── density.json     counts on a 1 km grid, for the picker
                       │
                       ├── generate_graph_tiles.py --store
                       │       └── ../../frontend/public/geodata/swiss_drive.pmtiles
@@ -86,6 +86,13 @@ Try it on a region first, it takes a minute:
 ```bash
 make swiss-store SWISS_BBOX=6.4,46.4,6.9,46.7
 ```
+
+`density.json` has its own grid, five times finer than the store's. The store
+cells are 5 km because that is a good parquet row group, but the picker sums
+them under a 3 km circle and assumes each cell is evenly filled. A town is not
+spread evenly over 25 km2, so at 5 km the picker read 20 to 40 percent low and
+said "too sparse" over towns the server accepts. At 1 km it lands within 3% of
+the server everywhere we checked. The file is 527 kB for the country.
 
 Elevation comes from swissALTIRegio, the national model swisstopo publishes as
 one cloud optimised GeoTIFF. `make dem` does not fetch the 10 GB file: it reads

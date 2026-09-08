@@ -314,7 +314,19 @@ def write_store(
         float(y[inside].max()),
     ]
     (directory / INDEX_FILE).write_text(json.dumps(index))
-    (directory / DENSITY_FILE).write_text(json.dumps(_density(index, grid)))
+    (directory / DENSITY_FILE).write_text(
+        json.dumps(
+            _density(
+                grid,
+                index["coverage_bbox"],
+                x,
+                y,
+                nodes["street_count"],
+                x[u_pos],
+                y[u_pos],
+            )
+        )
+    )
     logger.info(
         "[STORE] wrote %d nodes, %d edges, %d cells to %s",
         len(node_id),
@@ -325,19 +337,55 @@ def write_store(
     return index
 
 
-def _density(index: dict, grid: Grid) -> dict:
-    """The small file the frontend sums under the circle."""
-    nodes_sc3 = [0] * grid.n_cells
-    edges = [0] * grid.n_cells
-    for key, entry in index["cells"].items():
-        nodes_sc3[int(key)] = entry["n_nodes_sc3"]
-        edges[int(key)] = entry["n_edges"]
+# The density file has its own grid, finer than the store's. The store cells
+# are 5 km because that is a good parquet row group, but the picker sums them
+# under a 3 km circle and assumes each cell is evenly filled. A town is not
+# evenly spread over 25 km2, so at 5 km the estimate came out 20 to 40 percent
+# low and the picker said "too sparse" over a town the server accepts. Five
+# times finer is about 1 km, which is small enough for the assumption to hold.
+DENSITY_REFINE = 5
+
+
+def density_grid(grid: Grid, refine: int = DENSITY_REFINE) -> Grid:
+    """The store grid, cut finer. Same origin, so the two line up."""
+    return Grid(
+        lon0=grid.lon0,
+        lat0=grid.lat0,
+        dlon=grid.dlon / refine,
+        dlat=grid.dlat / refine,
+        ncols=grid.ncols * refine,
+        nrows=grid.nrows * refine,
+    )
+
+
+def _density(
+    grid: Grid,
+    coverage_bbox,
+    x: np.ndarray,
+    y: np.ndarray,
+    street_count: np.ndarray,
+    edge_x: np.ndarray,
+    edge_y: np.ndarray,
+    refine: int = DENSITY_REFINE,
+) -> dict:
+    """The small file the frontend sums under the circle.
+
+    Counts are per fine cell: junctions (3 streets or more, the pool the OD
+    sampler draws from) and streets, a street counted at its start node.
+    """
+    fine = density_grid(grid, refine)
+    junction = np.asarray(street_count, dtype=np.int64) >= 3
+    node_cells = fine.cell_of(x[junction], y[junction])
+    edge_cells = fine.cell_of(edge_x, edge_y)
+
+    nodes_sc3 = np.bincount(node_cells[node_cells >= 0], minlength=fine.n_cells)
+    edges = np.bincount(edge_cells[edge_cells >= 0], minlength=fine.n_cells)
     return {
         "format_version": FORMAT_VERSION,
-        "grid": asdict(grid),
-        "coverage_bbox": index.get("coverage_bbox"),
-        "nodes_sc3": nodes_sc3,
-        "edges": edges,
+        "grid": asdict(fine),
+        "coverage_bbox": coverage_bbox,
+        "nodes_sc3": nodes_sc3.tolist(),
+        "edges": edges.tolist(),
     }
 
 

@@ -7,6 +7,7 @@ import pytest
 
 from app.services.graph_store import (
     DENSITY_FILE,
+    DENSITY_REFINE,
     FORMAT_VERSION,
     INDEX_FILE,
     GraphStore,
@@ -164,15 +165,36 @@ def test_geometry_comes_back_as_a_flat_array(store):
     assert len(first) == 4  # a straight line: two points, lon and lat
 
 
-def test_the_density_file_matches_the_index(tmp_path):
+def test_the_density_file_is_finer_than_the_store_but_adds_up(tmp_path):
+    """The picker sums this file, so its cells are smaller than the store's.
+
+    A town is not spread evenly over a 25 km2 cell, so at the store's
+    resolution the estimate came out far too low. The totals still have to
+    match, cell by cell, once the fine cells are folded back.
+    """
     index, _nodes, _edges = build_store(tmp_path)
     density = json.loads((tmp_path / DENSITY_FILE).read_text())
+    fine = density["grid"]
+    refine = DENSITY_REFINE
 
-    assert density["grid"] == index["grid"]
-    assert len(density["nodes_sc3"]) == GRID.n_cells
+    assert fine["lon0"] == GRID.lon0 and fine["lat0"] == GRID.lat0
+    assert fine["ncols"] == GRID.ncols * refine
+    assert fine["nrows"] == GRID.nrows * refine
+    assert fine["dlon"] == pytest.approx(GRID.dlon / refine)
+    assert len(density["nodes_sc3"]) == GRID.n_cells * refine * refine
+
+    def folded(values, cell):
+        """Sum the fine cells that sit inside one store cell."""
+        row, col = divmod(cell, GRID.ncols)
+        return sum(
+            values[(row * refine + r) * fine["ncols"] + col * refine + c]
+            for r in range(refine)
+            for c in range(refine)
+        )
+
     for key, entry in index["cells"].items():
-        assert density["nodes_sc3"][int(key)] == entry["n_nodes_sc3"]
-        assert density["edges"][int(key)] == entry["n_edges"]
+        assert folded(density["nodes_sc3"], int(key)) == entry["n_nodes_sc3"]
+        assert folded(density["edges"], int(key)) == entry["n_edges"]
 
 
 def test_an_old_store_is_refused(tmp_path):
