@@ -76,8 +76,17 @@ onMounted(async () => {
 
   // The layers are a computed over the store and the network, so results that
   // arrived before the geometry simply show up when the geometry lands.
-  await deckGLTraffic.loadGraphEdges()
+  await loadEdgesOfActiveArea()
 })
+
+function loadEdgesOfActiveArea() {
+  return deckGLTraffic.loadGraphEdges(trafficStore.areaId).catch((error) => {
+    console.error('Failed to load the network:', error)
+  })
+}
+
+// Another area means another network on screen.
+watch(() => trafficStore.areaId, loadEdgesOfActiveArea)
 
 onUnmounted(() => {
   deckGLTraffic.setTooltipMover(null)

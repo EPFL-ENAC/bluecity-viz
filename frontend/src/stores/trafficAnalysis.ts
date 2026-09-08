@@ -1,6 +1,12 @@
 import {
+  ApiError,
+  areaKey,
+  createArea,
+  fetchArea,
   fetchBaseline,
   fetchGraphInfo,
+  type AreaInfo,
+  type AreaSelection,
   type EdgeModification,
   type ImpactStatistics
 } from '@/services/trafficAnalysis'
@@ -128,6 +134,15 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // How many OD pairs to route. null means the server default.
   const odPairs = ref<number | null>(null)
 
+  // The area the workbench runs on. null means the default city, which is
+  // what every investigation saved before this feature has.
+  const area = ref<AreaSelection | null>(null)
+  // Derived, never persisted: what the server told us about that area.
+  const areaId = ref<string | null>(null)
+  const areaInfo = shallowRef<AreaInfo | null>(null)
+  const isBuildingArea = ref(false)
+  const areaError = shallowRef<{ code?: string; message: string } | null>(null)
+
   // Filled once from /graph-info: the server default, the most it accepts, and
   // the count the "full" choice sends (the set really sampled at startup).
   const odPairsDefault = ref<number | null>(null)
@@ -140,9 +155,10 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // The baseline never changes while the server runs, so one fetch per count is
   // enough. Not reactive, nothing renders from it. Inside the setup so a fresh
   // pinia (the tests, a reload) starts with an empty cache.
-  const baselineCache = new Map<number, EdgeUsageStats[]>()
-  const baselinePending = new Map<number | 'default', Promise<BaselineResult>>()
-  let graphInfoPromise: Promise<void> | null = null
+  const baselineCache = new Map<string, EdgeUsageStats[]>()
+  const baselinePending = new Map<string, Promise<BaselineResult>>()
+  const graphInfoPromises = new Map<string, Promise<void>>()
+  let areaPromise: Promise<string | null> | null = null
 
   // Visualization state. Only the active scale is reactive; the per-mode scales
   // live in a plain object because switching mode only reads one of them.
@@ -479,10 +495,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     odPairs.value = count
   }
 
-  /** Read the OD pair counts from the server, once per session. */
+  /** Read the OD pair counts of an area from the server, once per area. */
   function loadGraphInfo(): Promise<void> {
-    if (!graphInfoPromise) {
-      graphInfoPromise = fetchGraphInfo()
+    const key = areaId.value ?? 'lausanne'
+    let request = graphInfoPromises.get(key)
+    if (!request) {
+      request = fetchGraphInfo(areaId.value)
         .then((info) => {
           odPairsDefault.value = info.od_pairs_default
           odPairsMax.value = info.od_pairs_max
@@ -492,11 +510,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         })
         .catch((error) => {
           // let a later call try again
-          graphInfoPromise = null
+          graphInfoPromises.delete(key)
           throw error
         })
+      graphInfoPromises.set(key, request)
     }
-    return graphInfoPromise
+    return request
   }
 
   /**
@@ -504,18 +523,21 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
    * Keyed by the count the server used, which is what the results carry.
    */
   function getBaseline(count?: number): Promise<BaselineResult> {
+    // Every key carries the area: two areas have different numbers for the
+    // same pair count.
+    const scope = areaId.value ?? 'lausanne'
     if (count !== undefined) {
-      const cached = baselineCache.get(count)
+      const cached = baselineCache.get(`${scope}:${count}`)
       if (cached) return Promise.resolve({ odPairs: count, rows: cached })
     }
 
-    const key = count ?? 'default'
+    const key = `${scope}:${count ?? 'default'}`
     const inFlight = baselinePending.get(key)
     if (inFlight) return inFlight
 
-    const request = fetchBaseline(count)
+    const request = fetchBaseline(count, areaId.value)
       .then((response) => {
-        baselineCache.set(response.od_pairs, response.edge_usage)
+        baselineCache.set(`${scope}:${response.od_pairs}`, response.edge_usage)
         baselinePending.delete(key)
         return { odPairs: response.od_pairs, rows: response.edge_usage }
       })
@@ -527,6 +549,88 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
     baselinePending.set(key, request)
     return request
+  }
+
+  /** Forget everything cached for one area. */
+  function forgetArea(scope: string) {
+    for (const key of [...baselineCache.keys()]) {
+      if (key.startsWith(`${scope}:`)) baselineCache.delete(key)
+    }
+    for (const key of [...baselinePending.keys()]) {
+      if (key.startsWith(`${scope}:`)) baselinePending.delete(key)
+    }
+    graphInfoPromises.delete(scope)
+  }
+
+  /**
+   * Change the area the workbench runs on.
+   *
+   * The edge modifications go with it: they name streets of the old graph, and
+   * a street id means nothing in another area. The results go too.
+   */
+  function setArea(selection: AreaSelection | null) {
+    if (areaKey(selection) === areaKey(area.value)) return
+
+    forgetArea(areaId.value ?? 'lausanne')
+    area.value = selection
+    areaId.value = null
+    areaInfo.value = null
+    areaError.value = null
+    areaPromise = null
+    clearResults()
+    clearEdgeModifications()
+  }
+
+  /**
+   * Make sure the server has this area, and give back its id.
+   *
+   * The id comes from the geometry, so an area saved yesterday is asked for
+   * by shape: if the server still has it the call is free, if it dropped it
+   * we build it again.
+   */
+  function ensureArea(): Promise<string | null> {
+    if (!area.value) return Promise.resolve(null)
+    if (areaId.value) return Promise.resolve(areaId.value)
+    if (areaPromise) return areaPromise
+
+    const selection = area.value
+    const wanted = areaKey(selection)
+
+    areaError.value = null
+    isBuildingArea.value = true
+    areaPromise = fetchArea(wanted)
+      .catch((error) => {
+        if (error instanceof ApiError && error.status === 404) return createArea(selection)
+        throw error
+      })
+      .then((info) => {
+        // the user may have moved the circle while we were building
+        if (areaKey(area.value) !== wanted) return areaId.value
+        areaId.value = info.id
+        areaInfo.value = info
+        return info.id
+      })
+      .catch((error: unknown) => {
+        const failure =
+          error instanceof ApiError
+            ? { code: error.code, message: error.message }
+            : { message: String(error) }
+        areaError.value = failure
+        areaPromise = null
+        throw error
+      })
+      .finally(() => {
+        isBuildingArea.value = false
+      })
+
+    return areaPromise
+  }
+
+  /** The area is gone from the server: build it again on the next call. */
+  function forgetAreaId() {
+    forgetArea(areaId.value ?? 'lausanne')
+    areaId.value = null
+    areaPromise = null
   }
 
   function getColor(value: number): [number, number, number] {
@@ -585,9 +689,24 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     filterBusRoutes?: boolean
     odPairs?: number | null
     resultOdPairs?: number | null
+    area?: AreaSelection | null
   }) {
     isRestoring.value = true
     isOpen.value = state.isOpen
+
+    // The area comes first: the modifications and the results below belong to
+    // it. setArea would clear them, so we assign instead.
+    if (state.area !== undefined) {
+      const next = state.area ?? null
+      if (areaKey(next) !== areaKey(area.value)) {
+        forgetArea(areaId.value ?? 'lausanne')
+        area.value = next
+        areaId.value = null
+        areaInfo.value = null
+        areaError.value = null
+        areaPromise = null
+      }
+    }
 
     // Restore edge modifications
     const modMap = new Map<string, { action: ModificationAction; name: string }>()
@@ -657,6 +776,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     odPairsMax,
     odPairsFull,
     resultOdPairs,
+    area,
+    areaId,
+    areaInfo,
+    isBuildingArea,
+    areaError,
 
     // Visualization state
     legendMode,
@@ -684,6 +808,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     setOdPairs,
     loadGraphInfo,
     getBaseline,
+    setArea,
+    ensureArea,
+    forgetAreaId,
     setEdgeUsage,
     clearResults,
     getColor,

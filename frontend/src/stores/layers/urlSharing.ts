@@ -1,4 +1,5 @@
 import type { Ref } from 'vue'
+import { pickTrafficInputs } from './persistence'
 import type { Investigation } from './types'
 
 export function createUrlSharingComposable(
@@ -15,7 +16,11 @@ export function createUrlSharingComposable(
       name: currentInvestigation.name,
       selectedSources: currentInvestigation.selectedSources,
       selectedLayers: currentInvestigation.selectedLayers,
-      sp0Period: sp0Period.value
+      sp0Period: sp0Period.value,
+      // Inputs only, no results: the receiver runs them again. The area is one
+      // of them, and its id comes from its shape, so the server finds the same
+      // one or builds it back.
+      trafficAnalysis: currentInvestigation.trafficAnalysis
     }
 
     try {
@@ -93,6 +98,10 @@ export function createUrlSharingComposable(
         selectedSources: decodedState.selectedSources || [],
         selectedLayers: decodedState.selectedLayers || [],
         createdAt: new Date()
+      }
+
+      if (decodedState.trafficAnalysis) {
+        sharedInvestigation.trafficAnalysis = pickTrafficInputs(decodedState.trafficAnalysis)
       }
 
       // Add to first project or create a new one

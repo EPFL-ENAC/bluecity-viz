@@ -1,4 +1,5 @@
 import { layerGroups as configLayerGroups } from '@/config/mapConfig'
+import { areaKey } from '@/services/trafficAnalysis'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { defineStore } from 'pinia'
 import { ref, shallowRef, toRaw, watch } from 'vue'
@@ -114,7 +115,8 @@ export const useLayersStore = defineStore('layers', () => {
       congestionIterations: trafficStore.congestionIterations,
       elasticDemand: trafficStore.elasticDemand,
       filterBusRoutes: trafficStore.filterBusRoutes,
-      odPairs: trafficStore.odPairs
+      odPairs: trafficStore.odPairs,
+      area: trafficStore.area ? { ...trafficStore.area } : null
     }
   }
 
@@ -122,7 +124,11 @@ export const useLayersStore = defineStore('layers', () => {
   // investigation. The arrays are always passed, empty when we have nothing.
   function applyTrafficAnalysisState(inputs: TrafficAnalysisInputs, investigationId: string): void {
     const trafficStore = useTrafficAnalysisStore()
-    const results = getResults(investigationId)
+    const area = inputs.area ?? null
+    // Results of another area mean nothing here: the edge ids are not the same
+    // graph. Drop them and keep the inputs.
+    const saved = getResults(investigationId)
+    const results = saved && saved.resultAreaKey === areaKey(area) ? saved : null
 
     trafficStore.restoreState({
       isOpen: inputs.isOpen,
@@ -134,7 +140,8 @@ export const useLayersStore = defineStore('layers', () => {
       activeVisualization: inputs.activeVisualization ?? 'none',
       // an input, restoreState assigns it without clearing the results above
       odPairs: inputs.odPairs ?? null,
-      resultOdPairs: results?.resultOdPairs ?? null
+      resultOdPairs: results?.resultOdPairs ?? null,
+      area
     })
 
     // The other routing options are not part of restoreState's own defaults,
@@ -264,6 +271,7 @@ export const useLayersStore = defineStore('layers', () => {
       () => trafficStore.elasticDemand,
       () => trafficStore.filterBusRoutes,
       () => trafficStore.odPairs,
+      () => trafficStore.area,
       () => trafficStore.newEdgeUsage
     ],
     () => {
@@ -277,7 +285,8 @@ export const useLayersStore = defineStore('layers', () => {
         originalEdgeUsage: toRaw(trafficStore.originalEdgeUsage),
         newEdgeUsage: toRaw(trafficStore.newEdgeUsage),
         impactStatistics: toRaw(trafficStore.impactStatistics),
-        resultOdPairs: trafficStore.resultOdPairs
+        resultOdPairs: trafficStore.resultOdPairs,
+        resultAreaKey: areaKey(trafficStore.area)
       })
 
       persist.schedule()

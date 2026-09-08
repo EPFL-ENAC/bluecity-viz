@@ -4,10 +4,10 @@ import BcIcon from '@/components/ui/BcIcon.vue'
 import BcRow from '@/components/ui/BcRow.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
-import { recalculateRoutes } from '@/services/trafficAnalysis'
+import { ApiError, recalculateRoutes } from '@/services/trafficAnalysis'
 import { useLayersStore } from '@/stores/layers'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 const layersStore = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
@@ -16,12 +16,15 @@ const loadingMessage = ref('')
 
 const title = computed(() => layersStore.activeInvestigation?.name ?? 'Road closure scenario')
 
-// The pair counts come from the server, not from a constant here.
-onMounted(() => {
+// The pair counts come from the server, not from a constant here. Each area
+// has its own, so we ask again when the area changes.
+function refreshGraphInfo() {
   trafficStore.loadGraphInfo().catch((error) => {
     console.error('Failed to load graph info:', error)
   })
-})
+}
+onMounted(refreshGraphInfo)
+watch(() => trafficStore.areaId, refreshGraphInfo)
 
 function formatTrips(count: number): string {
   return count.toLocaleString('en-US')
@@ -81,28 +84,54 @@ function edgeBadge(action: string) {
   return '50'
 }
 
+/** The baseline and the run, both on the area the store points at. */
+function runOnce(odPairs: number | undefined) {
+  return Promise.all([
+    trafficStore.getBaseline(odPairs),
+    recalculateRoutes(trafficStore.edgeModificationsArray, {
+      useCongestionModel: trafficStore.useCongestionModel,
+      congestionIterations: trafficStore.congestionIterations,
+      elasticDemand: trafficStore.elasticDemand,
+      odPairs,
+      areaId: trafficStore.areaId
+    })
+  ])
+}
+
 async function calculateRoutes() {
   const odPairs = chosenOdPairs()
   const trips = odPairs ? ` on ${formatTrips(odPairs)} trips` : ''
 
-  trafficStore.isCalculating = true
-  loadingMessage.value = trafficStore.useCongestionModel
+  const baseMessage = trafficStore.useCongestionModel
     ? `Congestion routing (${trafficStore.congestionIterations} iteration${
         trafficStore.congestionIterations > 1 ? 's' : ''
       })${trips}…`
     : `Calculating routes${trips}…`
+
+  trafficStore.isCalculating = true
+  loadingMessage.value = baseMessage
   try {
+    // A custom area may not be on the server any more (restart, eviction). This
+    // builds it back before we ask anything about it.
+    if (trafficStore.area) loadingMessage.value = 'Building the network for this area…'
+    await trafficStore.ensureArea()
+    loadingMessage.value = baseMessage
+
     // The baseline is the same for every run at that count, so it comes from
     // the store cache after the first time.
-    const [baseline, result] = await Promise.all([
-      trafficStore.getBaseline(odPairs),
-      recalculateRoutes(trafficStore.edgeModificationsArray, {
-        useCongestionModel: trafficStore.useCongestionModel,
-        congestionIterations: trafficStore.congestionIterations,
-        elasticDemand: trafficStore.elasticDemand,
-        odPairs
-      })
-    ])
+    let answer
+    try {
+      answer = await runOnce(odPairs)
+    } catch (error) {
+      // The area was dropped between the two calls: build it and try once more.
+      if (!(error instanceof ApiError) || error.code !== 'area_not_loaded') throw error
+      trafficStore.forgetAreaId()
+      loadingMessage.value = 'Building the network for this area…'
+      await trafficStore.ensureArea()
+      loadingMessage.value = baseMessage
+      answer = await runOnce(odPairs)
+    }
+    const [baseline, result] = answer
 
     // The count changed while we were waiting, this answer is for the old one.
     if (odPairs !== chosenOdPairs()) return

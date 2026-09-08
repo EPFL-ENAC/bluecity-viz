@@ -1,4 +1,10 @@
-import { fetchBaseline, fetchGraphInfo } from '@/services/trafficAnalysis'
+import {
+  ApiError,
+  createArea,
+  fetchArea,
+  fetchBaseline,
+  fetchGraphInfo
+} from '@/services/trafficAnalysis'
 import {
   EXPECTED_PUBLIC_KEYS,
   EXPECTED_SCALES,
@@ -16,8 +22,33 @@ vi.mock('@/services/trafficAnalysis', async () => ({
     '@/services/trafficAnalysis'
   )),
   fetchBaseline: vi.fn(),
-  fetchGraphInfo: vi.fn()
+  fetchGraphInfo: vi.fn(),
+  fetchArea: vi.fn(),
+  createArea: vi.fn()
 }))
+
+const BERN = { kind: 'circle' as const, lon: 7.44, lat: 46.95, radiusM: 3000 }
+const BERN_ID = 'c_7.4400_46.9500_3000'
+
+function areaInfo(id: string) {
+  return {
+    id,
+    kind: 'circle',
+    name: id,
+    circle: null,
+    polygon: null,
+    bbox: null,
+    node_count: 5000,
+    edge_count: 9000,
+    scc_fraction: 1,
+    od_pairs: 40000,
+    od_pairs_default: 20000,
+    od_pairs_max: 40000,
+    status: 'ready',
+    build_ms: 100,
+    cached: false
+  }
+}
 
 function baselineRows(count: number) {
   return Array.from({ length: count }, (_, i) => ({
@@ -35,6 +66,8 @@ describe('traffic analysis store', () => {
     setActivePinia(createPinia())
     vi.mocked(fetchBaseline).mockReset()
     vi.mocked(fetchGraphInfo).mockReset()
+    vi.mocked(fetchArea).mockReset()
+    vi.mocked(createArea).mockReset()
   })
 
   it('offers the same modes and picks delta when the routes moved', () => {
@@ -248,6 +281,9 @@ describe('traffic analysis store', () => {
   it('reads the pair counts from the server once', async () => {
     const store = useTrafficAnalysisStore()
     vi.mocked(fetchGraphInfo).mockResolvedValue({
+      area_id: 'lausanne',
+      bbox: null,
+      scc_fraction: 1,
       node_count: 1,
       edge_count: 2,
       od_pairs: 76200,
@@ -315,5 +351,116 @@ describe('traffic analysis store', () => {
     expect(store.activeVisualization).toBe('co2')
     expect(store.legendMode).toBe('co2')
     expect(store.minValue).toBeCloseTo(EXPECTED_SCALES.perMode.co2.min, 10)
+  })
+
+  it('drops the results and the modifications when the area changes', () => {
+    const store = useTrafficAnalysisStore()
+    const usage = makeUsage()
+    store.setEdgeUsage(usage, usage, undefined, 20000)
+    store.cycleEdgeModification(1, 2, 'Rue de Bourg')
+
+    store.setArea(BERN)
+
+    expect(store.area).toEqual(BERN)
+    expect(store.areaId).toBeNull()
+    expect(store.newEdgeUsage).toHaveLength(0)
+    expect(store.edgeModificationsCount).toBe(0)
+  })
+
+  it('does nothing when the same circle is set again', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    store.cycleEdgeModification(1, 2, 'a street')
+
+    store.setArea({ ...BERN })
+
+    expect(store.edgeModificationsCount).toBe(1)
+  })
+
+  it('caches the baseline per area', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockImplementation(async (odPairs?: number) => ({
+      total_routes: odPairs ?? 20000,
+      od_pairs: odPairs ?? 20000,
+      edge_usage: baselineRows(3)
+    }))
+
+    await store.getBaseline(20000)
+    await store.getBaseline(20000)
+    expect(fetchBaseline).toHaveBeenCalledTimes(1)
+
+    // another area, same count: the numbers are not the same, ask again
+    store.setArea(BERN)
+    vi.mocked(fetchArea).mockResolvedValue(areaInfo(BERN_ID))
+    await store.ensureArea()
+
+    await store.getBaseline(20000)
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(fetchBaseline).mock.calls[1][1]).toBe(BERN_ID)
+  })
+
+  it('asks the server once for an area, and builds it when it is gone', async () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    vi.mocked(fetchArea).mockResolvedValue(areaInfo(BERN_ID))
+
+    const [a, b] = await Promise.all([store.ensureArea(), store.ensureArea()])
+
+    expect(a).toBe(BERN_ID)
+    expect(b).toBe(BERN_ID)
+    expect(fetchArea).toHaveBeenCalledTimes(1)
+    expect(fetchArea).toHaveBeenCalledWith(BERN_ID)
+    expect(createArea).not.toHaveBeenCalled()
+    expect(store.areaId).toBe(BERN_ID)
+    expect(store.isBuildingArea).toBe(false)
+
+    // it was evicted: the next call builds it back from the geometry
+    store.forgetAreaId()
+    vi.mocked(fetchArea).mockRejectedValue(new ApiError('gone', 404, 'area_not_loaded'))
+    vi.mocked(createArea).mockResolvedValue(areaInfo(BERN_ID))
+
+    expect(await store.ensureArea()).toBe(BERN_ID)
+    expect(createArea).toHaveBeenCalledWith(BERN)
+  })
+
+  it('keeps the error of a refused area and lets the next call try again', async () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    vi.mocked(fetchArea).mockRejectedValue(new ApiError('gone', 404, 'area_not_loaded'))
+    vi.mocked(createArea).mockRejectedValue(
+      new ApiError('not enough junctions here', 422, 'too_sparse')
+    )
+
+    await expect(store.ensureArea()).rejects.toThrow('not enough junctions')
+    expect(store.areaError?.code).toBe('too_sparse')
+    expect(store.isBuildingArea).toBe(false)
+
+    vi.mocked(createArea).mockResolvedValue(areaInfo(BERN_ID))
+    expect(await store.ensureArea()).toBe(BERN_ID)
+    expect(store.areaError).toBeNull()
+  })
+
+  it('needs no area for the default city', async () => {
+    const store = useTrafficAnalysisStore()
+    expect(await store.ensureArea()).toBeNull()
+    expect(fetchArea).not.toHaveBeenCalled()
+  })
+
+  it('restores an area without dropping the restored results', () => {
+    const store = useTrafficAnalysisStore()
+    const usage = makeUsage()
+
+    store.restoreState({
+      isOpen: true,
+      activeVisualization: 'frequency',
+      edgeModifications: [{ u: 1, v: 2, action: 'remove' }],
+      newEdgeUsage: usage,
+      originalEdgeUsage: usage,
+      area: BERN
+    })
+
+    expect(store.area).toEqual(BERN)
+    expect(store.newEdgeUsage).toHaveLength(usage.length)
+    expect(store.edgeModificationsCount).toBe(1)
   })
 })

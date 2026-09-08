@@ -1,4 +1,14 @@
-import { fetchBaseline, fetchGraphInfo, recalculateRoutes } from '@/services/trafficAnalysis'
+import {
+  ApiError,
+  areaKey,
+  createArea,
+  fetchArea,
+  fetchAreaEdges,
+  fetchBaseline,
+  fetchGraphInfo,
+  previewArea,
+  recalculateRoutes
+} from '@/services/trafficAnalysis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // A minimal response, enough for the service: it only reads ok and json().
@@ -46,6 +56,7 @@ describe('traffic analysis service', () => {
 
     expect(calledUrl()).toBe('/api/v1/routes/recalculate')
     expect(calledBody()).toEqual({
+      area_id: null,
       edge_modifications: [{ u: 1, v: 2, action: 'remove' }],
       weight: 'travel_time',
       include_geometry: true,
@@ -110,5 +121,78 @@ describe('traffic analysis service', () => {
     })
 
     await expect(fetchGraphInfo()).rejects.toThrow('Internal Server Error')
+  })
+
+  it('names the area on the GET endpoints and leaves the URL alone for the default one', async () => {
+    fetchMock().mockResolvedValue(okResponse({ od_pairs: 100, edge_usage: [] }))
+
+    await fetchBaseline(100, 'c_7.4400_46.9500_3000')
+    expect(calledUrl()).toBe('/api/v1/routes/baseline?od_pairs=100&area_id=c_7.4400_46.9500_3000')
+
+    await fetchBaseline(100, null)
+    expect(calledUrl(1)).toBe('/api/v1/routes/baseline?od_pairs=100')
+
+    fetchMock().mockResolvedValue(okResponse({ area_id: 'lausanne' }))
+    await fetchGraphInfo('c_7.4400_46.9500_3000')
+    expect(calledUrl(2)).toBe('/api/v1/routes/graph-info?area_id=c_7.4400_46.9500_3000')
+  })
+
+  it('sends the area in the recalculate body', async () => {
+    fetchMock().mockResolvedValue(okResponse({ od_pairs: 100, new_edge_usage: [] }))
+
+    await recalculateRoutes([], { areaId: 'c_7.4400_46.9500_3000' })
+
+    expect(calledBody().area_id).toBe('c_7.4400_46.9500_3000')
+  })
+
+  it('posts the circle in metres and reads the area back', async () => {
+    fetchMock().mockResolvedValue(okResponse({ id: 'c_7.4400_46.9500_3000' }))
+
+    const info = await createArea({ kind: 'circle', lon: 7.44, lat: 46.95, radiusM: 3000 })
+
+    expect(calledUrl()).toBe('/api/v1/areas')
+    expect(calledBody()).toEqual({ circle: { lon: 7.44, lat: 46.95, radius_m: 3000 } })
+    expect(info.id).toBe('c_7.4400_46.9500_3000')
+  })
+
+  it('reads an area and its streets by id', async () => {
+    fetchMock().mockResolvedValue(okResponse({ id: 'c_7.4400_46.9500_3000' }))
+    await fetchArea('c_7.4400_46.9500_3000')
+    expect(calledUrl()).toBe('/api/v1/areas/c_7.4400_46.9500_3000')
+
+    fetchMock().mockResolvedValue(okResponse([]))
+    await fetchAreaEdges('c_7.4400_46.9500_3000')
+    expect(calledUrl(1)).toBe('/api/v1/areas/c_7.4400_46.9500_3000/edges')
+  })
+
+  it('keeps the rejection code of a preview error', async () => {
+    fetchMock().mockResolvedValue(
+      errorResponse(422, {
+        detail: { code: 'too_sparse', message: 'not enough junctions here' }
+      })
+    )
+
+    const failure = await previewArea({
+      kind: 'circle',
+      lon: 8,
+      lat: 46.5,
+      radiusM: 3000
+    }).catch((error) => error)
+
+    expect(failure).toBeInstanceOf(ApiError)
+    expect(failure.status).toBe(422)
+    expect(failure.code).toBe('too_sparse')
+    expect(failure.message).toContain('not enough junctions here')
+  })
+
+  it('builds the same id as the server from the circle alone', () => {
+    expect(areaKey({ kind: 'circle', lon: 7.44, lat: 46.95, radiusM: 3000 })).toBe(
+      'c_7.4400_46.9500_3000'
+    )
+    // rounding, so a pixel of drag does not make a new area
+    expect(areaKey({ kind: 'circle', lon: 7.44001, lat: 46.95, radiusM: 3000.4 })).toBe(
+      'c_7.4400_46.9500_3000'
+    )
+    expect(areaKey(null)).toBe('lausanne')
   })
 })
