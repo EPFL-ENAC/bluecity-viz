@@ -72,6 +72,13 @@ class RouteRequest(BaseModel):
     pairs: List[NodePair] = Field(..., description="List of origin-destination pairs")
     weight: str = Field(default="travel_time", description="Edge weight attribute")
     include_geometry: bool = Field(default=False, description="Include path geometry")
+    area_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Which area to run on. None means the default one, the city loaded "
+            "at startup. Create an area with POST /api/v1/areas."
+        ),
+    )
 
 
 class RouteResponse(BaseModel):
@@ -86,6 +93,13 @@ class RecalculateRequest(BaseModel):
     pairs: Optional[List[NodePair]] = Field(
         None,
         description="List of origin-destination pairs (uses default if not provided)",
+    )
+    area_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Which area to run on. None means the default one, the city loaded "
+            "at startup. Create an area with POST /api/v1/areas."
+        ),
     )
     edge_modifications: List[EdgeModification] = Field(
         default_factory=list,
@@ -317,4 +331,11 @@ class RandomPairsRequest(BaseModel):
     sampling_config: Optional[SamplingConfig] = Field(
         None,
         description="Configuration for research-based sampling (uses defaults if None)",
+    )
+    area_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Which area to run on. None means the default one, the city loaded "
+            "at startup. Create an area with POST /api/v1/areas."
+        ),
     )

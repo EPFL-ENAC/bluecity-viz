@@ -1,12 +1,9 @@
 """Route calculation endpoints."""
 
-import hashlib
 import logging
-import threading
 import traceback
 from typing import Callable, List, Optional
 
-import orjson
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel
@@ -22,8 +19,10 @@ from app.models.route import (
     RouteRequest,
     RouteResponse,
 )
+from app.services.area_registry import AreaNotLoaded
 from app.services.graph_helpers import habitat_geojson
 from app.services.graph_service import GraphService
+from app.services.payload_cache import PayloadCache
 
 logger = logging.getLogger(__name__)
 
@@ -32,26 +31,33 @@ router = APIRouter(prefix="/routes", tags=["routes"])
 # Initialize graph service (will be properly initialized with graph data)
 graph_service = GraphService()
 
-# Payloads that only depend on the graph: built once, then served from bytes
-# with an ETag. The graph never changes while the process runs.
-_payload_cache: dict = {}
-_payload_lock = threading.Lock()
+# Payloads of the NetworkX graph: built once, then served from bytes with an
+# ETag. That graph never changes while the process runs. Payloads that belong
+# to an area live on the area, so evicting it frees them too.
+_payload_cache = PayloadCache()
 STATIC_CACHE_CONTROL = "public, max-age=86400"
 
 
 def _cached_json(key: str, build: Callable[[], object]) -> tuple:
     """Return (bytes, etag) for a payload that never changes, building it once."""
-    hit = _payload_cache.get(key)
-    if hit is None:
-        with _payload_lock:
-            hit = _payload_cache.get(key)
-            if hit is None:
-                data = orjson.dumps(build())
-                etag = '"' + hashlib.blake2b(data, digest_size=16).hexdigest() + '"'
-                hit = (data, etag)
-                _payload_cache[key] = hit
-                logger.info("[CACHE] built %s payload, %.1f MB", key, len(data) / 1e6)
-    return hit
+    return _payload_cache.get_or_build(key, build)
+
+
+def _area(area_id: Optional[str]):
+    """The area a request names, as a 404 when it is gone."""
+    try:
+        return graph_service.area(area_id)
+    except AreaNotLoaded as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "area_not_loaded",
+                "message": (
+                    f"area {exc.area_id!r} is not in memory: create it again "
+                    "with POST /api/v1/areas"
+                ),
+            },
+        ) from exc
 
 
 def _json_or_304(request: Request, data: bytes, etag: str, cache_control: str) -> Response:
@@ -65,6 +71,9 @@ def _json_or_304(request: Request, data: bytes, etag: str, cache_control: str) -
 class GraphInfoResponse(BaseModel):
     """Graph information response."""
 
+    area_id: str = ""
+    bbox: Optional[List[float]] = None
+    scc_fraction: float = 1.0
     node_count: int
     edge_count: int
     sample_nodes: List[int]
@@ -76,16 +85,21 @@ class GraphInfoResponse(BaseModel):
 
 
 @router.get("/graph-info", response_model=GraphInfoResponse)
-def get_graph_info():
+def get_graph_info(
+    area_id: Optional[str] = Query(
+        None, description="Which area to read. None means the default one."
+    ),
+):
     """
-    Get information about the loaded graph including sample node IDs.
+    Get information about an area: its size, its OD pairs and sample node IDs.
 
     Returns:
         Graph statistics and sample node IDs for testing
     """
     try:
-        info = graph_service.get_graph_info()
-        return info
+        return _area(area_id).graph_info()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -102,12 +116,13 @@ def calculate_routes(request: RouteRequest):
         Calculated routes with paths and metadata
     """
     try:
-        with graph_service.lock:
-            routes = graph_service.calculate_routes(
-                pairs=request.pairs,
-                weight=request.weight,
-            )
+        routes = _area(request.area_id).calculate_routes(
+            pairs=request.pairs,
+            weight=request.weight,
+        )
         return RouteResponse(routes=routes)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -130,7 +145,7 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
         Original and recalculated routes with comparison data
     """
     try:
-        result = graph_service.recalculate_with_modifications(
+        result = _area(request.area_id).recalculate_with_modifications(
             pairs=request.pairs,
             edge_modifications=request.edge_modifications,
             weight=request.weight,
@@ -147,6 +162,8 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
             "Server-Timing": ", ".join(f"{name};dur={ms:.1f}" for name, ms in phases.items())
         }
         return ORJSONResponse(result, headers=headers)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Recalculate error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
@@ -163,6 +180,9 @@ def get_baseline(
         None,
         ge=1,
         description="How many OD pairs. Defaults to the OD_PAIRS setting.",
+    ),
+    area_id: Optional[str] = Query(
+        None, description="Which area to read. None means the default one."
     ),
 ):
     """
@@ -181,9 +201,14 @@ def get_baseline(
             ),
         )
     try:
+        area = _area(area_id)
         n = min(od_pairs or settings.od_pairs, settings.od_pairs_max)
-        data, etag = _cached_json(f"baseline:{n}", lambda: graph_service.baseline_payload(n))
+        # The cache lives on the area, so two areas never share an ETag and
+        # evicting an area frees its payloads.
+        data, etag = area.payloads.get_or_build(f"baseline:{n}", lambda: area.baseline_payload(n))
         return _json_or_304(request, data, etag, "no-cache")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -226,36 +251,40 @@ def generate_random_pairs(request: RandomPairsRequest):
     """
     try:
         # Clear route cache when generating new pairs
-        graph_service.clear_route_cache()
+        graph_service.clear_route_cache(request.area_id)
 
         if request.sampling_method == "research":
-            from app.services.node_sampling_service import (
+            from app.services.sampling import (
                 SamplingConfig,
-                generate_research_based_pairs,
+                generate_research_based_pairs_mirror,
             )
 
             config = request.sampling_config or SamplingConfig()
-            with graph_service.lock:
-                pairs = generate_research_based_pairs(
-                    graph_service.graph,
-                    n_pairs=request.count,
-                    config=config,
-                    seed=request.seed or 42,
-                )
+            pairs = generate_research_based_pairs_mirror(
+                _area(request.area_id).mirror,
+                n_pairs=request.count,
+                config=config,
+                seed=request.seed or 42,
+            ).to_nodepairs()
         else:
-            with graph_service.lock:
-                pairs = graph_service.generate_random_pairs(
-                    count=request.count,
-                    seed=request.seed,
-                    radius_km=request.radius_km,
-                )
+            pairs = _area(request.area_id).generate_random_pairs(
+                count=request.count,
+                seed=request.seed,
+                radius_km=request.radius_km,
+            )
         return pairs
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/clear-cache")
-def clear_cache():
+def clear_cache(
+    area_id: Optional[str] = Query(
+        None, description="Which area to clear. None clears every loaded area."
+    ),
+):
     """
     Clear the route calculation cache.
 
@@ -263,8 +292,10 @@ def clear_cache():
         Status message
     """
     try:
-        graph_service.clear_route_cache()
+        graph_service.clear_route_cache(area_id)
         return {"status": "ok", "message": "Cache cleared"}
+    except AreaNotLoaded:
+        raise HTTPException(status_code=404, detail={"code": "area_not_loaded"}) from None
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     od_pairs: int = 20_000  # default N when a request does not say
     od_pairs_max: int = 76_400  # sampled at startup, the largest N allowed
 
+    # Areas kept in memory at the same time. One area is its mirror, its OD
+    # pairs, its baseline and its payloads: about 25 MB at 76,400 pairs on a
+    # Lausanne-sized graph. The budget counts what an area holds; the process
+    # RSS runs higher because the allocator keeps the routing buffers, so
+    # leave headroom. The default area (Lausanne) is pinned and never dropped.
+    area_memory_budget_mb: int = 1024
+    area_max_count: int = 20
+
     # CVRP settings
     # Directory containing *_final_clustered_centroids.csv files.
     cvrp_centroids_dir: str = "data"

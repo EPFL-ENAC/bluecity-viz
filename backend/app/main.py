@@ -1,5 +1,6 @@
 """Main FastAPI application."""
 
+import gc
 import logging
 import logging.config
 from contextlib import asynccontextmanager
@@ -72,6 +73,14 @@ async def lifespan(app: FastAPI):
             sampling_config=None,  # Use default configuration
         )
         logger.info("Default routes initialized")
+
+        # The NetworkX graph and the default area live until the process ends.
+        # Freezing them out of the garbage collector removes a gen-2 scan of
+        # millions of objects, which used to freeze every request for 300 ms.
+        # Only here: an area created later can be evicted, and a frozen object
+        # is never collected.
+        gc.collect()
+        gc.freeze()
 
         # Initialize CVRP service with waste centroid CSVs
         centroids_full_path = _resolve(settings.cvrp_centroids_dir)
