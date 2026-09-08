@@ -22,7 +22,7 @@ export interface AreaFeatureCollection {
     geometry:
       | { type: 'Polygon'; coordinates: [number, number][][] }
       | { type: 'Point'; coordinates: [number, number] }
-    properties: { role: 'mask' | 'ring' | 'handle'; ok: number }
+    properties: { role: 'ring' | 'handle'; ok: number }
   }>
 }
 
@@ -50,36 +50,13 @@ export function ringOf(circle: TrafficAreaSelection): [number, number][] {
   return ring
 }
 
-/**
- * The whole world, the outer ring of the mask. Mercator stops at 85 degrees.
- */
-const WORLD: [number, number][] = [
-  [-180, -85],
-  [180, -85],
-  [180, 85],
-  [-180, 85],
-  [-180, -85]
-]
-
-/**
- * The mask, the ring and its centre handle.
- *
- * The mask is the world with the circle as a hole, drawn in the paper colour:
- * it is what hides the streets outside. Cutting the network with a filter
- * instead would re-read every tile on every move of the mouse, while this is
- * three features the map redraws in one go.
- */
+/** The ring and its centre handle, what the map draws. */
 export function areaFeatures(circle: TrafficAreaSelection, ok: boolean): AreaFeatureCollection {
   const ring = ringOf(circle)
   const flag = ok ? 1 : 0
   return {
     type: 'FeatureCollection',
     features: [
-      {
-        type: 'Feature',
-        geometry: { type: 'Polygon', coordinates: [WORLD, ring] },
-        properties: { role: 'mask', ok: flag }
-      },
       {
         type: 'Feature',
         geometry: { type: 'Polygon', coordinates: [ring] },
@@ -94,14 +71,29 @@ export function areaFeatures(circle: TrafficAreaSelection, ok: boolean): AreaFea
   }
 }
 
-export const AREA_MASK_LAYER = 'bc-area-mask'
+/**
+ * The CSS clip that cuts the network canvas to the circle.
+ *
+ * The country network is drawn on its own canvas, on top of the map, and this
+ * is what hides it outside the circle: a clip-path the browser applies on the
+ * GPU. The points are the ring, projected to pixels by the map, so the cut
+ * and the drawn ring are the same line. Fewer than three points means no
+ * circle, and the path then hides the whole canvas.
+ */
+export function clipPathOf(points: [number, number][]): string {
+  if (points.length < 3) return 'path("M0 0Z")'
+  const px = (value: number) => Math.round(value * 10) / 10
+  const parts = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${px(x)} ${px(y)}`)
+  return `path("${parts.join('')}Z")`
+}
+
 export const AREA_FILL_LAYER = 'bc-area-fill'
 const AREA_LINE_LAYER = 'bc-area-line'
 const AREA_HANDLE_LAYER = 'bc-area-handle'
 export const AREA_RING_LAYER = 'bc-area-ring'
 
 export function areaLayerIds(): string[] {
-  return [AREA_MASK_LAYER, AREA_FILL_LAYER, AREA_LINE_LAYER, AREA_HANDLE_LAYER]
+  return [AREA_FILL_LAYER, AREA_LINE_LAYER, AREA_HANDLE_LAYER]
 }
 
 /**
@@ -111,13 +103,6 @@ export function areaLayerIds(): string[] {
 export function areaLayers(colors: GraphColors): LayerSpecification[] {
   const tint = ['case', ['==', ['get', 'ok'], 1], colors.accent, colors.grey] as never
   return [
-    {
-      id: AREA_MASK_LAYER,
-      type: 'fill',
-      source: AREA_SOURCE,
-      filter: ['==', ['get', 'role'], 'mask'],
-      paint: { 'fill-color': colors.paper, 'fill-opacity': 1 }
-    },
     {
       id: AREA_FILL_LAYER,
       type: 'fill',

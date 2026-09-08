@@ -255,18 +255,6 @@ export const VARIANTS: Record<string, Variant> = {
 export const ORDER = ['contour', 'hachure', 'croisillon', 'trame', 'aplat', 'gravure', 'substrat']
 
 /**
- * The water layers, the ones a tool can draw again on top of a mask.
- *
- * A mask hides every layer under it, so a tool that masks the street network
- * also hides the basemap. These are the layers worth putting back: lakes and
- * rivers say where you are better than anything else on a Swiss map, and no
- * street runs inside them, so drawing them again over the network hides
- * nothing. The landuse tints are not here on purpose, they are opaque and
- * they would cover the streets.
- */
-export const WATER_LAYERS = ['water', 'water-line', 'waterway']
-
-/**
  * Colours the graph overlay draws with. The basemap gives ink and paper, the
  * graph adds its own grey (lighter than the UI grey, it must stay behind the
  * data) and the Blue City accent, which is only ever the pointer.

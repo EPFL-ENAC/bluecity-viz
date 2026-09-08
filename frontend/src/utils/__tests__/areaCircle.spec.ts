@@ -1,14 +1,13 @@
 import type { TrafficAreaSelection } from '@/stores/layers/types'
 import {
-  AREA_MASK_LAYER,
   AREA_RING_LAYER,
   AREA_SOURCE,
   areaFeatures,
   areaLayerIds,
   areaLayers,
   areaRingLayer,
-  emptyArea,
-  ringOf
+  clipPathOf,
+  emptyArea
 } from '@/utils/areaCircle'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import { GRAPH_COLORS } from '@/utils/epflBasemap'
@@ -17,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 const BERN: TrafficAreaSelection = { kind: 'circle', lon: 7.44, lat: 46.95, radiusM: 3000 }
 
 function ring(circle = BERN, ok = true) {
-  const feature = areaFeatures(circle, ok).features[1]
+  const feature = areaFeatures(circle, ok).features[0]
   return (feature.geometry as { coordinates: [number, number][][] }).coordinates[0]
 }
 
@@ -48,10 +47,10 @@ describe('the picker circle', () => {
     const usable = areaFeatures(BERN, true)
     const refused = areaFeatures(BERN, false)
 
-    expect(usable.features.map((f) => f.properties.role)).toEqual(['mask', 'ring', 'handle'])
-    expect(usable.features[2].geometry).toEqual({ type: 'Point', coordinates: [7.44, 46.95] })
-    expect(usable.features.map((f) => f.properties.ok)).toEqual([1, 1, 1])
-    expect(refused.features.map((f) => f.properties.ok)).toEqual([0, 0, 0])
+    expect(usable.features.map((f) => f.properties.role)).toEqual(['ring', 'handle'])
+    expect(usable.features[1].geometry).toEqual({ type: 'Point', coordinates: [7.44, 46.95] })
+    expect(usable.features.map((f) => f.properties.ok)).toEqual([1, 1])
+    expect(refused.features.map((f) => f.properties.ok)).toEqual([0, 0])
   })
 
   it('empties to a collection the map can still read', () => {
@@ -69,41 +68,51 @@ describe('the picker layers', () => {
   it('splits the mask, the ring and the handle with a fixed filter', () => {
     const layers = areaLayers(GRAPH_COLORS.light)
     const roles = layers.map((l) => (l as { filter: unknown[] }).filter[2])
-    expect(roles).toEqual(['mask', 'ring', 'ring', 'handle'])
+    expect(roles).toEqual(['ring', 'ring', 'handle'])
   })
 
   it('is accent when usable and grey when not', () => {
-    const line = areaLayers(GRAPH_COLORS.light)[2] as { paint: { 'line-color': unknown[] } }
+    const line = areaLayers(GRAPH_COLORS.light)[1] as { paint: { 'line-color': unknown[] } }
     expect(line.paint['line-color']).toContain(GRAPH_COLORS.light.accent)
     expect(line.paint['line-color']).toContain(GRAPH_COLORS.light.grey)
   })
 
   it('draws no disc: the streets inside are the fill', () => {
-    const fill = areaLayers(GRAPH_COLORS.light)[1] as { paint: { 'fill-opacity': number } }
+    const fill = areaLayers(GRAPH_COLORS.light)[0] as { paint: { 'fill-opacity': number } }
     expect(fill.paint['fill-opacity']).toBe(0)
   })
 })
 
-describe('the mask, what hides the streets outside', () => {
-  it('is the world with the circle cut out of it', () => {
-    const mask = areaFeatures(BERN, true).features[0]
-    const rings = (mask.geometry as { coordinates: [number, number][][] }).coordinates
-    expect(rings).toHaveLength(2)
-    // the outer ring covers the map at any zoom
-    expect(rings[0]).toContainEqual([-180, -85])
-    expect(rings[0]).toContainEqual([180, 85])
-    // the hole is the circle itself, so the two never drift apart
-    expect(rings[1]).toEqual(ringOf(BERN))
+describe('the clip that cuts the network canvas', () => {
+  it('is a closed CSS path of the points, in pixels', () => {
+    expect(
+      clipPathOf([
+        [10, 20],
+        [30, 20],
+        [30, 40]
+      ])
+    ).toBe('path("M10 20L30 20L30 40Z")')
   })
 
-  it('is paper, and hides what is under it', () => {
-    const mask = areaLayers(GRAPH_COLORS.light)[0] as {
-      id: string
-      paint: { 'fill-color': string; 'fill-opacity': number }
-    }
-    expect(mask.id).toBe(AREA_MASK_LAYER)
-    expect(mask.paint['fill-color']).toBe(GRAPH_COLORS.light.paper)
-    expect(mask.paint['fill-opacity']).toBe(1)
+  it('keeps a tenth of a pixel, enough for the cut to sit on the ring', () => {
+    expect(
+      clipPathOf([
+        [1.26, 2.34],
+        [3, 4],
+        [5, 6]
+      ])
+    ).toBe('path("M1.3 2.3L3 4L5 6Z")')
+  })
+
+  it('hides everything when there is no circle', () => {
+    const nothing = clipPathOf([])
+    expect(nothing).toBe('path("M0 0Z")')
+    expect(
+      clipPathOf([
+        [1, 1],
+        [2, 2]
+      ])
+    ).toBe(nothing)
   })
 })
 

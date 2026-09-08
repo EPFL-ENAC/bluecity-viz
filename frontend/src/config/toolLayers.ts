@@ -7,7 +7,7 @@
  */
 
 import { baseUrl } from '@/config/layerTypes'
-import type { LayerSpecification, SourceSpecification } from 'maplibre-gl'
+import type { LayerSpecification, SourceSpecification, StyleSpecification } from 'maplibre-gl'
 
 export interface ToolLayer {
   sourceId: string
@@ -18,8 +18,8 @@ export interface ToolLayer {
 /**
  * The Swiss road network, the preview of the area being picked.
  *
- * The picker filters it on the circle and colours it, so on the map it is the
- * streets the tool would take, not a backdrop of the whole country.
+ * The picker draws it on a canvas of its own, cut to the circle, so on screen
+ * it is the streets the tool would take, not a backdrop of the whole country.
  */
 export const swissNetworkLayer: ToolLayer = {
   sourceId: 'tool-swiss-network',
@@ -40,4 +40,13 @@ export const swissNetworkLayer: ToolLayer = {
       'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.5, 10, 0.8, 14, 1.2]
     }
   } as LayerSpecification
+}
+
+/** A style with nothing but the network, for a map that draws only that. */
+export function swissNetworkStyle(): StyleSpecification {
+  return {
+    version: 8,
+    sources: { [swissNetworkLayer.sourceId]: swissNetworkLayer.source },
+    layers: [swissNetworkLayer.layer]
+  }
 }

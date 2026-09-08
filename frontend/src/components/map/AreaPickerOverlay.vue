@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useAreaFeedback } from '@/composables/useAreaFeedback'
-import { swissNetworkLayer } from '@/config/toolLayers'
+import { swissNetworkLayer, swissNetworkStyle } from '@/config/toolLayers'
+import { useApiKeyStore } from '@/stores/apiKey'
 import { useThemeStore } from '@/stores/theme'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import {
@@ -9,19 +10,30 @@ import {
   areaFeatures,
   areaLayerIds,
   areaLayers,
-  emptyArea
+  clipPathOf,
+  emptyArea,
+  ringOf
 } from '@/utils/areaCircle'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import { BEFORE_LAYER, setData } from '@/utils/bluecityGraph'
-import { GRAPH_COLORS, WATER_LAYERS } from '@/utils/epflBasemap'
-import type { LayerSpecification, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl'
-import { computed, inject, onMounted, onUnmounted, watch, type Ref } from 'vue'
+import { GRAPH_COLORS } from '@/utils/epflBasemap'
+import { Map as MapLibre, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl'
+import { computed, inject, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 
 // The circle on the map while the user picks an area. Mounted only in pick
 // mode, so the component lifecycle is the show and hide.
+//
+// The circle itself (the ring, the handle, the invisible disc the drag points
+// at) lives on the main map. The country network does not: it is drawn by a
+// second map on a canvas of its own, on top of the first, that follows the
+// same camera and is cut to the circle with a CSS clip-path. A map layer
+// cannot be masked on its own, a mask covers everything under it, the basemap
+// with it. A canvas can, and the browser does it on the GPU, so the drag
+// costs nothing and the basemap stays whole outside the circle.
 
 const trafficStore = useTrafficAnalysisStore()
 const themeStore = useThemeStore()
+const apiKeyStore = useApiKeyStore()
 const { canUse, checkNow, invalidate, stopChecking } = useAreaFeedback()
 
 const mapComponentRef = inject<Ref<{ map?: MapLibreMap } | undefined>>('mapRef')
@@ -36,6 +48,8 @@ const SWITZERLAND: [[number, number], [number, number]] = [
 // The dock covers the right of the map, same padding as useGraphOverlay.focus.
 const DOCK_PADDING = { top: 80, bottom: 80, left: 80, right: 420 }
 
+const networkBox = ref<HTMLDivElement | null>(null)
+let network: MapLibre | null = null
 let mountedOn: MapLibreMap | null = null
 let waiting: MapLibreMap | null = null
 let dragging = false
@@ -48,20 +62,39 @@ let savedCamera: { center: [number, number]; zoom: number } | null = null
 function draw(): void {
   const current = map.value
   const circle = trafficStore.draftArea
-  if (!current || mountedOn !== current || !circle) return
-  // One setData for the mask, the ring and the handle: the drag costs three
-  // features, the country network on the map below is never touched.
-  setData(current, AREA_SOURCE, areaFeatures(circle, canUse.value))
-  paintNetwork(current)
+  if (!current || !circle) return
+  if (mountedOn === current) setData(current, AREA_SOURCE, areaFeatures(circle, canUse.value))
+  clip()
+  paintNetwork()
+}
+
+/** Cut the network canvas to the circle, in pixels of the current camera. */
+function clip(): void {
+  const current = map.value
+  const box = networkBox.value
+  if (!current || !box) return
+  const circle = trafficStore.draftArea
+  const points = circle
+    ? ringOf(circle).map((point): [number, number] => {
+        const pixel = current.project(point)
+        return [pixel.x, pixel.y]
+      })
+    : []
+  box.style.clipPath = clipPathOf(points)
 }
 
 /** The streets inside the circle are the answer, so they carry its colour. */
-function paintNetwork(current: MapLibreMap): void {
-  if (!current.getLayer(swissNetworkLayer.layer.id)) return
+function paintNetwork(): void {
+  if (!network) return
   const tint = canUse.value ? colors.value.accent : colors.value.grey
   if (tint === painted) return
-  painted = tint
-  current.setPaintProperty(swissNetworkLayer.layer.id, 'line-color', tint)
+  try {
+    network.setPaintProperty(swissNetworkLayer.layer.id, 'line-color', tint)
+    painted = tint
+  } catch {
+    // the style is not parsed yet, it is inline so that is a matter of ticks
+    network.once('style.load', paintNetwork)
+  }
 }
 
 /**
@@ -75,21 +108,17 @@ function mount(): void {
     if (!current.getSource(AREA_SOURCE)) {
       current.addSource(AREA_SOURCE, { type: 'geojson', data: emptyArea() as never })
     }
-    // Under the names, so the user can still read where they are outside the
-    // circle. The network goes first, the mask covers it, the ring sits on top.
+    // Under the names, so they stay readable over the ring.
     const under = current.getLayer(BEFORE_LAYER) ? BEFORE_LAYER : undefined
-    showSwissNetwork(current, true)
     for (const layer of areaLayers(colors.value)) {
       if (current.getLayer(layer.id)) current.removeLayer(layer.id)
       current.addLayer(layer, under)
     }
-    showWater(current)
   } catch {
     retryLater(current)
     return
   }
   mountedOn = current
-  painted = ''
   draw()
 }
 
@@ -106,54 +135,53 @@ function retryLater(current: MapLibreMap): void {
   current.on('idle', again)
 }
 
-/** Show the country network, so the user sees where the tool has streets. */
-function showSwissNetwork(current: MapLibreMap, visible: boolean): void {
-  try {
-    if (visible) {
-      if (!current.getSource(swissNetworkLayer.sourceId)) {
-        current.addSource(swissNetworkLayer.sourceId, swissNetworkLayer.source)
-      }
-      if (!current.getLayer(swissNetworkLayer.layer.id)) {
-        const under = current.getLayer(BEFORE_LAYER) ? BEFORE_LAYER : undefined
-        current.addLayer(swissNetworkLayer.layer, under)
-      }
-      current.setLayoutProperty(swissNetworkLayer.layer.id, 'visibility', 'visible')
-    } else if (current.getLayer(swissNetworkLayer.layer.id)) {
-      current.setLayoutProperty(swissNetworkLayer.layer.id, 'visibility', 'none')
-    }
-  } catch (error) {
-    // The picker works without the backdrop, so a missing file is not an error.
-    console.warn('Could not show the Swiss network', error)
-  }
-}
-
-/** The id a copy of a basemap water layer takes above the mask. */
-function echoId(id: string): string {
-  return `${id}-over-area`
-}
-
 /**
- * Draw the lakes and the rivers again, on top of the mask.
+ * The second map, the one that draws the network.
  *
- * The mask hides the whole basemap, not only the streets, and a blank country
- * is hard to read. Water is the one thing safe to put back: no street runs
- * inside a lake, so the copy hides nothing inside the circle either.
+ * Same camera as the main one, no interaction, no controls, and a transparent
+ * canvas since its style has no background. The tiles carry the API key the
+ * same way the main map sends it.
  */
-function showWater(current: MapLibreMap): void {
-  const style = current.getStyle()
-  for (const id of WATER_LAYERS) {
-    const source = style.layers.find((layer) => layer.id === id)
-    if (!source) continue
-    const copy = { ...source, id: echoId(id) } as LayerSpecification
-    if (current.getLayer(copy.id)) current.removeLayer(copy.id)
-    current.addLayer(copy, AREA_FILL_LAYER)
-  }
+function mountNetwork(current: MapLibreMap): void {
+  const box = networkBox.value
+  if (!box || network) return
+  network = new MapLibre({
+    container: box,
+    style: swissNetworkStyle(),
+    center: current.getCenter(),
+    zoom: current.getZoom(),
+    bearing: current.getBearing(),
+    pitch: current.getPitch(),
+    interactive: false,
+    attributionControl: false,
+    transformRequest: (url, resourceType) =>
+      resourceType === 'Tile' && url.includes('pmtiles://')
+        ? { url: `${url}?apikey=${apiKeyStore.apiKey}`, credentials: 'include' as const }
+        : { url }
+  })
+  painted = ''
+  paintNetwork()
+  current.on('move', follow)
+  follow()
 }
 
-function hideWater(current: MapLibreMap): void {
-  for (const id of WATER_LAYERS) {
-    if (current.getLayer(echoId(id))) current.removeLayer(echoId(id))
-  }
+/** The main map moved: same camera on the network, and the cut moves with it. */
+function follow(): void {
+  const current = map.value
+  if (!current || !network) return
+  network.jumpTo({
+    center: current.getCenter(),
+    zoom: current.getZoom(),
+    bearing: current.getBearing(),
+    pitch: current.getPitch()
+  })
+  clip()
+}
+
+function unmountNetwork(current: MapLibreMap): void {
+  current.off('move', follow)
+  network?.remove()
+  network = null
 }
 
 function fitCircle(current: MapLibreMap, circle: { lon: number; lat: number; radiusM: number }) {
@@ -239,6 +267,8 @@ watch(
 
 watch(colors, () => {
   if (mountedOn) mount()
+  painted = ''
+  paintNetwork()
 })
 
 watch(map, (current, previous) => {
@@ -255,6 +285,7 @@ function attach(current: MapLibreMap): void {
   current.on('click', onClick)
   current.on('style.load', mount)
   mount()
+  mountNetwork(current)
   current.fitBounds(SWITZERLAND, { padding: DOCK_PADDING, duration: 600 })
   checkNow()
 }
@@ -268,11 +299,10 @@ function detach(current: MapLibreMap): void {
   current.off('style.load', mount)
   current.dragPan.enable()
   current.getCanvas().style.cursor = ''
-  hideWater(current)
+  unmountNetwork(current)
   for (const id of areaLayerIds()) {
     if (current.getLayer(id)) current.removeLayer(id)
   }
-  showSwissNetwork(current, false)
   mountedOn = null
 
   // Confirmed: look at the area. Cancelled: back where we were.
@@ -295,4 +325,15 @@ onUnmounted(() => {
 })
 </script>
 
-<template><span /></template>
+<template>
+  <div ref="networkBox" class="area-network" />
+</template>
+
+<style scoped>
+/* Same box as the map under it, so a pixel of one is a pixel of the other. */
+.area-network {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+</style>
