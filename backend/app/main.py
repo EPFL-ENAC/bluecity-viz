@@ -12,6 +12,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.v1 import areas as areas_router
 from app.api.v1 import cvrp as cvrp_router
 from app.api.v1 import routes
 from app.config import settings
@@ -53,6 +54,34 @@ def _resolve(path_setting: str) -> Path:
     return (Path(__file__).parent.parent / path).resolve()
 
 
+def _open_swiss_store() -> None:
+    """Open the Swiss graph store, when this deployment ships one.
+
+    Without it the app still runs: it answers on the city it loaded and the
+    /areas endpoints say so with a 503.
+    """
+    from app.services.graph_store import GraphStore
+
+    store_dir = _resolve(settings.swiss_graph_dir)
+    if not store_dir.exists():
+        logger.info("No Swiss graph store at %s, /areas is disabled", store_dir)
+        areas_router.set_store(None)
+        return
+    try:
+        store = GraphStore.open(store_dir)
+    except Exception:
+        logger.exception("Could not open the Swiss graph store at %s", store_dir)
+        areas_router.set_store(None)
+        return
+    areas_router.set_store(store)
+    logger.info(
+        "Swiss graph store: %d nodes, %d edges, %d cells",
+        store.totals["nodes"],
+        store.totals["edges"],
+        len(store.cells),
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
@@ -73,6 +102,8 @@ async def lifespan(app: FastAPI):
             sampling_config=None,  # Use default configuration
         )
         logger.info("Default routes initialized")
+
+        _open_swiss_store()
 
         # The NetworkX graph and the default area live until the process ends.
         # Freezing them out of the garbage collector removes a gen-2 scan of
@@ -139,6 +170,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 # Include routers
 app.include_router(routes.router, prefix="/api/v1", dependencies=[Depends(require_api_key)])
+app.include_router(areas_router.router, prefix="/api/v1", dependencies=[Depends(require_api_key)])
 app.include_router(cvrp_router.router, prefix="/api/v1", dependencies=[Depends(require_api_key)])
 
 # Mount static data directory for serving GeoJSON files

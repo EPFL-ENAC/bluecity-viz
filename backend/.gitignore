@@ -31,5 +31,7 @@ htmlcov/
 **/*.pmtiles
 *.csv
 *.geojson
+# the Swiss graph store is built by processing/ and downloaded in prod
+data/swiss_graph/
 !data/lausanne.geojson
 !data/lausanne.graphml

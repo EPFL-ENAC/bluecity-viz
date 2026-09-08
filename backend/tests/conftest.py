@@ -1,14 +1,18 @@
 """Shared fixtures: a small synthetic road network, no lausanne.graphml needed."""
 
 import networkx as nx
+import numpy as np
 import osmnx as ox
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 from shapely.geometry import LineString
 
+from app.config import settings
 from app.services.cvrp_service import DEPOT_LAT, DEPOT_LON, CVRPService
 from app.services.graph_service import GraphService
+from app.services.graph_store import GraphStore, Grid, write_store
+from app.services.graph_store import distance_m as store_distance
 from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
 
 # Grid size: 4 columns x 5 rows = 20 nodes.
@@ -141,3 +145,118 @@ def client(graph_service, cvrp_service, monkeypatch):
             raise RuntimeError("db password is hunter2")
 
     return TestClient(app, raise_server_exceptions=False)
+
+
+# ── A small Swiss graph store, for the area tests ─────────────────────────────
+
+STORE_GRID = Grid(lon0=7.0, lat0=46.0, dlon=0.05, dlat=0.05, ncols=8, nrows=8)
+STORE_COLS, STORE_ROWS = 40, 40
+STORE_STEP = 0.002  # about 160 m, so a 2 km circle holds a few hundred nodes
+
+
+def build_lattice_store(directory, cut_column=None):
+    """A lattice of two-way streets, written as a graph store.
+
+    `cut_column` removes every street crossing that column, which splits the
+    lattice in two networks that cannot reach each other. That is the shape a
+    circle over a lake or a valley has.
+    """
+    node_id, xs, ys = [], [], []
+    for r in range(STORE_ROWS):
+        for c in range(STORE_COLS):
+            node_id.append(2000 + r * STORE_COLS + c)
+            xs.append(7.05 + c * STORE_STEP)
+            ys.append(46.05 + r * STORE_STEP)
+    node_id = np.array(node_id, dtype=np.int64)
+    xs, ys = np.array(xs), np.array(ys)
+    pos = {int(n): i for i, n in enumerate(node_id)}
+
+    u, v = [], []
+    for r in range(STORE_ROWS):
+        for c in range(STORE_COLS):
+            here = 2000 + r * STORE_COLS + c
+            if c + 1 < STORE_COLS:
+                if cut_column is not None and c == cut_column:
+                    continue
+                there = 2000 + r * STORE_COLS + c + 1
+                u += [here, there]
+                v += [there, here]
+            if r + 1 < STORE_ROWS:
+                there = 2000 + (r + 1) * STORE_COLS + c
+                u += [here, there]
+                v += [there, here]
+    # the vertical streets of the cut column would still join the two halves
+    if cut_column is not None:
+        keep = [
+            i
+            for i, (a, b) in enumerate(zip(u, v))
+            if not ((pos[a] % STORE_COLS == cut_column) or (pos[b] % STORE_COLS == cut_column))
+        ]
+        u = [u[i] for i in keep]
+        v = [v[i] for i in keep]
+
+    u = np.array(u, dtype=np.int64)
+    v = np.array(v, dtype=np.int64)
+    n = len(u)
+    length = np.array(
+        [
+            store_distance(xs[pos[int(b)]], ys[pos[int(b)]], xs[pos[int(a)]], ys[pos[int(a)]])
+            for a, b in zip(u, v)
+        ]
+    )
+    nodes = {
+        "node_id": node_id,
+        "x": xs,
+        "y": ys,
+        "street_count": np.full(len(node_id), 3, dtype=np.int16),
+        "elevation": np.zeros(len(node_id)),
+    }
+    edges = {
+        "u": u,
+        "v": v,
+        "key": np.arange(n, dtype=np.int32),
+        "length": length,
+        "travel_time": length / (50 / 3.6),
+        "speed_kph": np.full(n, 50.0),
+        "lanes": np.full(n, 2, dtype=np.int16),
+        "elev_gain": np.zeros(n),
+        "highway": ["residential"] * n,
+        "name": ["Rue du Test"] * n,
+    }
+    write_store(directory, nodes, edges, grid=STORE_GRID)
+    return directory
+
+
+@pytest.fixture(scope="session")
+def swiss_store_dir(tmp_path_factory):
+    return build_lattice_store(tmp_path_factory.mktemp("swiss_store"))
+
+
+@pytest.fixture
+def swiss_store(swiss_store_dir):
+    return GraphStore.open(swiss_store_dir)
+
+
+@pytest.fixture
+def small_area_limits(monkeypatch):
+    """Thresholds and OD pair counts that fit the lattice and run fast."""
+    monkeypatch.setattr(settings, "area_min_nodes", 100)
+    monkeypatch.setattr(settings, "area_max_nodes", 2_000)
+    monkeypatch.setattr(settings, "area_max_edges", 8_000)
+    monkeypatch.setattr(settings, "area_min_radius_m", 100.0)
+    monkeypatch.setattr(settings, "area_max_radius_m", 20_000.0)
+    monkeypatch.setattr(settings, "area_od_pairs_max", 400)
+    monkeypatch.setattr(settings, "od_pairs", 200)
+    monkeypatch.setattr(settings, "reference_network_km", 100.0)
+
+
+@pytest.fixture
+def make_store(tmp_path):
+    """Build a lattice store on demand, with an optional cut in the middle."""
+
+    def _make(cut_column=None):
+        directory = tmp_path / f"store_{cut_column}"
+        build_lattice_store(directory, cut_column=cut_column)
+        return GraphStore.open(directory)
+
+    return _make

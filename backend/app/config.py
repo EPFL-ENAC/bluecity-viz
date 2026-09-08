@@ -33,6 +33,24 @@ class Settings(BaseSettings):
     area_memory_budget_mb: int = 1024
     area_max_count: int = 20
 
+    # The Swiss road graph, cut in cells. Empty or missing means the /areas
+    # endpoints answer 503 and only the default city works.
+    swiss_graph_dir: str = "data/swiss_graph"
+
+    # What an area must look like for the tool to run on it. The node cap is
+    # about twice Lausanne (4,771 nodes, 10,854 edges), which keeps a
+    # recalculate around a second.
+    area_min_nodes: int = 1000  # junctions, the OD sampler pool
+    area_max_nodes: int = 10_000
+    area_max_edges: int = 20_000
+    area_min_scc_fraction: float = 0.9
+    area_min_radius_m: float = 500.0
+    area_max_radius_m: float = 10_000.0
+    # OD pairs sampled for an area. Lower than od_pairs_max shortens the build.
+    area_od_pairs_max: int = 76_400
+    # Road length of the network daily_km_driven was calibrated on (Lausanne).
+    reference_network_km: float = 1547.0
+
     # CVRP settings
     # Directory containing *_final_clustered_centroids.csv files.
     cvrp_centroids_dir: str = "data"
