@@ -13,8 +13,8 @@ import {
 } from '@/utils/areaCircle'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import { BEFORE_LAYER, setData } from '@/utils/bluecityGraph'
-import { GRAPH_COLORS } from '@/utils/epflBasemap'
-import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl'
+import { GRAPH_COLORS, WATER_LAYERS } from '@/utils/epflBasemap'
+import type { LayerSpecification, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl'
 import { computed, inject, onMounted, onUnmounted, watch, type Ref } from 'vue'
 
 // The circle on the map while the user picks an area. Mounted only in pick
@@ -83,6 +83,7 @@ function mount(): void {
       if (current.getLayer(layer.id)) current.removeLayer(layer.id)
       current.addLayer(layer, under)
     }
+    showWater(current)
   } catch {
     retryLater(current)
     return
@@ -123,6 +124,35 @@ function showSwissNetwork(current: MapLibreMap, visible: boolean): void {
   } catch (error) {
     // The picker works without the backdrop, so a missing file is not an error.
     console.warn('Could not show the Swiss network', error)
+  }
+}
+
+/** The id a copy of a basemap water layer takes above the mask. */
+function echoId(id: string): string {
+  return `${id}-over-area`
+}
+
+/**
+ * Draw the lakes and the rivers again, on top of the mask.
+ *
+ * The mask hides the whole basemap, not only the streets, and a blank country
+ * is hard to read. Water is the one thing safe to put back: no street runs
+ * inside a lake, so the copy hides nothing inside the circle either.
+ */
+function showWater(current: MapLibreMap): void {
+  const style = current.getStyle()
+  for (const id of WATER_LAYERS) {
+    const source = style.layers.find((layer) => layer.id === id)
+    if (!source) continue
+    const copy = { ...source, id: echoId(id) } as LayerSpecification
+    if (current.getLayer(copy.id)) current.removeLayer(copy.id)
+    current.addLayer(copy, AREA_FILL_LAYER)
+  }
+}
+
+function hideWater(current: MapLibreMap): void {
+  for (const id of WATER_LAYERS) {
+    if (current.getLayer(echoId(id))) current.removeLayer(echoId(id))
   }
 }
 
@@ -238,6 +268,7 @@ function detach(current: MapLibreMap): void {
   current.off('style.load', mount)
   current.dragPan.enable()
   current.getCanvas().style.cursor = ''
+  hideWater(current)
   for (const id of areaLayerIds()) {
     if (current.getLayer(id)) current.removeLayer(id)
   }

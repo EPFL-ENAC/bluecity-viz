@@ -1,4 +1,4 @@
-import { GRAPH_COLORS, VARIANTS, buildStyle } from '@/utils/epflBasemap'
+import { GRAPH_COLORS, VARIANTS, WATER_LAYERS, buildStyle } from '@/utils/epflBasemap'
 import { describe, expect, it } from 'vitest'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -71,5 +71,21 @@ describe('buildStyle: substrat', () => {
     expect(GRAPH_COLORS.light.accent).toBe('#0500E1')
     expect(GRAPH_COLORS.dark.accent).toBe('#8583FF')
     expect(GRAPH_COLORS.light.grey).not.toBe(GRAPH_COLORS.light.ink)
+  })
+})
+
+describe('the water layers a tool can draw again over a mask', () => {
+  it('all exist in the style, under the name the tool asks for', () => {
+    // The picker copies these by id. A rename here would silently leave the
+    // country blank while it picks an area.
+    for (const id of WATER_LAYERS) {
+      expect(byId('substrat', id), id).toBeTruthy()
+    }
+  })
+
+  it('holds no landuse: an opaque tint would cover the streets', () => {
+    expect(WATER_LAYERS).not.toContain('land')
+    expect(WATER_LAYERS).not.toContain('wood')
+    expect(WATER_LAYERS).not.toContain('bld-fill')
   })
 })
