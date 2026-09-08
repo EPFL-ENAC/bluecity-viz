@@ -1,4 +1,5 @@
-.PHONY: help elevation network geojson tiles copy all clean clean-all pbf-download pbf-lausanne
+.PHONY: help elevation network geojson tiles copy all clean clean-all pbf-download pbf-lausanne \
+        dem swiss-store swiss-tiles swiss-copy swiss-all
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -24,6 +25,14 @@ DRIVE_GEOJSON      := $(GRAPH_DIR)/lausanne_drive.geojson
 BACKEND_GRAPHML    := $(BACKEND_DATA)/lausanne.graphml
 BACKEND_GEOJSON    := $(BACKEND_DATA)/lausanne.geojson
 
+# The whole country, for the "pick any area" feature
+SWISS_STORE        := $(BACKEND_DATA)/swiss_graph
+SWISS_DEM_DIR      := data/elevation-ch
+SWISS_PMTILES      := $(FRONTEND_GEODATA)/swiss_drive.pmtiles
+SWISS_DENSITY      := $(FRONTEND_GEODATA)/swiss_graph_density.json
+# A small region to try the pipeline on: minutes instead of an hour.
+SWISS_BBOX         :=
+
 # ---------------------------------------------------------------------------
 # Help
 # ---------------------------------------------------------------------------
@@ -42,6 +51,14 @@ help:
 	@echo "  make network     Build OSM graph with speeds, elevation & transit enrichment"
 	@echo "  make geojson     Convert GraphML → GeoJSON  (backend edge geometry)"
 	@echo "  make copy        Copy outputs to backend/ and frontend/"
+	@echo ""
+	@echo "Whole country (pick any area):"
+	@echo "  make dem            Download the DHM25 elevation tiles (needs a CSV, see the script)"
+	@echo "  make swiss-store    Build the country graph store (~1 h, 16 GB of RAM)"
+	@echo "  make swiss-tiles    Cut the country network into PMTiles"
+	@echo "  make swiss-copy     Copy density.json to the frontend"
+	@echo "  make swiss-all      The three above"
+	@echo "  Try it small first:  make swiss-store SWISS_BBOX=6.4,46.4,6.9,46.7"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  make clean       Remove generated GeoJSON and PMTiles"
@@ -131,6 +148,44 @@ copy: geojson
 	@cp $(DRIVE_GEOJSON)  $(FRONTEND_GEODATA)/lausanne.geojson
 	@echo "  ✓ $(FRONTEND_GEODATA)/lausanne.geojson"
 	@echo "✓ Copy complete"
+
+# ---------------------------------------------------------------------------
+# The whole country — the graph store the backend cuts areas from
+# ---------------------------------------------------------------------------
+#
+# Needs the Geofabrik PBF ('make pbf-download') and, for the slopes, the DHM25
+# tiles ('make dem'). The graph step is long and hungry: about an hour and
+# 16 GB of RAM for the country. Set SWISS_BBOX to try it on a region first.
+# ---------------------------------------------------------------------------
+
+_SWISS_BBOX_FLAG = $(if $(SWISS_BBOX),--bbox $(SWISS_BBOX),)
+_SWISS_DEM_FLAG  = $(if $(wildcard $(SWISS_DEM_DIR)/*.tif),--dem $(SWISS_DEM_DIR),)
+
+dem: ## Download the national elevation tiles (DHM25)
+	uv run python download_swiss_dem.py --output $(SWISS_DEM_DIR)
+
+swiss-store: ## Build the country graph store the backend reads
+	@test -f $(OSM_PBF_SWISS) || (echo "Missing $(OSM_PBF_SWISS). Run 'make pbf-download'." && exit 1)
+	@mkdir -p $(BACKEND_DATA)
+	uv run python build_swiss_graph.py \
+		--pbf $(OSM_PBF_SWISS) \
+		--store $(SWISS_STORE) \
+		$(_SWISS_DEM_FLAG) $(_SWISS_BBOX_FLAG)
+	@echo "✓ Store written to $(SWISS_STORE)"
+
+swiss-tiles: ## Cut the country network into PMTiles for the picker backdrop
+	@test -d $(SWISS_STORE) || (echo "Missing $(SWISS_STORE). Run 'make swiss-store'." && exit 1)
+	@mkdir -p $(FRONTEND_GEODATA)
+	uv run python generate_graph_tiles.py --store $(SWISS_STORE) $(SWISS_PMTILES)
+	@echo "✓ $(SWISS_PMTILES)"
+
+swiss-copy: ## The small file the picker sums under the circle
+	@test -f $(SWISS_STORE)/density.json || (echo "Missing the store. Run 'make swiss-store'." && exit 1)
+	@mkdir -p $(FRONTEND_GEODATA)
+	@cp $(SWISS_STORE)/density.json $(SWISS_DENSITY)
+	@echo "✓ $(SWISS_DENSITY)"
+
+swiss-all: swiss-store swiss-tiles swiss-copy
 
 # ---------------------------------------------------------------------------
 # Full pipeline

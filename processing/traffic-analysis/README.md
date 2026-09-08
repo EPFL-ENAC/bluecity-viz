@@ -30,6 +30,53 @@ The backend loads `lausanne.graphml` at startup for routing and serves
 The frontend also loads `lausanne_drive.pmtiles` directly as a vector tile
 layer for interactive edge highlighting.
 
+## The whole country
+
+The scenario workbench used to run on Lausanne only. It now runs on any circle
+the user draws in Switzerland, so the backend needs the country. A country
+graph is about a million edges: too big to hold as a routing graph, so it is
+written as a **graph store**, two parquet files cut in about 5 km grid cells.
+The backend reads only the cells under the circle, which takes milliseconds.
+
+```
+switzerland-latest.osm.pbf (Geofabrik, ~700 MB)
+    │
+    ▼
+build_swiss_graph.py         ← osmium filter + osmnx + speeds + elevation
+    │
+    └── ../../backend/data/swiss_graph/
+             ├── nodes.parquet    one row group per cell
+             ├── edges.parquet    one row group per cell
+             ├── index.json       the grid and the counts per cell
+             └── density.json     the small file the picker reads
+                      │
+                      ├── generate_graph_tiles.py --store
+                      │       └── ../../frontend/public/geodata/swiss_drive.pmtiles
+                      │
+                      └── make swiss-copy
+                              └── ../../frontend/public/geodata/swiss_graph_density.json
+```
+
+```bash
+make pbf-download          # once, ~700 MB
+make dem                   # once, the DHM25 tiles (read download_swiss_dem.py first)
+make swiss-all             # store + tiles + density, about an hour
+```
+
+The graph step needs about 16 GB of RAM. Try it on a region first, it takes
+minutes:
+
+```bash
+make swiss-store SWISS_BBOX=6.4,46.4,6.9,46.7
+```
+
+Lausanne keeps its own GraphML: it is the default area, it has the finer
+swissALTI3D elevation, and nothing about it changes.
+
+The store is not committed. In production it is baked into the backend image
+or downloaded at startup, and the two frontend files go to the CDN with
+`make upload-frontend-geodata` from the repo root.
+
 ## Prerequisites
 
 **Python environment** — install [uv](https://docs.astral.sh/uv/):
