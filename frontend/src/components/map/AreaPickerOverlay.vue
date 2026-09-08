@@ -17,6 +17,7 @@ import {
 } from '@/utils/areaCircle'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import { BEFORE_LAYER, setData } from '@/utils/bluecityGraph'
+import { cdnRequest } from '@/utils/cdnRequest'
 import { GRAPH_COLORS } from '@/utils/epflBasemap'
 import { Map as MapLibre, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl'
 import { computed, inject, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
@@ -155,10 +156,8 @@ function mountNetwork(current: MapLibreMap): void {
     pitch: current.getPitch(),
     interactive: false,
     attributionControl: false,
-    transformRequest: (url, resourceType) =>
-      resourceType === 'Tile' && url.includes('pmtiles://')
-        ? { url: `${url}?apikey=${apiKeyStore.apiKey}`, credentials: 'include' as const }
-        : { url }
+    // Same key on the same CDN as the main map, or the archive never opens.
+    transformRequest: cdnRequest(() => apiKeyStore.apiKey)
   })
   painted = ''
   paintNetwork()
