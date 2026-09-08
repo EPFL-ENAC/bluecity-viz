@@ -138,14 +138,24 @@ def geojson_to_pmtiles(
     """
     print("Converting to PMTiles using tippecanoe...")
 
+    # The map only draws these tiles, it never reads an attribute (the numbers
+    # come from the store through the backend). So the six values that are
+    # unique per edge stay out: they were two thirds of every tile, and the
+    # room they took was paid with dropped streets at the low zooms. Only
+    # "highway" stays, for the width by road class.
+    #
+    # When a tile is still too big, drop the shortest edges first. A street
+    # under a kilometre is smaller than a pixel at z6 anyway, while dropping
+    # the densest thins the cities, which is where one looks.
     command = [
         "tippecanoe",
         "-o", pmtiles_path,
         "-Z", "6",           # min zoom
         "-z", max_zoom,      # max zoom
         "-l", "graph_edges", # layer name
-        "-r1",               # simplification rate
-        "--drop-densest-as-needed",
+        "-x", "u", "-x", "v", "-x", "name",
+        "-x", "length", "-x", "travel_time", "-x", "speed_kph",
+        "--drop-smallest-as-needed",
         "--extend-zooms-if-still-dropping",
         "--force",
     ]
@@ -188,7 +198,8 @@ def writable_dir(*candidates) -> str:
     for candidate in candidates:
         if not candidate:
             continue
-        path = Path(candidate)
+        # Absolute, tippecanoe warns about a relative spool.
+        path = Path(candidate).resolve()
         try:
             path.mkdir(parents=True, exist_ok=True)
             probe = path / ".write-probe"

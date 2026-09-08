@@ -7,7 +7,12 @@
  */
 
 import { baseUrl } from '@/config/layerTypes'
-import type { LayerSpecification, SourceSpecification, StyleSpecification } from 'maplibre-gl'
+import type {
+  ExpressionSpecification,
+  LayerSpecification,
+  SourceSpecification,
+  StyleSpecification
+} from 'maplibre-gl'
 
 export interface ToolLayer {
   sourceId: string
@@ -21,6 +26,9 @@ export interface ToolLayer {
  * The picker draws it on a canvas of its own, cut to the circle, so on screen
  * it is the streets the tool would take, not a backdrop of the whole country.
  */
+const MAIN_ROADS = ['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link']
+const isMainRoad: ExpressionSpecification = ['in', ['get', 'highway'], ['literal', MAIN_ROADS]]
+
 export const swissNetworkLayer: ToolLayer = {
   sourceId: 'tool-swiss-network',
   source: {
@@ -37,7 +45,20 @@ export const swissNetworkLayer: ToolLayer = {
       // The picker sets the colour: accent when the tool can run in the
       // circle, grey when it cannot.
       'line-color': '#8a8a8a',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.5, 10, 0.8, 14, 1.2]
+      // From far away the main roads are a bit wider, so the country reads as
+      // a network and not as noise. By z14 every street is the same hairline
+      // as the graph overlay.
+      'line-width': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        6,
+        ['case', isMainRoad, 1.1, 0.45],
+        10,
+        ['case', isMainRoad, 1.4, 0.8],
+        14,
+        1.2
+      ]
     }
   } as LayerSpecification
 }
