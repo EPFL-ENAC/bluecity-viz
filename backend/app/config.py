@@ -40,7 +40,11 @@ class Settings(BaseSettings):
     # What an area must look like for the tool to run on it. The node cap is
     # about twice Lausanne (4,771 nodes, 10,854 edges), which keeps a
     # recalculate around a second.
-    area_min_nodes: int = 1000  # junctions, the OD sampler pool
+    # 500 junctions, measured on the country store: every Swiss town passes at
+    # a 3 km radius (the thinnest are Chur 534 and Neuchatel 542) and every
+    # alpine or lake spot is still refused (the densest is Davos at 175). At
+    # 1000 the tool only worked in the six biggest cities.
+    area_min_nodes: int = 500  # junctions, the OD sampler pool
     area_max_nodes: int = 10_000
     area_max_edges: int = 20_000
     area_min_scc_fraction: float = 0.9

@@ -55,9 +55,9 @@ export interface AreaFeedback {
   exact: AreaPreview | null
 }
 
-/** Fallbacks, used until GET /areas/limits answers. */
+/** Fallbacks, used until GET /areas/limits answers. Same as config.py. */
 const FALLBACK_LIMITS = {
-  min_nodes: 1000,
+  min_nodes: 500,
   max_nodes: 10000,
   max_edges: 20000,
   min_radius_m: 500,

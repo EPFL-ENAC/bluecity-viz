@@ -152,8 +152,7 @@ def geojson_to_pmtiles(
     if line_delimited:
         command.append("-P")
 
-    spool = tmpdir or str(Path(pmtiles_path).resolve().parent)
-    Path(spool).mkdir(parents=True, exist_ok=True)
+    spool = writable_dir(tmpdir, Path(pmtiles_path).resolve().parent)
     command += ["-t", spool]
 
     command.append(geojson_path)
@@ -177,6 +176,28 @@ def geojson_to_pmtiles(
         print("  macOS:  brew install tippecanoe")
         print("  Linux:  https://github.com/felt/tippecanoe#installation")
         sys.exit(1)
+
+
+def writable_dir(*candidates) -> str:
+    """The first directory we can really write in.
+
+    The obvious place, next to the tiles, is often a symlink to shared data or
+    a read-only mount, and /tmp is often a small tmpfs that a country fills. So
+    try each in turn instead of assuming.
+    """
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            probe = path / ".write-probe"
+            probe.write_text("x")
+            probe.unlink()
+            return str(path)
+        except OSError:
+            continue
+    return tempfile.gettempdir()
 
 
 def store_to_geojsonseq(store_dir: str, output_path: str) -> int:
@@ -333,17 +354,17 @@ def main_store(args) -> None:
         or str(Path(args.store) / "graph.pmtiles")
     )
 
+    # The store's own directory first: the pipeline just wrote there, so it is
+    # writable, and it has room. A country as one feature per line is several
+    # GB, more than a /tmp tmpfs usually holds, and the tiles often land in a
+    # symlink to shared data we must not write into.
+    spool = writable_dir(args.tmpdir, args.store, Path(pmtiles_path).resolve().parent)
+
     if args.geojson:
         seq_path = args.geojson
         use_temp = False
     else:
-        # Next to the output too: a country as one feature per line is several
-        # GB, which is more than a /tmp tmpfs usually holds.
-        spool = Path(args.tmpdir or Path(pmtiles_path).resolve().parent)
-        spool.mkdir(parents=True, exist_ok=True)
-        tmp_file = tempfile.NamedTemporaryFile(
-            suffix=".geojsonseq", delete=False, dir=str(spool)
-        )
+        tmp_file = tempfile.NamedTemporaryFile(suffix=".geojsonseq", delete=False, dir=spool)
         seq_path = tmp_file.name
         tmp_file.close()
         use_temp = True
@@ -355,7 +376,7 @@ def main_store(args) -> None:
             pmtiles_path,
             max_zoom=args.max_zoom or "14",
             line_delimited=True,
-            tmpdir=args.tmpdir,
+            tmpdir=spool,
         )
         size = Path(pmtiles_path).stat().st_size / (1024 * 1024)
         print(f"\n  PMTiles : {size:.1f} MB  →  {pmtiles_path}")
