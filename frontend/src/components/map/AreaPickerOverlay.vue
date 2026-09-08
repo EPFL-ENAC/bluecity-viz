@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useAreaFeedback } from '@/composables/useAreaFeedback'
 import { swissNetworkLayer, swissNetworkStyle } from '@/config/toolLayers'
+import { areaKey } from '@/services/trafficAnalysis'
 import { useApiKeyStore } from '@/stores/apiKey'
 import { useThemeStore } from '@/stores/theme'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
@@ -40,13 +41,11 @@ const mapComponentRef = inject<Ref<{ map?: MapLibreMap } | undefined>>('mapRef')
 const map = computed(() => mapComponentRef?.value?.map)
 const colors = computed(() => GRAPH_COLORS[themeStore.isDark ? 'dark' : 'light'])
 
-// The whole country, so the user sees where they can go.
-const SWITZERLAND: [[number, number], [number, number]] = [
-  [5.9, 45.8],
-  [10.6, 47.9]
-]
 // The dock covers the right of the map, same padding as useGraphOverlay.focus.
 const DOCK_PADDING = { top: 80, bottom: 80, left: 80, right: 420 }
+// Room around the circle while it is being dragged, in radii. Enough to see
+// where to go, close enough that the basemap tiles are the ones already here.
+const PICK_ROOM = 2.5
 
 const networkBox = ref<HTMLDivElement | null>(null)
 let network: MapLibre | null = null
@@ -58,6 +57,8 @@ let downAt: { x: number; y: number } | null = null
 // the colour the network carries, so a drag does not set the same one again
 let painted = ''
 let savedCamera: { center: [number, number]; zoom: number } | null = null
+// The area when the picker opened, to tell a confirm from a cancel.
+let savedKey: string | null = null
 
 function draw(): void {
   const current = map.value
@@ -184,9 +185,15 @@ function unmountNetwork(current: MapLibreMap): void {
   network = null
 }
 
-function fitCircle(current: MapLibreMap, circle: { lon: number; lat: number; radiusM: number }) {
-  const dLat = circle.radiusM / mPerDegLat
-  const dLon = circle.radiusM / Math.max(mPerDegLon(circle.lat), 1)
+/** Put the camera on a circle, with `room` times its radius around it. */
+function fitCircle(
+  current: MapLibreMap,
+  circle: { lon: number; lat: number; radiusM: number },
+  room = 1
+) {
+  const reach = circle.radiusM * room
+  const dLat = reach / mPerDegLat
+  const dLon = reach / Math.max(mPerDegLon(circle.lat), 1)
   current.fitBounds(
     [
       [circle.lon - dLon, circle.lat - dLat],
@@ -279,6 +286,7 @@ watch(map, (current, previous) => {
 function attach(current: MapLibreMap): void {
   const centre = current.getCenter()
   savedCamera = { center: [centre.lng, centre.lat], zoom: current.getZoom() }
+  savedKey = areaKey(trafficStore.area)
   current.on('mousedown', onMouseDown)
   current.on('mousemove', onMouseMove)
   current.on('mouseup', onMouseUp)
@@ -286,7 +294,11 @@ function attach(current: MapLibreMap): void {
   current.on('style.load', mount)
   mount()
   mountNetwork(current)
-  current.fitBounds(SWITZERLAND, { padding: DOCK_PADDING, duration: 600 })
+  // Stay where the user is. The country view needs basemap tiles nobody has
+  // loaded yet, so it opens on a white map; here the tiles are already there,
+  // and the circle only needs room around it to be dragged.
+  const draft = trafficStore.draftArea
+  if (draft) fitCircle(current, draft, PICK_ROOM)
   checkNow()
 }
 
@@ -305,12 +317,16 @@ function detach(current: MapLibreMap): void {
   }
   mountedOn = null
 
-  // Confirmed: look at the area. Cancelled: back where we were.
-  if (trafficStore.area) fitCircle(current, trafficStore.area)
+  // A new circle: look at it, its streets are on their way. Same one, or
+  // cancelled: back where we were. Going back to the default city moves
+  // nothing here, the overlay takes the camera there when it lands.
+  const area = trafficStore.area
+  if (area && areaKey(area) !== savedKey) fitCircle(current, area)
   else if (savedCamera) {
     current.easeTo({ center: savedCamera.center, zoom: savedCamera.zoom, duration: 600 })
   }
   savedCamera = null
+  savedKey = null
 }
 
 onMounted(() => {

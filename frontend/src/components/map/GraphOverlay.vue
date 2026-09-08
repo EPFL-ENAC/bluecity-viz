@@ -20,7 +20,7 @@ import { computed, inject, onUnmounted, ref, shallowRef, watch, type Ref } from 
 const scenarioStore = useScenarioStore()
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
-const { edges, loadGraphEdges } = useGraphEdges()
+const { edges, showArea } = useGraphEdges()
 const { shown } = useMapView()
 
 const mapComponentRef = inject<Ref<{ map?: MapLibreMap } | undefined>>('mapRef')
@@ -45,12 +45,17 @@ watch(
   { immediate: true }
 )
 
-// The default city comes from a static file, an area the user drew from the
-// backend. Both are cached, so going back to one is instant.
+// The circle and the streets under it are one thing, so they read one key.
+// The default city comes from a static file, an area the user drew is built
+// by the server and then fetched. Both are cached, so going back is instant.
 watch(
-  () => trafficStore.areaId,
-  (areaId) => {
-    void loadGraphEdges(areaId)
+  () => trafficStore.graphKey,
+  (key) => {
+    void showArea(
+      key,
+      () => trafficStore.ensureArea(),
+      () => trafficStore.forgetAreaId()
+    )
   },
   { immediate: true }
 )

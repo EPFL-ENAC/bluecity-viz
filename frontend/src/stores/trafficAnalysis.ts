@@ -130,6 +130,15 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const isBuildingArea = ref(false)
   const areaError = shallowRef<{ code?: string; message: string } | null>(null)
 
+  /**
+   * The name of the network the map has to show.
+   *
+   * The circle says it, not the server: the id the server mints for a circle
+   * is this same string, so the two can never disagree. `areaId` answers
+   * another question, "has the server built it", and is null until it has.
+   */
+  const graphKey = computed(() => areaKey(area.value))
+
   // The picker. UI only, nothing here is saved: the circle being dragged, and
   // the rules the server applies to it.
   const pickMode = ref(false)
@@ -759,6 +768,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     area,
     areaId,
     areaInfo,
+    graphKey,
     isBuildingArea,
     areaError,
     pickMode,

@@ -5,6 +5,7 @@ import RoutingTab from '@/components/dock/RoutingTab.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcTabs, { type BcTab } from '@/components/ui/BcTabs.vue'
 import { useAreaFeedback } from '@/composables/useAreaFeedback'
+import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useMapView } from '@/composables/useMapView'
 import { topAbsorbers, valueOf } from '@/composables/useResultStates'
 import { useCVRPStore } from '@/stores/cvrp'
@@ -50,6 +51,16 @@ const areaName = computed(() => {
   if (!circle) return 'Lausanne (default)'
   const km = (circle.radiusM / 1000).toFixed(1)
   return `${km} km around ${circle.lat.toFixed(3)}, ${circle.lon.toFixed(3)}`
+})
+
+// The streets of this area are not on the map yet. The ring is already
+// there, so the dock says why it is empty instead of looking broken.
+const { edges: graphEdges } = useGraphEdges()
+const areaStatus = computed(() => {
+  if (trafficStore.areaError) return null
+  if (trafficStore.isBuildingArea) return 'Building the network for this area…'
+  if (graphEdges.value.length === 0) return 'Loading the streets…'
+  return null
 })
 
 /** Open the picker on the circle we have, or on what the map is looking at. */
@@ -189,6 +200,7 @@ function rowFor(key: string) {
         <button class="bc-micro clear-btn" @click="changeArea">Change area</button>
       </div>
       <div class="area-name">{{ areaName }}</div>
+      <p v-if="areaStatus" class="bc-empty area-note">{{ areaStatus }}</p>
       <p v-if="trafficStore.areaError" class="bc-empty area-error">
         {{ trafficStore.areaError.message }}
       </p>
@@ -392,6 +404,10 @@ function rowFor(key: string) {
 .area-name {
   font-size: var(--bc-fs-body);
   padding: 4px 0 0;
+}
+
+.area-note {
+  margin: 6px 0 0;
 }
 
 .area-error {

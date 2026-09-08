@@ -166,6 +166,7 @@ export const EXPECTED_PUBLIC_KEYS = [
   'forgetAreaId',
   'getBaseline',
   'getColor',
+  'graphKey',
   'hasCalculatedRoutes',
   'impactStatistics',
   'isBuildingArea',

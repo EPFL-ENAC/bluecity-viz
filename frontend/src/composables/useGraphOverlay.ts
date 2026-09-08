@@ -193,6 +193,36 @@ export function useGraphOverlay(
     }
   }
 
+  /**
+   * Send the camera to the network that just landed, when it is off screen.
+   *
+   * The circle and its streets always change together now, but the camera
+   * does not: an investigation opens where the map was left, which can be
+   * another city. The ring would then sit outside the view, over an empty
+   * map. When the network is already in sight nothing moves, so opening the
+   * workbench, or confirming an area the picker has just framed, is still.
+   */
+  function frameGraph(source: GraphSource): void {
+    const map = mapRef.value
+    if (!map) return
+    const [[west, south], [east, north]] = source.bounds
+    if (west === east && south === north) return
+
+    const view = map.getBounds()
+    const seen =
+      east >= view.getWest() &&
+      west <= view.getEast() &&
+      north >= view.getSouth() &&
+      south <= view.getNorth()
+    if (seen) return
+
+    map.fitBounds(source.bounds, {
+      padding: { top: 80, bottom: 80, left: 80, right: 80 + DOCK_WIDTH },
+      maxZoom: 16,
+      duration: 600
+    })
+  }
+
   function mount(): void {
     const map = mapRef.value
     if (!map) return
@@ -260,8 +290,10 @@ export function useGraphOverlay(
       return
     }
 
+    const landed = mountedGraph !== source
     mountedOn = map
     mountedGraph = source
+    if (landed) frameGraph(source)
     redraw()
     drawPointer(map)
     applyResult()
