@@ -36,11 +36,7 @@ from app.services.routing_engine import PairArrays
 from app.services.utils.timing import timed  # noqa: F401 - kept for the old import path
 
 logger = logging.getLogger(__name__)
-# main.py has no logging setup and belongs to another branch right now, so the
-# app keeps configuring its own handler here, as it did before.
-logging.basicConfig(level=logging.INFO)
-ox_logger = logging.getLogger("osmnx")
-ox_logger.setLevel(logging.INFO)
+logging.getLogger("osmnx").setLevel(logging.INFO)
 
 __all__ = ["GraphService", "AreaNotLoaded", "Baseline", "DEFAULT_AREA_ID"]
 

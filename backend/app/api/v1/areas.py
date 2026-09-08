@@ -1,10 +1,10 @@
 """Pick an area of Switzerland and get a routing graph for it."""
 
 import logging
-from typing import List, Optional
+from typing import Optional
 
 import anyio.to_thread
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.config import settings
 from app.models.area import AreaCreateRequest, AreaInfo, AreaLimits, AreaPreview
@@ -45,19 +45,14 @@ def _service():
 
 
 def _spec(request: AreaCreateRequest) -> AreaSpec:
-    if request.circle is not None:
-        return AreaSpec.from_circle(request.circle.lon, request.circle.lat, request.circle.radius_m)
-    return AreaSpec.from_polygon(request.polygon)
+    return AreaSpec.from_circle(request.circle.lon, request.circle.lat, request.circle.radius_m)
 
 
-def _info(area: AreaGraph, cached: bool = False) -> dict:
+def _info(area: AreaGraph) -> dict:
     meta = area.meta
     return {
         "id": meta.id,
-        "kind": meta.kind,
-        "name": meta.name,
         "circle": meta.circle,
-        "polygon": meta.polygon,
         "bbox": meta.bbox,
         "node_count": area.mirror.n_nodes,
         "edge_count": area.mirror.n_edges,
@@ -65,9 +60,6 @@ def _info(area: AreaGraph, cached: bool = False) -> dict:
         "od_pairs": len(area.pairs) if area.pairs else 0,
         "od_pairs_default": settings.od_pairs,
         "od_pairs_max": settings.od_pairs_max,
-        "status": "ready",
-        "build_ms": meta.build_ms,
-        "cached": cached,
     }
 
 
@@ -76,7 +68,7 @@ def get_limits():
     """The rules the picker checks while the user drags the circle."""
     store = graph_store
     return {
-        "min_nodes": settings.area_min_nodes,
+        "min_junctions": settings.area_min_junctions,
         "max_nodes": settings.area_max_nodes,
         "max_edges": settings.area_max_edges,
         "min_scc_fraction": settings.area_min_scc_fraction,
@@ -86,12 +78,6 @@ def get_limits():
     }
 
 
-@router.get("", response_model=List[AreaInfo])
-def list_areas():
-    """Every area in memory right now. For debugging."""
-    return [_info(area) for area in _service().registry.loaded()]
-
-
 @router.post("/preview", response_model=AreaPreview)
 def preview_area(request: AreaCreateRequest):
     """Can the tool run on this shape. Reads the cells, builds nothing."""
@@ -99,8 +85,8 @@ def preview_area(request: AreaCreateRequest):
 
 
 @router.post("", response_model=AreaInfo, status_code=status.HTTP_201_CREATED)
-async def create_area(request: AreaCreateRequest, response: Response):
-    """Build the routing graph of a shape, or return it if it is already loaded.
+async def create_area(request: AreaCreateRequest):
+    """Build the routing graph of a circle, or return it if it is already loaded.
 
     The id comes from the geometry, so asking twice for the same spot gives
     the same area and the second call is free.
@@ -111,8 +97,7 @@ async def create_area(request: AreaCreateRequest, response: Response):
 
     existing = service.registry.get_optional(spec.id)
     if existing is not None:
-        response.status_code = status.HTTP_200_OK
-        return _info(existing, cached=True)
+        return _info(existing)
 
     def build():
         return area_builder.build(store, spec, SamplingConfig())
@@ -133,18 +118,6 @@ async def create_area(request: AreaCreateRequest, response: Response):
     return _info(area)
 
 
-@router.get("/{area_id}", response_model=AreaInfo)
-def get_area(area_id: str):
-    """One area, or 404 when it was evicted and has to be created again."""
-    try:
-        return _info(_service().area(area_id), cached=True)
-    except AreaNotLoaded as exc:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "area_not_loaded", "message": f"area {area_id!r} is not in memory"},
-        ) from exc
-
-
 @router.get("/{area_id}/edges")
 def get_area_edges(area_id: str, request: Request):
     """The area's streets, in the shape the map already reads.
@@ -162,29 +135,16 @@ def get_area_edges(area_id: str, request: Request):
             detail={"code": "area_not_loaded", "message": f"area {area_id!r} is not in memory"},
         ) from exc
 
-    if area.meta.id == DEFAULT_AREA_ID:
-        # The default city has no store behind it: its geometry still comes
-        # from the NetworkX graph.
-        build = service.get_edge_geometries
-    else:
+    def missing():
+        # Every drawn area gets its rows at build time, so reaching this is a
+        # bug and an empty network on screen would hide it.
+        raise HTTPException(status_code=500, detail=f"area {area_id!r} has no edge payload")
 
-        def build():
-            return []
-
+    # The default city has no store behind it: its geometry still comes from
+    # the NetworkX graph.
+    build = service.get_edge_geometries if area.meta.id == DEFAULT_AREA_ID else missing
     data, etag = area.payloads.get_or_build("edges", build)
     return _json_or_304(request, data, etag, "public, max-age=86400")
-
-
-@router.delete("/{area_id}")
-def delete_area(area_id: str, response: Response) -> dict:
-    """Drop an area from memory. Pinned areas stay. For debugging."""
-    registry = _service().registry
-    if area_id in registry.pinned:
-        response.status_code = status.HTTP_409_CONFLICT
-        return {"status": "pinned", "message": f"area {area_id!r} is pinned"}
-    if not registry.evict(area_id):
-        raise HTTPException(status_code=404, detail={"code": "area_not_loaded"})
-    return {"status": "ok"}
 
 
 def set_store(store: Optional[object]) -> None:

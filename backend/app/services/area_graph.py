@@ -65,20 +65,15 @@ USAGE_ROW_BYTES = 300
 
 @dataclass
 class AreaMeta:
-    """What the API says about an area. The geometry fields stay empty for
-    the default area, which is a whole GraphML file, not a shape."""
+    """What the API says about an area. The geometry stays empty for the
+    default area, which is a whole GraphML file, not a shape."""
 
     id: str
-    kind: str = "default"  # default | circle | polygon
     name: str = ""
     circle: Optional[dict] = None
-    polygon: Optional[list] = None
     bbox: Optional[list] = None
-    node_count: int = 0
-    edge_count: int = 0
     scc_fraction: float = 1.0
     build_ms: float = 0.0
-    created_at: float = field(default_factory=time.time)
 
 
 @dataclass
@@ -129,23 +124,12 @@ class AreaGraph:
         self._bc_cache: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
         self.payloads = PayloadCache(label=meta.id)
 
-        self.meta.node_count = mirror.n_nodes
-        self.meta.edge_count = mirror.n_edges
-        self.last_used = time.time()
-
     # ── Construction ──────────────────────────────────────────────────────────
 
     @classmethod
-    def from_networkx(
-        cls,
-        graph,
-        area_id: str = DEFAULT_AREA_ID,
-        name: str = "",
-        kind: str = "default",
-    ) -> "AreaGraph":
+    def from_networkx(cls, graph, area_id: str = DEFAULT_AREA_ID, name: str = "") -> "AreaGraph":
         """The area of a whole NetworkX graph, which is how Lausanne is loaded."""
-        meta = AreaMeta(id=area_id, kind=kind, name=name or area_id)
-        return cls(meta, GraphMirror(graph))
+        return cls(AreaMeta(id=area_id, name=name or area_id), GraphMirror(graph))
 
     @property
     def route_cache_size(self) -> int:
@@ -158,10 +142,6 @@ class AreaGraph:
     @property
     def bc_cache_size(self) -> int:
         return DYNAMIC_BC_CACHE_SIZE if self.dynamic else BC_CACHE_SIZE
-
-    def touch(self) -> None:
-        """Mark the area as used, so the registry evicts it last."""
-        self.last_used = time.time()
 
     # ── OD pairs and startup ──────────────────────────────────────────────────
 
@@ -372,7 +352,7 @@ class AreaGraph:
     def generate_random_pairs(
         self, count: int = 100, seed: Optional[int] = None, radius_km: float = 2.0
     ) -> List[NodePair]:
-        """Random OD pairs within a radius of the Lausanne centre.
+        """Random OD pairs within a radius of the middle of the area.
 
         Same draws as before: the mirror keeps the nodes in NetworkX order, so
         `random.sample` picks the same ones for the same seed.
@@ -381,7 +361,8 @@ class AreaGraph:
             random.seed(seed)
 
         mirror = self.mirror
-        center_lat, center_lon = 46.5225, 6.6328
+        center_lat = float(mirror.node_y.mean())
+        center_lon = float(mirror.node_x.mean())
         lat_km = (mirror.node_y - center_lat) * 111.0
         lon_km = (mirror.node_x - center_lon) * 111.0 * 0.7
         inside = np.sqrt(lat_km**2 + lon_km**2) <= radius_km

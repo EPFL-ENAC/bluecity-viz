@@ -29,10 +29,9 @@ from typing import Dict, List, Optional, Tuple
 import igraph as ig
 import numpy as np
 
-# Re-exported: the rest of the app has always imported them from here.
 from app.services.osm_values import parse_lanes, parse_street_count
 
-__all__ = ["GraphMirror", "parse_lanes", "parse_street_count"]
+__all__ = ["GraphMirror"]
 
 logger = logging.getLogger(__name__)
 

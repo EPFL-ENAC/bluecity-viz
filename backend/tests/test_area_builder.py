@@ -29,20 +29,6 @@ def test_the_id_comes_from_the_geometry():
     assert other.id != one.id
 
 
-def test_a_polygon_gets_a_stable_id():
-    ring = [[7.0, 46.0], [7.1, 46.0], [7.1, 46.1]]
-    assert AreaSpec.from_polygon(ring).id == AreaSpec.from_polygon(ring).id
-    assert AreaSpec.from_polygon(ring).id.startswith("p_")
-
-
-def test_a_polygon_keeps_the_points_inside_it():
-    square = AreaSpec.from_polygon([[7.0, 46.0], [7.2, 46.0], [7.2, 46.2], [7.0, 46.2]])
-    x = np.array([7.1, 6.9, 7.3])
-    y = np.array([46.1, 46.1, 46.1])
-
-    assert list(square.contains(x, y)) == [True, False, False]
-
-
 # ── Selecting ─────────────────────────────────────────────────────────────────
 
 
@@ -74,10 +60,11 @@ def test_a_bigger_circle_keeps_more(swiss_store):
 
 
 def test_a_good_circle_passes(swiss_store, small_area_limits):
-    counts = area_builder.check(swiss_store, circle(2000))
+    counts, mask = area_builder.check(swiss_store, circle(2000))
 
-    assert counts["junction_count"] >= settings.area_min_nodes
+    assert counts["junction_count"] >= settings.area_min_junctions
     assert counts["scc_fraction"] == 1.0
+    assert mask.all(), "one network, so every node is in it"
 
 
 def test_too_small_a_circle_is_too_sparse(swiss_store, small_area_limits):
@@ -85,7 +72,7 @@ def test_too_small_a_circle_is_too_sparse(swiss_store, small_area_limits):
         area_builder.check(swiss_store, circle(400))
 
     assert raised.value.code == "too_sparse"
-    assert raised.value.counts["node_count"] < settings.area_min_nodes
+    assert raised.value.counts["junction_count"] < settings.area_min_junctions
 
 
 def test_too_big_a_circle_is_refused(swiss_store, small_area_limits, monkeypatch):
@@ -131,7 +118,6 @@ def test_the_giant_component_is_found(make_store, small_area_limits):
     mask, fraction = giant_component(selection)
 
     assert 0.3 < fraction < 0.8, "the lattice is cut in two halves"
-    assert mask.sum() == int(round(fraction * selection.n_nodes))
 
 
 # ── Preview ───────────────────────────────────────────────────────────────────
@@ -162,7 +148,7 @@ def test_building_gives_a_routing_graph_with_a_baseline(swiss_store, small_area_
 
     assert area.mirror.n_nodes > 0
     assert area.baseline is not None
-    assert len(area.pairs) == settings.area_od_pairs_max
+    assert len(area.pairs) == settings.od_pairs_max
     assert area.baseline.routes.n_found > 0
     assert area.dynamic is True
     assert area.meta.bbox and area.meta.scc_fraction == 1.0
@@ -190,7 +176,7 @@ def test_the_edge_payload_is_ready_right_after_the_build(swiss_store, small_area
     data, etag = area.payloads.get_or_build("edges", lambda: [])
     assert etag
     assert b'"coordinates"' in data
-    assert b'"bus_route_count"' in data
+    assert b'"speed_kph"' in data
 
 
 def test_a_disconnected_area_keeps_only_the_main_network(

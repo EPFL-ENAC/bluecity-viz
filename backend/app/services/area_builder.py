@@ -16,12 +16,11 @@ Size is checked before connectivity so a 40 km circle fails without paying for
 the component search.
 """
 
-import hashlib
 import logging
 import math
 import time
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
 import igraph as ig
 import numpy as np
@@ -46,89 +45,46 @@ class AreaRejected(ValueError):
 
 @dataclass(frozen=True)
 class AreaSpec:
-    """A shape, and the id derived from it.
+    """A circle, and the id derived from it.
 
-    The id is a hash of the rounded geometry, not a random one: two users who
+    The id comes from the rounded geometry, not from a counter: two users who
     pick the same spot share one area, and an investigation saved yesterday
     finds its area again after a restart or an eviction.
     """
 
-    kind: str  # circle | polygon
-    lon: float = 0.0
-    lat: float = 0.0
-    radius_m: float = 0.0
-    polygon: Tuple[Tuple[float, float], ...] = field(default_factory=tuple)
+    lon: float
+    lat: float
+    radius_m: float
 
     @classmethod
     def from_circle(cls, lon: float, lat: float, radius_m: float) -> "AreaSpec":
         # about 10 m of rounding, so a pixel of drag does not make a new area
         return cls(
-            kind="circle",
             lon=round(float(lon), 4),
             lat=round(float(lat), 4),
             radius_m=float(round(radius_m)),
         )
 
-    @classmethod
-    def from_polygon(cls, points: Sequence[Sequence[float]]) -> "AreaSpec":
-        ring = tuple((round(float(x), 4), round(float(y), 4)) for x, y in points)
-        return cls(kind="polygon", polygon=ring)
-
     @property
     def id(self) -> str:
-        if self.kind == "circle":
-            return f"c_{self.lon:.4f}_{self.lat:.4f}_{int(self.radius_m)}"
-        digest = hashlib.blake2b(
-            ",".join(f"{x:.4f}:{y:.4f}" for x, y in self.polygon).encode(), digest_size=12
-        ).hexdigest()
-        return f"p_{digest}"
+        return f"c_{self.lon:.4f}_{self.lat:.4f}_{int(self.radius_m)}"
 
     @property
     def name(self) -> str:
-        if self.kind == "circle":
-            return f"{self.radius_m / 1000:.1f} km around {self.lat:.3f}, {self.lon:.3f}"
-        return f"area of {len(self.polygon)} points"
+        return f"{self.radius_m / 1000:.1f} km around {self.lat:.3f}, {self.lon:.3f}"
 
     @property
     def bbox(self) -> List[float]:
-        if self.kind == "circle":
-            dlat = self.radius_m / 111_320.0
-            dlon = self.radius_m / max(111_320.0 * math.cos(math.radians(self.lat)), 1.0)
-            return [
-                self.lon - dlon,
-                self.lat - dlat,
-                self.lon + dlon,
-                self.lat + dlat,
-            ]
-        xs = [p[0] for p in self.polygon]
-        ys = [p[1] for p in self.polygon]
-        return [min(xs), min(ys), max(xs), max(ys)]
+        dlat = self.radius_m / 111_320.0
+        dlon = self.radius_m / max(111_320.0 * math.cos(math.radians(self.lat)), 1.0)
+        return [self.lon - dlon, self.lat - dlat, self.lon + dlon, self.lat + dlat]
 
     def contains(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-        """Which points are inside the shape."""
-        if self.kind == "circle":
-            return distance_m(x, y, self.lon, self.lat) <= self.radius_m
-        return _points_in_ring(x, y, np.asarray(self.polygon, dtype=np.float64))
+        """Which points are inside the circle."""
+        return distance_m(x, y, self.lon, self.lat) <= self.radius_m
 
     def cells(self, store: GraphStore) -> List[int]:
-        if self.kind == "circle":
-            return store.cells_for_circle(self.lon, self.lat, self.radius_m)
-        return store.cells_for_bbox(*self.bbox)
-
-
-def _points_in_ring(x: np.ndarray, y: np.ndarray, ring: np.ndarray) -> np.ndarray:
-    """Ray casting, vectorised over the points. Good enough for a picker."""
-    x = np.asarray(x, dtype=np.float64)
-    y = np.asarray(y, dtype=np.float64)
-    inside = np.zeros(len(x), dtype=bool)
-    x1, y1 = ring[:, 0], ring[:, 1]
-    x2, y2 = np.roll(x1, -1), np.roll(y1, -1)
-    for ax, ay, bx, by in zip(x1, y1, x2, y2):
-        crosses = ((ay > y) != (by > y)) & (
-            x < (bx - ax) * (y - ay) / np.where(by != ay, by - ay, np.inf) + ax
-        )
-        inside ^= crosses
-    return inside
+        return store.cells_for_circle(self.lon, self.lat, self.radius_m)
 
 
 @dataclass
@@ -214,11 +170,13 @@ def giant_component(selection: Selection) -> Tuple[np.ndarray, float]:
     if n == 0:
         return np.zeros(0, dtype=bool), 0.0
 
-    index = {int(node): i for i, node in enumerate(selection.node_id)}
-    pairs = [
-        (index[int(u)], index[int(v)]) for u, v in zip(selection.edges["u"], selection.edges["v"])
-    ]
-    h = ig.Graph(n=n, edges=pairs, directed=True)
+    # Node ids to positions without a python dict: the store writes the nodes
+    # sorted, so searchsorted is the lookup.
+    order = np.argsort(selection.node_id)
+    sorted_ids = selection.node_id[order]
+    u_pos = order[np.searchsorted(sorted_ids, selection.edges["u"])]
+    v_pos = order[np.searchsorted(sorted_ids, selection.edges["v"])]
+    h = ig.Graph(n=n, edges=np.column_stack((u_pos, v_pos)).tolist(), directed=True)
     membership = np.asarray(h.connected_components(mode="strong").membership)
     if len(membership) == 0:
         return np.zeros(n, dtype=bool), 0.0
@@ -241,13 +199,17 @@ def restrict(selection: Selection, mask: np.ndarray) -> Selection:
     )
 
 
-def check(store: GraphStore, spec: AreaSpec, selection: Optional[Selection] = None) -> dict:
-    """Run the rules. Returns the counts; raises AreaRejected on a failure."""
+def check(
+    store: GraphStore, spec: AreaSpec, selection: Optional[Selection] = None
+) -> Tuple[dict, np.ndarray]:
+    """Run the rules. Returns the counts and the main network mask.
+
+    The mask is the expensive half, so build takes it from here instead of
+    searching the components a second time.
+    """
     bbox = spec.bbox
     coverage = store.coverage_bbox
-    if spec.kind == "circle" and not (
-        settings.area_min_radius_m <= spec.radius_m <= settings.area_max_radius_m
-    ):
+    if not (settings.area_min_radius_m <= spec.radius_m <= settings.area_max_radius_m):
         raise AreaRejected(
             "outside_coverage",
             f"the radius must be between {settings.area_min_radius_m / 1000:.1f} km "
@@ -271,11 +233,11 @@ def check(store: GraphStore, spec: AreaSpec, selection: Optional[Selection] = No
         "scc_fraction": 0.0,
     }
 
-    if selection.n_junctions < settings.area_min_nodes:
+    if selection.n_junctions < settings.area_min_junctions:
         raise AreaRejected(
             "too_sparse",
             f"only {selection.n_junctions} junctions here, the tool needs "
-            f"{settings.area_min_nodes}",
+            f"{settings.area_min_junctions}",
             counts,
         )
     if selection.n_nodes > settings.area_max_nodes or selection.n_edges > settings.area_max_edges:
@@ -286,7 +248,7 @@ def check(store: GraphStore, spec: AreaSpec, selection: Optional[Selection] = No
             counts,
         )
 
-    _mask, fraction = giant_component(selection)
+    mask, fraction = giant_component(selection)
     counts["scc_fraction"] = round(fraction, 4)
     if fraction < settings.area_min_scc_fraction:
         raise AreaRejected(
@@ -294,13 +256,13 @@ def check(store: GraphStore, spec: AreaSpec, selection: Optional[Selection] = No
             "this area is cut in pieces, so most trips could not be routed",
             counts,
         )
-    return counts
+    return counts, mask
 
 
 def preview(store: GraphStore, spec: AreaSpec) -> dict:
     """Can the tool run here. Reads the cells, but samples nothing."""
     try:
-        counts = check(store, spec)
+        counts, _mask = check(store, spec)
     except AreaRejected as rejected:
         return {
             "ok": False,
@@ -325,12 +287,14 @@ def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> Are
     config = config or SamplingConfig()
     started = time.perf_counter()
 
+    # The rules run on the hot columns first, so a circle over half the country
+    # is refused before its geometry is read.
+    counts, mask = check(store, spec, select(store, spec))
+    fraction = counts["scc_fraction"]
     selection = select(store, spec, with_geometry=True)
-    counts = check(store, spec, selection)
 
     # Keep the giant component only: the rest cannot be reached anyway, and a
     # node with no route pollutes the sampling.
-    mask, fraction = giant_component(selection)
     if not mask.all():
         selection = restrict(selection, mask)
         logger.info(
@@ -341,16 +305,10 @@ def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> Are
 
     meta = AreaMeta(
         id=spec.id,
-        kind=spec.kind,
         name=spec.name,
-        circle=(
-            {"lon": spec.lon, "lat": spec.lat, "radius_m": spec.radius_m}
-            if spec.kind == "circle"
-            else None
-        ),
-        polygon=[list(p) for p in spec.polygon] if spec.kind == "polygon" else None,
+        circle={"lon": spec.lon, "lat": spec.lat, "radius_m": spec.radius_m},
         bbox=spec.bbox,
-        scc_fraction=round(fraction, 4),
+        scc_fraction=fraction,
     )
 
     edges = selection.edges
@@ -375,7 +333,7 @@ def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> Are
     # registry budget counts.
     area.payloads.get_or_build("edges", lambda: _edge_rows(selection))
 
-    n_pairs = min(settings.area_od_pairs_max, settings.od_pairs_max)
+    n_pairs = settings.od_pairs_max
     area_config = _scaled_config(config, mirror)
     area.sample_research_pairs(n_pairs, area_config, seed)
     area.build_baseline(area_config, seed)
@@ -414,25 +372,25 @@ def _edge_rows(selection: Selection) -> List[dict]:
     """The area's edges in the shape the frontend already reads."""
     edges = selection.edges
     offsets = edges["geom_offsets"]
-    flat = edges["geom_flat"]
-    rows = []
-    for i in range(len(edges["u"])):
-        coords = flat[offsets[i] : offsets[i + 1]].reshape(-1, 2)
-        rows.append(
-            {
-                "u": int(edges["u"][i]),
-                "v": int(edges["v"][i]),
-                "coordinates": [
-                    [round(float(lon), 6), round(float(lat), 6)] for lon, lat in coords
-                ],
-                "travel_time": float(edges["travel_time"][i]),
-                "length": float(edges["length"][i]),
-                "speed_kph": float(edges["speed_kph"][i]),
-                "name": edges["name"][i] or None,
-                "highway": edges["highway"][i] or "unknown",
-                "bus_route_count": 0,
-                "bus_route_refs": "",
-                "habitat_area_m2": 0.0,
-            }
-        )
-    return rows
+    # Round every coordinate in one pass: about 10 cm, and it takes a third off
+    # the payload. Per point it was two python floats and a round() each.
+    points = np.round(edges["geom_flat"].astype(np.float64).reshape(-1, 2), 6).tolist()
+    u = edges["u"].tolist()
+    v = edges["v"].tolist()
+    travel_time = edges["travel_time"].astype(np.float64).tolist()
+    length = edges["length"].astype(np.float64).tolist()
+    speed = edges["speed_kph"].astype(np.float64).tolist()
+
+    return [
+        {
+            "u": u[i],
+            "v": v[i],
+            "coordinates": points[offsets[i] // 2 : offsets[i + 1] // 2],
+            "travel_time": travel_time[i],
+            "length": length[i],
+            "speed_kph": speed[i],
+            "name": edges["name"][i] or None,
+            "highway": edges["highway"][i] or "unknown",
+        }
+        for i in range(len(u))
+    ]

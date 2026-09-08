@@ -2,7 +2,7 @@
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class Circle(BaseModel):
@@ -14,20 +14,9 @@ class Circle(BaseModel):
 
 
 class AreaCreateRequest(BaseModel):
-    """Create an area from a circle or from a polygon. Exactly one of them."""
+    """Create an area from a circle."""
 
-    circle: Optional[Circle] = None
-    polygon: Optional[List[List[float]]] = Field(
-        default=None,
-        min_length=3,
-        description="Ring of [lon, lat] points, not closed",
-    )
-
-    @model_validator(mode="after")
-    def exactly_one_shape(self):
-        if (self.circle is None) == (self.polygon is None):
-            raise ValueError("give exactly one of circle or polygon")
-        return self
+    circle: Circle
 
 
 class AreaCounts(BaseModel):
@@ -52,10 +41,7 @@ class AreaInfo(BaseModel):
     """An area that is loaded and ready to answer routing requests."""
 
     id: str
-    kind: str
-    name: str
-    circle: Optional[Circle] = None
-    polygon: Optional[List[List[float]]] = None
+    circle: Circle
     bbox: Optional[List[float]] = None
     node_count: int
     edge_count: int
@@ -63,15 +49,13 @@ class AreaInfo(BaseModel):
     od_pairs: int = 0
     od_pairs_default: int = 0
     od_pairs_max: int = 0
-    status: str = "ready"
-    build_ms: float = 0.0
-    cached: bool = False
 
 
 class AreaLimits(BaseModel):
     """The rules the picker checks before it lets the user confirm."""
 
-    min_nodes: int
+    # Junctions, not nodes: a dead end helps nobody route.
+    min_junctions: int
     max_nodes: int
     max_edges: int
     min_scc_fraction: float

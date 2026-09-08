@@ -219,14 +219,18 @@ def store_to_geojsonseq(store_dir: str, output_path: str) -> int:
     written = 0
     print(f"Streaming {edges_file} to {output_path} ...")
     with open(output_path, "w", encoding="utf-8") as out:
+        # Only the columns the tiles carry: the store also holds cell, key,
+        # lanes and elev_gain, which are three quarters of the bytes read.
+        wanted = ["u", "v", "name", "highway", "speed_kph", "length", "travel_time", "geom_xy"]
         for group in range(parquet.num_row_groups):
-            table = parquet.read_row_group(group)
+            table = parquet.read_row_group(group, columns=wanted)
             columns = table.to_pydict()
             for i in range(table.num_rows):
                 flat = np.asarray(columns["geom_xy"][i], dtype=float)
                 if flat.size < 4:
                     continue
-                coords = flat.reshape(-1, 2).tolist()
+                # About 10 cm, and it takes a third off the file tippecanoe reads.
+                coords = np.round(flat.reshape(-1, 2), 6).tolist()
                 out.write(
                     json.dumps(
                         {

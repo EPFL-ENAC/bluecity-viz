@@ -44,14 +44,12 @@ class Settings(BaseSettings):
     # a 3 km radius (the thinnest are Chur 534 and Neuchatel 542) and every
     # alpine or lake spot is still refused (the densest is Davos at 175). At
     # 1000 the tool only worked in the six biggest cities.
-    area_min_nodes: int = 500  # junctions, the OD sampler pool
+    area_min_junctions: int = 500  # the OD sampler pool, not every node
     area_max_nodes: int = 10_000
     area_max_edges: int = 20_000
     area_min_scc_fraction: float = 0.9
     area_min_radius_m: float = 500.0
     area_max_radius_m: float = 10_000.0
-    # OD pairs sampled for an area. Lower than od_pairs_max shortens the build.
-    area_od_pairs_max: int = 76_400
     # Road length of the network daily_km_driven was calibrated on (Lausanne).
     reference_network_km: float = 1547.0
 

@@ -258,6 +258,19 @@ processing/traffic-analysis/
 └── traffic_analysis.py              Exploratory PoC (requires external data)
 ```
 
+## Checking a store
+
+Two scripts in `backend/scripts/` read a store, neither is part of the pipeline:
+
+```bash
+cd ../../backend
+# Cut the Lausanne circle out of the country store and compare it with the
+# GraphML the backend loads today: road types, road length, extra streets.
+uv run python scripts/lausanne_parity.py data/swiss_graph data/lausanne.graphml
+# Write a store from a single GraphML, without the country build.
+uv run python scripts/graphml_to_store.py data/lausanne.graphml data/one_city
+```
+
 ## Troubleshooting
 
 **`tippecanoe: command not found`**

@@ -16,73 +16,12 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
 import osmnx as ox
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.graph_store import Grid, write_store  # noqa: E402
-from app.services.osm_values import parse_lanes, parse_street_count  # noqa: E402
-
-
-def first_value(value, default=""):
-    """OSM tags come as a list when the way was merged."""
-    if isinstance(value, list):
-        value = value[0] if value else default
-    return str(value) if value is not None else default
-
-
-def arrays_from_graph(graph):
-    """Flatten a NetworkX graph into the columns the store holds."""
-    node_ids = list(graph.nodes())
-    node_data = [graph.nodes[n] for n in node_ids]
-    nodes = {
-        "node_id": np.asarray(node_ids, dtype=np.int64),
-        "x": np.asarray([float(d["x"]) for d in node_data]),
-        "y": np.asarray([float(d["y"]) for d in node_data]),
-        "street_count": np.asarray(
-            [parse_street_count(d.get("street_count")) for d in node_data], dtype=np.int16
-        ),
-        "elevation": np.asarray([float(d.get("elevation") or 0.0) for d in node_data]),
-    }
-
-    edge_list = list(graph.edges(keys=True, data=True))
-    geometry = []
-    elev_gain = []
-    for u, v, _key, data in edge_list:
-        if "geometry" in data:
-            geometry.append(np.asarray(data["geometry"].coords, dtype=np.float32))
-        else:
-            geometry.append(
-                np.asarray(
-                    [
-                        [graph.nodes[u]["x"], graph.nodes[u]["y"]],
-                        [graph.nodes[v]["x"], graph.nodes[v]["y"]],
-                    ],
-                    dtype=np.float32,
-                )
-            )
-        gain = data.get("elevation_gain")
-        if gain is None:
-            up, down = graph.nodes[u].get("elevation"), graph.nodes[v].get("elevation")
-            gain = max(0.0, float(down) - float(up)) if up is not None and down is not None else 0.0
-        elev_gain.append(float(gain))
-
-    edges = {
-        "u": np.asarray([u for u, _v, _k, _d in edge_list], dtype=np.int64),
-        "v": np.asarray([v for _u, v, _k, _d in edge_list], dtype=np.int64),
-        "key": np.asarray([k for _u, _v, k, _d in edge_list], dtype=np.int32),
-        "length": np.asarray([float(d.get("length") or 0.0) for *_, d in edge_list]),
-        "travel_time": np.asarray([float(d.get("travel_time") or 0.0) for *_, d in edge_list]),
-        "speed_kph": np.asarray([float(d.get("speed_kph") or 0.0) for *_, d in edge_list]),
-        "lanes": np.asarray(
-            [parse_lanes(d.get("lanes", 2)) for *_, d in edge_list], dtype=np.int16
-        ),
-        "elev_gain": np.asarray(elev_gain),
-        "highway": [first_value(d.get("highway"), "unknown") for *_, d in edge_list],
-        "name": [first_value(d.get("name"), "") for *_, d in edge_list],
-    }
-    return nodes, edges, geometry
+from app.services.graph_store import Grid  # noqa: E402
+from app.services.graph_store_writer import arrays_from_graph, write_store  # noqa: E402
 
 
 def main() -> int:

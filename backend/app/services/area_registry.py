@@ -57,7 +57,6 @@ class AreaRegistry:
             area = self._areas.get(area_id)
             if area is not None:
                 self._areas.move_to_end(area_id)
-                area.touch()
             return area
 
     def __contains__(self, area_id: str) -> bool:
@@ -91,17 +90,19 @@ class AreaRegistry:
         return True
 
     def _evict_locked(self) -> None:
-        """Drop the oldest unpinned areas until we are under both limits."""
-        while True:
-            candidates = [k for k in self._areas if k not in self.pinned]
-            if not candidates:
+        """Drop the oldest unpinned areas until we are under both limits.
+
+        Never the newest one, even when it alone is over budget: the caller is
+        about to answer with it, and dropping it here would send the client to
+        an area that is already gone, over and over.
+        """
+        total = sum(a.memory_bytes() for a in self._areas.values())
+        newest = next(reversed(self._areas), None)
+        while len(self._areas) > self.max_count or total > self.budget_bytes:
+            oldest = next((k for k in self._areas if k not in self.pinned and k != newest), None)
+            if oldest is None:
                 return
-            over_count = len(self._areas) > self.max_count
-            total = sum(a.memory_bytes() for a in self._areas.values())
-            over_bytes = total > self.budget_bytes
-            if not (over_count or over_bytes):
-                return
-            oldest = candidates[0]
+            total -= self._areas[oldest].memory_bytes()
             del self._areas[oldest]
             logger.info(
                 "[AREAS] evicted %s, %d left, %.0f MB",

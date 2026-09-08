@@ -88,6 +88,10 @@ async def lifespan(app: FastAPI):
     # Startup: Load the graph
     full_path = _resolve(settings.graph_path)
 
+    # The country store stands on its own: a deployment can ship it without the
+    # GraphML of the default city.
+    _open_swiss_store()
+
     if full_path.exists():
         logger.info("Loading graph from: %s", full_path)
         routes.graph_service.load_graph(str(full_path))
@@ -102,8 +106,6 @@ async def lifespan(app: FastAPI):
             sampling_config=None,  # Use default configuration
         )
         logger.info("Default routes initialized")
-
-        _open_swiss_store()
 
         # The NetworkX graph and the default area live until the process ends.
         # Freezing them out of the garbage collector removes a gen-2 scan of

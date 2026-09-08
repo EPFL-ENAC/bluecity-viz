@@ -176,10 +176,14 @@ def edge_betweenness_mirror(
     """
     bc_result = mirror.h.edge_betweenness(True, None, weights, sources, targets)
 
-    total_sum = sum(bc * length for bc, length in zip(bc_result, mirror.length))
+    raw = np.asarray(bc_result, dtype=np.float64)
+    total_sum = float(np.dot(raw, mirror.length))
+    # A network where nothing is on a shortest path: nothing to scale, and the
+    # division would raise.
+    if total_sum <= 0:
+        return np.zeros(mirror.n_edges, dtype=np.float64)
     factor = expected_km_driven * 1_000 / total_sum
 
-    raw = np.asarray(bc_result, dtype=np.float64)
     out = np.zeros(mirror.n_edges, dtype=np.float64)
     last = mirror.last_of_group
     out[last] = raw[last] * factor

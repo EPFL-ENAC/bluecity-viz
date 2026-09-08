@@ -11,8 +11,9 @@ from shapely.geometry import LineString
 from app.config import settings
 from app.services.cvrp_service import DEPOT_LAT, DEPOT_LON, CVRPService
 from app.services.graph_service import GraphService
-from app.services.graph_store import GraphStore, Grid, write_store
+from app.services.graph_store import GraphStore, Grid
 from app.services.graph_store import distance_m as store_distance
+from app.services.graph_store_writer import write_store
 from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
 
 # Grid size: 4 columns x 5 rows = 20 nodes.
@@ -240,12 +241,12 @@ def swiss_store(swiss_store_dir):
 @pytest.fixture
 def small_area_limits(monkeypatch):
     """Thresholds and OD pair counts that fit the lattice and run fast."""
-    monkeypatch.setattr(settings, "area_min_nodes", 100)
+    monkeypatch.setattr(settings, "area_min_junctions", 100)
     monkeypatch.setattr(settings, "area_max_nodes", 2_000)
     monkeypatch.setattr(settings, "area_max_edges", 8_000)
     monkeypatch.setattr(settings, "area_min_radius_m", 100.0)
     monkeypatch.setattr(settings, "area_max_radius_m", 20_000.0)
-    monkeypatch.setattr(settings, "area_od_pairs_max", 400)
+    monkeypatch.setattr(settings, "od_pairs_max", 400)
     monkeypatch.setattr(settings, "od_pairs", 200)
     monkeypatch.setattr(settings, "reference_network_km", 100.0)
 

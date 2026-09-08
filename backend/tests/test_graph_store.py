@@ -7,14 +7,13 @@ import pytest
 
 from app.services.graph_store import (
     DENSITY_FILE,
-    DENSITY_REFINE,
     FORMAT_VERSION,
     INDEX_FILE,
     GraphStore,
     Grid,
     distance_m,
-    write_store,
 )
+from app.services.graph_store_writer import DENSITY_REFINE, write_store
 
 # A small grid of streets spread over several cells, built by hand so the test
 # knows exactly what should come back.

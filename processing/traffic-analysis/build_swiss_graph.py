@@ -59,10 +59,8 @@ import osmnx as ox
 BACKEND = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND))
 
-from app.services.graph_store import Grid, write_store  # noqa: E402
-
-sys.path.insert(0, str(BACKEND / "scripts"))
-from graphml_to_store import arrays_from_graph  # noqa: E402
+from app.services.graph_store import Grid  # noqa: E402
+from app.services.graph_store_writer import arrays_from_graph, write_store  # noqa: E402
 
 # What a car can drive on. This is osmnx's "drive" filter written the other way
 # round: it excludes types with a regex, osmium can only keep a list, so the
@@ -147,12 +145,7 @@ def tile_boxes(bbox, cols: int, rows: int, margin: float) -> list:
                 minlon + (col + 1) * width,
                 minlat + (row + 1) * height,
             )
-            build = (
-                max(minlon - margin, core[0] - margin),
-                max(minlat - margin, core[1] - margin),
-                min(maxlon + margin, core[2] + margin),
-                min(maxlat + margin, core[3] + margin),
-            )
+            build = (core[0] - margin, core[1] - margin, core[2] + margin, core[3] + margin)
             boxes.append((core, build))
     return boxes
 
@@ -250,14 +243,11 @@ def core_arrays(graph: nx.MultiDiGraph, core) -> tuple:
 
     x, y = nodes["x"], nodes["y"]
     inside = (x >= minlon) & (x < maxlon) & (y >= minlat) & (y < maxlat)
-    kept_ids = set(int(n) for n in nodes["node_id"][inside])
+    kept_ids = nodes["node_id"][inside]
 
     nodes = {name: values[inside] for name, values in nodes.items()}
 
-    starts_here = np.fromiter(
-        (int(u) in kept_ids for u in edges["u"]), dtype=bool, count=len(edges["u"])
-    )
-    picked = np.flatnonzero(starts_here)
+    picked = np.flatnonzero(np.isin(edges["u"], kept_ids))
     edges = {
         name: (
             values[starts_here] if isinstance(values, np.ndarray) else [values[i] for i in picked]
@@ -272,8 +262,7 @@ def save_tile(path: Path, nodes: dict, edges: dict, geometry: list) -> None:
     """Cache one tile, so a run that dies does not start over."""
     flat = np.concatenate([g.reshape(-1) for g in geometry]) if geometry else np.zeros(0, "f4")
     offsets = np.zeros(len(geometry) + 1, dtype=np.int64)
-    for i, g in enumerate(geometry):
-        offsets[i + 1] = offsets[i] + g.size
+    np.cumsum([g.size for g in geometry], out=offsets[1:])
     payload = {f"node_{k}": v for k, v in nodes.items()}
     payload.update(
         {
@@ -307,12 +296,8 @@ def stack(pieces: list) -> tuple:
             edges[name] = [item for part in values for item in part]
     geometry = [g for p in pieces for g in p[2]]
 
-    known = set(int(n) for n in nodes["node_id"])
-    keep = np.fromiter(
-        (int(u) in known and int(v) in known for u, v in zip(edges["u"], edges["v"])),
-        dtype=bool,
-        count=len(edges["u"]),
-    )
+    known = nodes["node_id"]
+    keep = np.isin(edges["u"], known) & np.isin(edges["v"], known)
     dropped = int((~keep).sum())
     if dropped:
         # A street leaving the built box: its far end is outside the country,
