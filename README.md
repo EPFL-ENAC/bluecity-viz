@@ -51,8 +51,8 @@ A Vue.js application designed to visualize geospatial data using MapLibre, with 
 - `make dev-frontend` - Frontend only
 - `make dev-backend` - Backend only
 - `make build` - Build the frontend for production
-- `make upload-frontend-geodata` - Push the geodata to S3 (needs `BUCKET_NAME`,
-  see `.env.example`)
+- `make upload-frontend-geodata` - Push new or changed geodata to S3 (needs
+  `BUCKET_NAME`, see `.env.example`; `DRY=1` shows what would go up)
 
 To work on several branches at once, the repo has a git worktree setup
 (`make go BRANCH=feat/x`). See [docs/worktree-env/](docs/worktree-env/).

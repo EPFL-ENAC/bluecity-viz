@@ -81,15 +81,20 @@ check-geodata:
 		echo "Warning: No files found in frontend/public/geodata"; \
 	fi
 
-# Upload geodata with improved features
-upload-frontend-geodata: check-bucket-env check-geodata ## Upload geodata files to S3 bucket
-	@echo "Starting upload of geodata files to s3://${BUCKET_NAME}/bluecity/..."
-	@s3cmd put --recursive --acl-public --guess-mime-type \
-		--preserve --no-encrypt --check-md5 --progress \
+# Push the geodata to S3.
+#
+# sync, not put: it compares each file by size and md5, so only what is new or
+# what changed goes up, and running it twice costs nothing. -F matters, several
+# files in geodata are symlinks to the shared data directory and s3cmd skips a
+# symlink without it. Never add --delete-removed, it would drop everything on
+# S3 that is not in the local folder.
+upload-frontend-geodata: check-bucket-env check-geodata ## Push new or changed geodata to S3 (DRY=1 to preview)
+	@echo "Syncing frontend/public/geodata/ to s3://$(BUCKET_NAME)/bluecity/"
+	@s3cmd sync $(if $(DRY),--dry-run) --acl-public --guess-mime-type \
+		--follow-symlinks --check-md5 --no-encrypt --progress \
 		--add-header="Cache-Control:max-age=86400" \
-		frontend/public/geodata/ s3://${BUCKET_NAME}/bluecity/
-	@echo "Upload complete!"
-	@echo "Files are available at: https://${BUCKET_NAME}/bluecity/"
+		frontend/public/geodata/ s3://$(BUCKET_NAME)/bluecity/
+	@echo "$(if $(DRY),Preview only - nothing was sent.,Done: https://$(BUCKET_NAME)/bluecity/)"
 
 # List all files uploaded to S3
 list-geodata: check-bucket-env ## List geodata files in S3 bucket
