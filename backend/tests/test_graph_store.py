@@ -13,7 +13,12 @@ from app.services.graph_store import (
     Grid,
     distance_m,
 )
-from app.services.graph_store_writer import DENSITY_REFINE, write_store
+from app.services.graph_store_writer import (
+    DENSITY_REFINE,
+    M_PER_DEG,
+    simplify_geometry,
+    write_store,
+)
 
 # A small grid of streets spread over several cells, built by hand so the test
 # knows exactly what should come back.
@@ -213,3 +218,49 @@ def test_cells_in_circle_rejects_the_far_corners():
     cells = grid.cells_in_circle(6.025, 46.025, 500)
 
     assert cells == [grid.cell_of(6.025, 46.025)]
+
+
+def test_simplify_drops_the_points_a_road_does_not_need():
+    # A straight line with a point every 10 m, and one real corner.
+    step = 10 / M_PER_DEG
+    straight = np.array([[6.0, 46.0 + i * step] for i in range(20)])
+    corner = np.array([[6.0, 46.0], [6.0, 46.001], [6.001, 46.001]])
+
+    kept = simplify_geometry([straight, corner], metres=0.5)
+
+    # the straight run is two points now, the corner keeps its three
+    assert len(kept[0]) == 4
+    assert len(kept[1]) == 6
+    assert kept[0].dtype == np.float32
+
+
+def test_simplify_never_moves_the_ends_of_an_edge():
+    # The ends are the two nodes of the edge, they have to stay put.
+    line = np.array([[6.0, 46.0], [6.0005, 46.00002], [6.001, 46.0]])
+
+    kept = simplify_geometry([line], metres=0.5)[0].reshape(-1, 2)
+
+    assert kept[0] == pytest.approx(line[0], abs=1e-6)
+    assert kept[-1] == pytest.approx(line[-1], abs=1e-6)
+
+
+def test_simplify_stays_inside_the_tolerance():
+    # A bump of 5 m survives half a metre of tolerance, a bump of 10 cm does not.
+    def bump(metres):
+        return np.array([[6.0, 46.0], [6.0005, 46.0 + metres / M_PER_DEG], [6.001, 46.0]])
+
+    assert len(simplify_geometry([bump(5)], metres=0.5)[0]) == 6
+    assert len(simplify_geometry([bump(0.1)], metres=0.5)[0]) == 4
+
+
+def test_a_store_keeps_its_numbers_when_the_shapes_are_simplified(store):
+    # Only the drawing changes. The lengths come from a column of their own,
+    # so they must be exactly what the builder was given.
+    cells = sorted(store.cells)
+    edges = store.read_edges(cells, with_geometry=True)
+
+    assert len(edges["u"]) > 0
+    assert np.all(edges["length"] > 0)
+    assert np.all(edges["travel_time"] > 0)
+    # every edge still has its two ends
+    assert np.all(np.diff(edges["geom_offsets"]) >= 4)
