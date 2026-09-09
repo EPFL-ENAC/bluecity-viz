@@ -24,6 +24,8 @@ export const SCHEMA_VERSION = 5
 // accepts, else the first Calculate would fail on a saved circle.
 const SWISS_BOUNDS = { minLon: 5.8, minLat: 45.7, maxLon: 10.6, maxLat: 47.9 }
 const RADIUS_M = { min: 500, max: 10_000 }
+// The dock is 340 px wide, a longer name would only be cut on screen.
+const MAX_AREA_NAME = 60
 
 /** A saved circle, or null when it is missing or out of range. */
 export function pickArea(raw: any): TrafficAreaSelection | null {
@@ -35,7 +37,12 @@ export function pickArea(raw: any): TrafficAreaSelection | null {
   if (lon < SWISS_BOUNDS.minLon || lon > SWISS_BOUNDS.maxLon) return null
   if (lat < SWISS_BOUNDS.minLat || lat > SWISS_BOUNDS.maxLat) return null
   if (radiusM < RADIUS_M.min || radiusM > RADIUS_M.max) return null
-  return { kind: 'circle', lon, lat, radiusM }
+  const area: TrafficAreaSelection = { kind: 'circle', lon, lat, radiusM }
+  // The name is a label written by the picker. An area saved before v5.1 has
+  // none, and the dock falls back to the coordinates.
+  const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, MAX_AREA_NAME) : ''
+  if (name) area.name = name
+  return area
 }
 
 export function defaultTrafficInputs(): TrafficAnalysisInputs {

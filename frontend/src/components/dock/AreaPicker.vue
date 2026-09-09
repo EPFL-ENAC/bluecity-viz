@@ -57,6 +57,10 @@ const centre = computed(() => {
   if (!circle) return ''
   return `${circle.lat.toFixed(3)}, ${circle.lon.toFixed(3)}`
 })
+
+// The place the circle sits on, read from the basemap by AreaPickerOverlay.
+// Empty on a style with no labels, and then only the coordinates show.
+const placeName = computed(() => trafficStore.draftArea?.name ?? '')
 </script>
 
 <template>
@@ -80,6 +84,7 @@ const centre = computed(() => {
 
       <div class="feedback" :data-status="feedback.status">
         <div class="feedback__chip">{{ statusLabel }}</div>
+        <p v-if="placeName" class="feedback__place">{{ placeName }}</p>
         <p class="feedback__hint">{{ statusHint }}</p>
 
         <div v-if="counts" class="feedback__counts">
@@ -178,6 +183,15 @@ const centre = computed(() => {
 .feedback:not([data-status='ok']) .feedback__chip {
   border-color: var(--bc-grey);
   color: var(--bc-grey);
+}
+
+/* The name of the place, the answer to "where am I" before the numbers. */
+.feedback__place {
+  margin: 10px 0 0;
+  font-size: var(--bc-fs-title);
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
 }
 
 .feedback__hint {

@@ -259,6 +259,8 @@ export interface AreaSelection {
   lon: number
   lat: number
   radiusM: number
+  /** The place the circle is on, for the dock. Never sent to the server. */
+  name?: string
 }
 
 /** An area the server has in memory and can route on. */

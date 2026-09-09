@@ -20,7 +20,6 @@ import {
   AttributionControl,
   Map as MapLibre,
   NavigationControl,
-  ScaleControl,
   VectorTileSource,
   type AddLayerObject,
   type FilterSpecification,
@@ -206,8 +205,9 @@ async function initMap() {
   wirePatterns(newMap)
 
   newMap.addControl(new NavigationControl({ showCompass: false }), 'top-right')
-  newMap.addControl(new ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-left')
   newMap.addControl(new AttributionControl({ compact: true }), 'bottom-right')
+  // No ScaleControl: the scale is a block of the legend (useMapScale), so it
+  // has the padding and the ink of the rest of the box.
 
   // Loading bar. 'dataloading' fires per tile, so wait a bit before showing
   // the bar, and 'idle' fires once the map has nothing left to load.

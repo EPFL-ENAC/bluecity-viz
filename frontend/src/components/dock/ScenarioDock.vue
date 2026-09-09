@@ -49,6 +49,17 @@ function light(zone: 'scenario' | 'tool'): void {
 const areaName = computed(() => {
   const circle = trafficStore.area
   if (!circle) return 'Lausanne (default)'
+  // The name the picker read on the basemap. Areas saved before that, and the
+  // styles with no labels, still show the circle itself.
+  if (circle.name) return circle.name
+  const km = (circle.radiusM / 1000).toFixed(1)
+  return `${km} km around ${circle.lat.toFixed(3)}, ${circle.lon.toFixed(3)}`
+})
+
+// The circle behind the name, so the radius stays readable.
+const areaShape = computed(() => {
+  const circle = trafficStore.area
+  if (!circle?.name) return ''
   const km = (circle.radiusM / 1000).toFixed(1)
   return `${km} km around ${circle.lat.toFixed(3)}, ${circle.lon.toFixed(3)}`
 })
@@ -200,6 +211,7 @@ function rowFor(key: string) {
         <button class="bc-micro clear-btn" @click="changeArea">Change area</button>
       </div>
       <div class="area-name">{{ areaName }}</div>
+      <p v-if="areaShape" class="bc-empty area-note">{{ areaShape }}</p>
       <p v-if="areaStatus" class="bc-empty area-note">{{ areaStatus }}</p>
       <p v-if="trafficStore.areaError" class="bc-empty area-error">
         {{ trafficStore.areaError.message }}
