@@ -663,6 +663,16 @@ export function useGraphOverlay(
   }
 
   /**
+   * Moving the map drops the selection.
+   *
+   * The popover sits at fixed screen pixels, so a pan or a zoom would leave it
+   * pointing at the wrong street.
+   */
+  function onMoveStart(): void {
+    if (scenarioStore.selected) scenarioStore.select(null)
+  }
+
+  /**
    * Fit the camera on some streets, keeping them clear of the dock.
    *
    * The dock covers the right of the canvas, so the right padding carries its
@@ -702,6 +712,7 @@ export function useGraphOverlay(
     map.on('mousemove', onMouseMove)
     map.on('mouseout', onMouseOut)
     map.on('click', onClick)
+    map.on('movestart', onMoveStart)
     // style.load fires on every setStyle, which drops our layers with it
     map.on('style.load', mount)
     window.addEventListener('keydown', onKeyDown)
@@ -712,6 +723,7 @@ export function useGraphOverlay(
     map.off('mousemove', onMouseMove)
     map.off('mouseout', onMouseOut)
     map.off('click', onClick)
+    map.off('movestart', onMoveStart)
     map.off('style.load', mount)
     window.removeEventListener('keydown', onKeyDown)
   }

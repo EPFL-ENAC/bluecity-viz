@@ -116,10 +116,32 @@ function deltaColor(delta: number): string | undefined {
 
 // The popover, opened by a click while in edit mode.
 const popover = ref<{ x: number; y: number; key: string; dir: ScenarioDir } | null>(null)
+const popoverRef = ref<InstanceType<typeof EdgePopover> | null>(null)
 
 function onPick(key: string, dir: ScenarioDir, point: { x: number; y: number }) {
   popover.value = { key, dir, x: point.x, y: point.y }
 }
+
+/**
+ * Anything the user touches outside the popover closes it.
+ *
+ * Two exceptions. Inside the popover, of course. And on the map canvas, where
+ * the click handler decides: it may be a click on another street, which must
+ * move the selection, not drop it.
+ */
+function onDocumentPointerDown(event: PointerEvent): void {
+  const target = event.target as Node | null
+  if (!target) return
+  const root = popoverRef.value?.$el as HTMLElement | undefined
+  if (root && root.contains(target)) return
+  if (map.value?.getCanvasContainer().contains(target)) return
+  scenarioStore.select(null)
+}
+
+watch(popover, (open) => {
+  if (open) document.addEventListener('pointerdown', onDocumentPointerDown, true)
+  else document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+})
 
 // Per vehicle totals, so the card can say how far it drives and how many trips.
 const routeTotals = computed(() =>
@@ -215,6 +237,8 @@ function setAction(action: ScenarioAction) {
     dir: open.dir,
     name: street?.name || `Edge ${open.key}`
   })
+  // The action is the last word: the popover has nothing left to ask.
+  scenarioStore.select(null)
 }
 
 function setDir(dir: ScenarioDir) {
@@ -230,11 +254,13 @@ function reset() {
   const open = popover.value
   if (!open) return
   scenarioStore.remove(open.key)
+  scenarioStore.select(null)
 }
 
 defineExpose({ hoverRoute: overlay.hoverRoute, focus: overlay.focus })
 
 onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown, true)
   const instance = map.value
   if (instance) {
     overlay.detach(instance)
@@ -251,6 +277,7 @@ onUnmounted(() => {
 
     <EdgePopover
       v-if="popover && popoverStreet"
+      ref="popoverRef"
       :x="popover.x"
       :y="popover.y"
       :name="popoverStreet.name"
