@@ -1,0 +1,86 @@
+# wtx: one branch, one worktree, one tmux session, one agent.
+# Reference for every key: https://github.com/EPFL-ENAC/wtx/blob/main/docs/schema.md
+schema_version = 1
+
+[repo]
+name = "bluecity-viz"
+lab = "bluecity"   # fills {lab} in the paths below
+base_branch = "dev"
+# The single source for the push guard, the completion and the deny rules.
+protected_branches = ["dev", "main"]
+
+# One offset per worktree, one port per family at that offset.
+[ports]
+
+[[ports.family]]
+name = "backend"
+main = 8000   # what the main checkout keeps
+
+[[ports.family]]
+name = "frontend"
+main = 5173   # what the main checkout keeps
+
+# Gitignored files a fresh worktree needs. Never overwritten.
+[seed]
+symlink = ["frontend/public/geodata"]
+
+[deps]
+
+[[deps.step]]
+if_missing = "frontend/node_modules"
+cwd = "frontend"
+run = "pnpm install --frozen-lockfile"
+
+[[deps.step]]
+if_missing = "backend/.venv"
+cwd = "backend"
+run = "uv sync --frozen"
+
+# The agent pane fills the left half, the rest stack on the right.
+[panes]
+
+[[panes.pane]]
+name = "agent"
+role = "agent"
+
+[[panes.pane]]
+name = "backend"
+role = "server"
+cwd = "backend"
+cmd = "make dev"
+log = true   # mirrored to .wt-logs/, the agent reads it
+
+[[panes.pane]]
+name = "frontend"
+role = "server"
+cwd = "frontend"
+cmd = "pnpm run dev"
+log = true   # mirrored to .wt-logs/, the agent reads it
+
+[[panes.pane]]
+name = "shell"
+role = "shell"
+
+[agent]
+tool = "claude"
+llm = "fable"
+subagent_model = "sonnet"
+auto_compact_window = 250000
+explore_agent_model = "haiku"
+
+# Added to the baseline wtx ships. A repo can tighten, never loosen.
+[permissions]
+allow = ["Bash(pnpm run lint)", "Bash(pnpm run lint:check)", "Bash(pnpm run format)", "Bash(pnpm run type-check)", "Bash(pnpm run type-check:test)", "Bash(pnpm run test:unit *)", "Bash(pnpm run build)", "Bash(make build)", "Bash(uv run ruff check *)", "Bash(uv run ruff format *)", "Bash(uv run pytest *)"]
+deny = ["Bash(git tag *)", "Bash(git push --tags*)", "Bash(git push * --tags*)"]
+allowed_domains = ["enacit4r-cdn.epfl.ch"]
+
+# Run by `wtx land --local`.
+[checks]
+lint = ["cd frontend && pnpm run lint:check", "cd frontend && pnpm run type-check", "cd frontend && pnpm run type-check:test", "cd backend && uv run ruff check --no-fix app tests scripts"]
+test = ["cd frontend && pnpm run test:unit", "cd backend && uv run pytest"]
+
+[[repos]]
+name = "k8s"
+path = "~/code/enack8s-app-config/epfl-{lab}/{repo}"
+access = "pair"   # read free, edits only through a paired worktree
+base_branch = "main"
