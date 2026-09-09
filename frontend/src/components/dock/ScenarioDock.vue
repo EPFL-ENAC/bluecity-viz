@@ -12,10 +12,14 @@ import { useMapView } from '@/composables/useMapView'
 import { topAbsorbers, valueOf } from '@/composables/useResultStates'
 import { useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
-import { useScenarioStore } from '@/stores/scenario'
+import {
+  useScenarioStore,
+  type ScenarioAction,
+  type ScenarioDir
+} from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import type { Map as MapLibre } from 'maplibre-gl'
-import { computed, inject, type Ref } from 'vue'
+import { computed, inject, ref, type Ref } from 'vue'
 
 /**
  * The scenario workbench.
@@ -201,6 +205,43 @@ function deltaText(value: number): string {
 function rowFor(key: string) {
   return modifiedRows.value.find((row) => row.key === key) ?? null
 }
+
+/** The action buttons of a group row, the same four as in the map popover. */
+const ACTION_OPTIONS = [
+  { value: 'remove', label: '×' },
+  { value: '50', label: '50' },
+  { value: '30', label: '30' },
+  { value: '10', label: '10' }
+]
+
+const DIR_OPTIONS = [
+  { value: 'both', label: '↔' },
+  { value: 'fwd', label: '→' },
+  { value: 'bwd', label: '←' }
+]
+
+// BcSeg speaks in plain strings, the store wants its own unions.
+function groupAction(id: string, value: string): void {
+  scenarioStore.setGroup(id, { action: value as ScenarioAction })
+}
+
+function groupDir(id: string, value: string): void {
+  scenarioStore.setGroup(id, { dir: value as ScenarioDir })
+}
+
+/** Which groups show their streets. */
+const expanded = ref(new Set<string>())
+
+function toggleGroup(id: string): void {
+  const next = new Set(expanded.value)
+  if (!next.delete(id)) next.add(id)
+  expanded.value = next
+}
+
+/** A group row lights up when the map points at any of its streets. */
+function litGroup(keys: string[]): boolean {
+  return keys.some((key) => scenarioStore.hoveredSet.has(key))
+}
 </script>
 
 <template>
@@ -272,40 +313,107 @@ function rowFor(key: string) {
         </span>
       </div>
 
-      <div
-        v-for="edge in scenarioStore.list"
-        :key="edge.key"
-        class="edge-row edge-row--click"
-        :data-lit="scenarioStore.hoveredSet.has(edge.key)"
-        title="Zoom to this street"
-        @click="focus([edge.key])"
-        @mouseenter="scenarioStore.hover({ keys: [edge.key], dir: edge.dir })"
-        @mouseleave="scenarioStore.hover(null)"
-      >
-        <span class="edge-row__badge">{{ edgeBadge(edge.action) }}</span>
-        <span class="edge-row__name">{{ edge.name }}</span>
-        <span class="edge-row__dir">{{ DIR_GLYPH[edge.dir] }}</span>
-        <button
-          class="edge-row__remove"
-          title="Remove this modification"
-          @click.stop="scenarioStore.remove(edge.key)"
-        >
-          <BcIcon name="x" />
-        </button>
+      <template v-for="row in scenarioStore.dockRows">
+        <!-- A group: the streets of one lasso or one brush stroke, edited
+             together and shown as one row. -->
+        <template v-if="row.kind === 'group'">
+          <div
+            :key="row.group.id"
+            class="edge-row edge-row--group edge-row--click"
+            :data-lit="litGroup(row.group.keys)"
+            title="Zoom to these streets"
+            @click="focus(row.group.keys)"
+            @mouseenter="scenarioStore.hover({ keys: row.group.keys, dir: row.group.dir })"
+            @mouseleave="scenarioStore.hover(null)"
+          >
+            <span class="edge-row__badge">{{ edgeBadge(row.group.action) }}</span>
+            <span class="edge-row__name">{{ row.group.label }}</span>
+            <span class="edge-row__dir">{{ DIR_GLYPH[row.group.dir] }}</span>
+            <button
+              class="edge-row__remove"
+              title="Remove this group"
+              @click.stop="scenarioStore.removeGroup(row.group.id)"
+            >
+              <BcIcon name="x" />
+            </button>
 
-        <div v-if="rowFor(edge.key)" class="edge-row__meta">
-          <span class="edge-row__bar">
-            <span
-              class="edge-row__bar-fill"
-              :style="{
-                width: barWidth(rowFor(edge.key)!.value),
-                background: rowFor(edge.key)!.color
-              }"
-            ></span>
-          </span>
-          <span class="edge-row__delta">{{ deltaText(rowFor(edge.key)!.value) }}</span>
+            <div class="edge-row__group" @click.stop>
+              <BcSeg
+                :model-value="row.group.action"
+                :options="ACTION_OPTIONS"
+                equal
+                @update:model-value="(value) => groupAction(row.group.id, value)"
+              />
+              <BcSeg
+                v-if="row.group.anyTwoWay"
+                :model-value="row.group.dir"
+                :options="DIR_OPTIONS"
+                equal
+                @update:model-value="(value) => groupDir(row.group.id, value)"
+              />
+              <button class="bc-micro clear-btn group-toggle" @click="toggleGroup(row.group.id)">
+                {{ expanded.has(row.group.id) ? 'Hide streets' : 'Show streets' }}
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-for="key in expanded.has(row.group.id) ? row.group.keys : []"
+            :key="`${row.group.id}-${key}`"
+            class="edge-row edge-row--child edge-row--click"
+            :data-lit="scenarioStore.hoveredSet.has(key)"
+            title="Zoom to this street"
+            @click="focus([key])"
+            @mouseenter="scenarioStore.hover({ keys: [key], dir: row.group.dir })"
+            @mouseleave="scenarioStore.hover(null)"
+          >
+            <span class="edge-row__name">{{ scenarioStore.get(key)?.name || key }}</span>
+            <button
+              class="edge-row__remove"
+              title="Take this street out of the group"
+              @click.stop="scenarioStore.remove(key)"
+            >
+              <BcIcon name="x" />
+            </button>
+          </div>
+        </template>
+
+        <!-- A street edited on its own. -->
+        <div
+          v-else
+          :key="row.key"
+          class="edge-row edge-row--click"
+          :data-lit="scenarioStore.hoveredSet.has(row.key)"
+          title="Zoom to this street"
+          @click="focus([row.key])"
+          @mouseenter="scenarioStore.hover({ keys: [row.key], dir: row.dir })"
+          @mouseleave="scenarioStore.hover(null)"
+        >
+          <span class="edge-row__badge">{{ edgeBadge(row.action) }}</span>
+          <span class="edge-row__name">{{ row.name }}</span>
+          <span class="edge-row__dir">{{ DIR_GLYPH[row.dir] }}</span>
+          <button
+            class="edge-row__remove"
+            title="Remove this modification"
+            @click.stop="scenarioStore.remove(row.key)"
+          >
+            <BcIcon name="x" />
+          </button>
+
+          <div v-if="rowFor(row.key)" class="edge-row__meta">
+            <span class="edge-row__bar">
+              <span
+                class="edge-row__bar-fill"
+                :style="{
+                  width: barWidth(rowFor(row.key)!.value),
+                  background: rowFor(row.key)!.color
+                }"
+              ></span>
+            </span>
+            <span class="edge-row__delta">{{ deltaText(rowFor(row.key)!.value) }}</span>
+          </div>
         </div>
-      </div>
+      </template>
 
       <p v-if="scenarioStore.count === 0" class="bc-empty edge-empty">
         Click a street on the map to close it or set a speed limit. ⇧-click adds streets to the
@@ -495,6 +603,27 @@ function rowFor(key: string) {
 .edge-row[data-lit='true'] {
   background: var(--bc-hover);
   box-shadow: -3px 0 0 0 var(--bc-accent);
+}
+
+/* the group controls go on their own line, under the name */
+.edge-row__group {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  cursor: default;
+}
+
+.group-toggle {
+  white-space: nowrap;
+}
+
+/* a street inside an open group, stepped in under it */
+.edge-row--child {
+  grid-template-columns: 1fr 14px;
+  padding-left: 12px;
+  color: var(--bc-grey);
 }
 
 /* absorbers carry no badge, so the name takes the whole first line */

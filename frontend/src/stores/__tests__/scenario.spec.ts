@@ -353,3 +353,126 @@ describe('scenarioSignature', () => {
     expect(scenarioSignature(entries)).toBe('1-2:30:fwd|3-7:remove:both')
   })
 })
+
+describe('groups', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  function twoStreets() {
+    const store = useScenarioStore()
+    store.setStreets(
+      new Map([
+        ['1-2', street(1, 2)],
+        ['3-4', street(3, 4)]
+      ])
+    )
+    store.setMany([
+      ['1-2', { action: '30', dir: 'both', name: 'A', group: 'g1' }],
+      ['3-4', { action: '30', dir: 'both', name: 'B', group: 'g1' }]
+    ])
+    return store
+  }
+
+  it('gathers the streets of one group', () => {
+    const store = twoStreets()
+    const group = store.groups.get('g1')
+    expect(group?.keys).toEqual(['1-2', '3-4'])
+    expect(group?.action).toBe('30')
+    expect(group?.label).toBe('2 streets')
+    expect(group?.anyTwoWay).toBe(true)
+  })
+
+  it('takes the direction from a street that has two lanes', () => {
+    const store = useScenarioStore()
+    store.setStreets(
+      new Map([
+        ['1-2', street(1, 2, true)],
+        ['3-4', street(3, 4)]
+      ])
+    )
+    store.setMany([
+      ['1-2', { action: '30', dir: 'both', name: 'One way', group: 'g1' }],
+      ['3-4', { action: '30', dir: 'fwd', name: 'Two way', group: 'g1' }]
+    ])
+    expect(store.groups.get('g1')?.dir).toBe('fwd')
+  })
+
+  it('moves every street of the group at once', () => {
+    const store = twoStreets()
+    store.setGroup('g1', { action: 'remove' })
+    expect(store.get('1-2')?.action).toBe('remove')
+    expect(store.get('3-4')?.action).toBe('remove')
+  })
+
+  it('does nothing for a group that is not there', () => {
+    const store = twoStreets()
+    const before = store.edgeModifications
+    store.setGroup('g9', { action: 'remove' })
+    expect(store.edgeModifications).toBe(before)
+  })
+
+  it('drops the whole group', () => {
+    const store = twoStreets()
+    store.set('5-6', { action: '10', dir: 'both', name: 'Alone' })
+    store.removeGroup('g1')
+    expect(store.count).toBe(1)
+    expect(store.get('5-6')).toBeDefined()
+  })
+
+  it('gives a fresh id past the groups already there', () => {
+    const store = useScenarioStore()
+    store.restore([
+      { key: '1-2', action: '30', dir: 'both', name: 'A', group: 'g3' },
+      { key: '3-4', action: '30', dir: 'both', name: 'B' }
+    ])
+    expect(store.newGroupId()).toBe('g4')
+  })
+
+  it('lists the groups first, then the lone streets by name', () => {
+    const store = twoStreets()
+    store.set('5-6', { action: '10', dir: 'both', name: 'Zebra' })
+    store.set('7-8', { action: '10', dir: 'both', name: 'Alpha' })
+    const rows = store.dockRows
+    expect(rows[0].kind).toBe('group')
+    expect(rows.slice(1).map((row) => (row.kind === 'street' ? row.name : ''))).toEqual([
+      'Alpha',
+      'Zebra'
+    ])
+  })
+
+  it('leaves the hash alone: a group changes nothing on the wire', () => {
+    const store = twoStreets()
+    const before = store.hash
+    store.setGroup('g1', { action: '30' })
+    expect(store.hash).toBe(before)
+
+    // the same two streets with no group at all hash the same way
+    store.setMany([
+      ['1-2', { action: '30', dir: 'both', name: 'A' }],
+      ['3-4', { action: '30', dir: 'both', name: 'B' }]
+    ])
+    expect(store.groups.size).toBe(0)
+    expect(store.hash).toBe(before)
+  })
+
+  it('writes no group field when there is none', () => {
+    const store = useScenarioStore()
+    store.set('1-2', { action: '30', dir: 'both', name: 'A' })
+    expect(store.serialize()).toEqual([{ key: '1-2', action: '30', dir: 'both', name: 'A' }])
+  })
+
+  it('round-trips a group through serialize and restore', () => {
+    const store = twoStreets()
+    const saved = store.serialize()
+    store.clear()
+    store.restore(saved)
+    expect(store.groups.get('g1')?.keys).toEqual(['1-2', '3-4'])
+  })
+
+  it('restores an old scenario that has no group', () => {
+    const store = useScenarioStore()
+    store.restore([{ key: '1-2', action: '30', dir: 'both', name: 'A' }])
+    expect(store.get('1-2')?.group).toBeUndefined()
+    expect(store.groups.size).toBe(0)
+    expect(store.dockRows).toHaveLength(1)
+  })
+})

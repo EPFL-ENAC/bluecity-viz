@@ -288,8 +288,16 @@ function setAction(action: ScenarioAction) {
   const selection = scenarioStore.selected
   if (!selection) return
   const dir = selection.dir
+
+  // Several streets edited together become a group, and the dock shows them
+  // as one row. Editing a single street takes it out of the group it was in,
+  // so a group row never shows two different values.
+  const group = selection.keys.length > 1 ? scenarioStore.newGroupId() : undefined
+
   scenarioStore.setMany(
-    selection.keys.map((key) => [key, { action, dir, name: nameOf(key) }] as [string, StreetMod])
+    selection.keys.map(
+      (key) => [key, { action, dir, name: nameOf(key), group }] as [string, StreetMod]
+    )
   )
   // The action is the last word: the popover has nothing left to ask.
   scenarioStore.select(null)

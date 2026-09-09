@@ -29,7 +29,29 @@ export interface StreetMod {
   action: ScenarioAction
   dir: ScenarioDir
   name: string
+  /**
+   * The group this street was edited with, when it came from a selection of
+   * several. The wire does not know about it: a group is a way to show and to
+   * re-edit the same streets together, nothing more.
+   */
+  group?: string
 }
+
+/** Several streets modified in one go, shown as one row in the dock. */
+export interface StreetGroup {
+  id: string
+  label: string
+  keys: string[]
+  action: ScenarioAction
+  dir: ScenarioDir
+  /** at least one of them has two lanes, so a direction is worth offering */
+  anyTwoWay: boolean
+}
+
+/** What the dock lists: a street on its own, or a whole group. */
+export type DockRow =
+  | { kind: 'street'; key: string; action: ScenarioAction; dir: ScenarioDir; name: string }
+  | { kind: 'group'; group: StreetGroup }
 
 /** One street of the graph, both of its directed edges. */
 export interface Street {
@@ -140,6 +162,62 @@ export const useScenarioStore = defineStore('scenario', () => {
   })
 
   /**
+   * The groups, read back from the entries.
+   *
+   * Nothing stores them: an entry carries its group id, and this walks the map
+   * to gather them. One less thing to keep in step, and an old saved scenario
+   * simply has no group.
+   */
+  const groups = computed<Map<string, StreetGroup>>(() => {
+    const out = new Map<string, StreetGroup>()
+
+    for (const [key, mod] of edgeModifications.value) {
+      if (!mod.group) continue
+      const street = streets.value.get(key)
+      const twoWay = street ? !street.oneway : false
+      const found = out.get(mod.group)
+
+      if (!found) {
+        out.set(mod.group, {
+          id: mod.group,
+          label: '',
+          keys: [key],
+          action: mod.action,
+          dir: mod.dir,
+          anyTwoWay: twoWay
+        })
+        continue
+      }
+
+      found.keys.push(key)
+      // A one-way street is always 'both', so the direction of the group has
+      // to come from a street that has two lanes to pick from.
+      if (twoWay && !found.anyTwoWay) found.dir = mod.dir
+      if (twoWay) found.anyTwoWay = true
+    }
+
+    for (const group of out.values()) {
+      group.label = `${group.keys.length} streets`
+    }
+    return out
+  })
+
+  /** The dock list: the groups first, then the streets edited on their own. */
+  const dockRows = computed<DockRow[]>(() => {
+    const singles = Array.from(edgeModifications.value.entries())
+      .filter(([, mod]) => !mod.group)
+      .map(([key, mod]) => ({ key, action: mod.action, dir: mod.dir, name: mod.name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    const grouped = Array.from(groups.value.values()).sort((a, b) => b.keys.length - a.keys.length)
+
+    return [
+      ...grouped.map((group): DockRow => ({ kind: 'group', group })),
+      ...singles.map((row): DockRow => ({ kind: 'street', ...row }))
+    ]
+  })
+
+  /**
    * The backend format. It only knows directed edges, so 'both' becomes two
    * entries. A one-way street contributes the single edge it has.
    */
@@ -209,6 +287,45 @@ export const useScenarioStore = defineStore('scenario', () => {
     for (const key of keys) if (next.delete(key)) changed = true
     if (!changed) return
     edgeModifications.value = next
+  }
+
+  /** A fresh id, past every group already there, restored ones included. */
+  function newGroupId(): string {
+    let max = 0
+    for (const mod of edgeModifications.value.values()) {
+      if (!mod.group) continue
+      const n = Number(mod.group.slice(1))
+      if (Number.isFinite(n) && n > max) max = n
+    }
+    return `g${max + 1}`
+  }
+
+  /** Change a group: every street in it moves together. */
+  function setGroup(id: string, patch: { action?: ScenarioAction; dir?: ScenarioDir }): void {
+    const next = new Map(edgeModifications.value)
+    let changed = false
+
+    for (const [key, mod] of next) {
+      if (mod.group !== id) continue
+      next.set(key, {
+        ...mod,
+        action: patch.action ?? mod.action,
+        dir: patch.dir ?? mod.dir
+      })
+      changed = true
+    }
+
+    if (!changed) return
+    edgeModifications.value = next
+    normalizeOneWay()
+  }
+
+  function removeGroup(id: string): void {
+    const keys: string[] = []
+    for (const [key, mod] of edgeModifications.value) {
+      if (mod.group === id) keys.push(key)
+    }
+    removeMany(keys)
   }
 
   function setDir(key: string, dir: ScenarioDir): void {
@@ -287,14 +404,17 @@ export const useScenarioStore = defineStore('scenario', () => {
     if (changed) edgeModifications.value = next
   }
 
-  function restore(entries: Array<{ key: string; action: string; dir: string; name?: string }>) {
+  function restore(
+    entries: Array<{ key: string; action: string; dir: string; name?: string; group?: string }>
+  ) {
     const next = new Map<string, StreetMod>()
     for (const entry of entries) {
       if (!entry || typeof entry.key !== 'string') continue
       next.set(entry.key, {
         action: entry.action as ScenarioAction,
         dir: (entry.dir as ScenarioDir) || 'both',
-        name: entry.name || ''
+        name: entry.name || '',
+        ...(typeof entry.group === 'string' && entry.group ? { group: entry.group } : {})
       })
     }
     edgeModifications.value = next
@@ -303,11 +423,14 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   /** What goes to localStorage. */
   function serialize() {
+    // The group is left out when there is none, so a scenario without groups
+    // writes exactly what it used to.
     return Array.from(edgeModifications.value.entries()).map(([key, mod]) => ({
       key,
       action: mod.action,
       dir: mod.dir,
-      name: mod.name
+      name: mod.name,
+      ...(mod.group ? { group: mod.group } : {})
     }))
   }
 
@@ -331,6 +454,8 @@ export const useScenarioStore = defineStore('scenario', () => {
     signature,
     hash,
     list,
+    groups,
+    dockRows,
     wire,
 
     // Actions
@@ -340,6 +465,9 @@ export const useScenarioStore = defineStore('scenario', () => {
     remove,
     removeMany,
     setDir,
+    newGroupId,
+    setGroup,
+    removeGroup,
     clear,
     select,
     toggleSelected,
