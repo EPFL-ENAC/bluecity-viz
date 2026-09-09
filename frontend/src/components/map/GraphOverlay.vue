@@ -256,7 +256,9 @@ const popoverStreet = computed(() => {
 
   const one = streets.length === 1 ? streets[0] : null
   return {
-    name: one ? one.name || `Edge ${one.lo}→${one.hi}` : `${streets.length} streets`,
+    name: one ? one.name || `Edge ${one.lo}→${one.hi}` : selectionName.value,
+    // The zone name says where, the count says how much.
+    streets: one ? 0 : streets.length,
     edges: streets.reduce((total, street) => total + (street.oneway ? 1 : 2), 0),
     speed: one ? one.speed : undefined,
     // Nothing to choose when every street runs one way.
@@ -286,10 +288,15 @@ function nameOf(key: string): string {
   return graph.value?.streets.get(key)?.name || `Edge ${key}`
 }
 
-/** The shape and the name of each street, for naming a zone. */
+/**
+ * Each street of a selection, with what naming a zone needs: its shape, how
+ * big a road it is, and how much traffic the last result put on it.
+ */
 function linesOf(keys: string[]): NamedLine[] {
   const source = graph.value
   if (!source) return []
+
+  const volumes = new Map(trafficStore.resultTotals.map((row) => [row.key, row.count]))
 
   const lines: NamedLine[] = []
   for (const key of keys) {
@@ -300,7 +307,9 @@ function linesOf(keys: string[]): NamedLine[] {
     if (!feature) continue
     lines.push({
       name: street?.name ?? '',
-      coordinates: feature.geometry.coordinates as [number, number][]
+      coordinates: feature.geometry.coordinates as [number, number][],
+      cls: street?.cls,
+      volume: volumes.get(key)
     })
   }
   return lines
@@ -321,11 +330,29 @@ function groupOfSelection(keys: string[]): string | undefined {
   return undefined
 }
 
-/** The name a new zone takes: the place around it, free of any clash. */
-function nameGroup(keys: string[]): string {
+/**
+ * What the streets in the popover are called.
+ *
+ * One street goes by its own name. Several go by the name of the zone they
+ * would make, and by the name of the zone they already are when the selection
+ * is one, so the title reads the same before and after the edit.
+ */
+const selectionName = computed(() => {
+  const keys = scenarioStore.selected?.keys ?? []
+  if (keys.length === 0) return ''
+
+  const existing = groupOfSelection(keys)
+  if (existing) return existing
+
   const instance = map.value
-  const places = instance ? collectPlaces(instance) : []
-  return scenarioStore.freeGroupId(groupName(linesOf(keys), places))
+  return groupName(linesOf(keys), instance ? collectPlaces(instance) : [])
+})
+
+/** The name a new zone takes, free of any clash with one already there. */
+function nameGroup(keys: string[]): string {
+  const existing = groupOfSelection(keys)
+  if (existing) return existing
+  return scenarioStore.freeGroupId(selectionName.value)
 }
 
 function setAction(action: ScenarioAction) {
@@ -336,10 +363,7 @@ function setAction(action: ScenarioAction) {
   // Several streets edited together become a group, and the dock shows them
   // as one row. Editing a single street takes it out of the group it was in,
   // so a group row never shows two different values.
-  const group =
-    selection.keys.length > 1
-      ? (groupOfSelection(selection.keys) ?? nameGroup(selection.keys))
-      : undefined
+  const group = selection.keys.length > 1 ? nameGroup(selection.keys) : undefined
 
   scenarioStore.setMany(
     selection.keys.map(
@@ -410,6 +434,7 @@ onUnmounted(() => {
       :y="popover.y"
       :name="popoverStreet.name"
       :edges="popoverStreet.edges"
+      :streets="popoverStreet.streets"
       :speed="popoverStreet.speed"
       :dir="scenarioStore.selected?.dir ?? 'both'"
       :action="currentAction"
