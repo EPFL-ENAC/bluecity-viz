@@ -222,18 +222,125 @@ describe('scenario store', () => {
 
   it('clears the selection', () => {
     const store = useScenarioStore()
-    store.select({ key: '3-7', dir: 'fwd' })
-    expect(store.selected).toEqual({ key: '3-7', dir: 'fwd' })
+    store.select({ keys: ['3-7'], dir: 'fwd' })
+    expect(store.selected).toEqual({ keys: ['3-7'], dir: 'fwd' })
     store.select(null)
     expect(store.selected).toBeNull()
   })
 
-  it('does not re-set the same hovered edge', () => {
+  it('takes an empty selection for none', () => {
     const store = useScenarioStore()
-    store.hover({ key: '3-7', dir: 'fwd' })
+    store.select({ keys: [], dir: 'both' })
+    expect(store.selected).toBeNull()
+  })
+
+  it('does not re-set the same hovered streets', () => {
+    const store = useScenarioStore()
+    store.hover({ keys: ['3-7'], dir: 'fwd' })
     const first = store.hovered
-    store.hover({ key: '3-7', dir: 'fwd' })
+    store.hover({ keys: ['3-7'], dir: 'fwd' })
     expect(store.hovered).toBe(first)
+  })
+
+  it('re-sets the hover when the streets differ', () => {
+    const store = useScenarioStore()
+    store.hover({ keys: ['3-7'], dir: 'both' })
+    const first = store.hovered
+    store.hover({ keys: ['3-7', '1-2'], dir: 'both' })
+    expect(store.hovered).not.toBe(first)
+    expect(store.hoveredSet.has('1-2')).toBe(true)
+  })
+})
+
+describe('the selection', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('adds a street on shift-click and takes it back out', () => {
+    const store = useScenarioStore()
+    store.toggleSelected('1-2')
+    store.toggleSelected('3-4')
+    expect(store.selected?.keys).toEqual(['1-2', '3-4'])
+    store.toggleSelected('1-2')
+    expect(store.selected?.keys).toEqual(['3-4'])
+    store.toggleSelected('3-4')
+    expect(store.selected).toBeNull()
+  })
+
+  it('keeps the direction while toggling', () => {
+    const store = useScenarioStore()
+    store.select({ keys: ['1-2'], dir: 'fwd' })
+    store.toggleSelected('3-4')
+    expect(store.selected?.dir).toBe('fwd')
+  })
+
+  it('adds a stroke in order, without repeats', () => {
+    const store = useScenarioStore()
+    store.addSelected(['1-2', '3-4'])
+    store.addSelected(['3-4', '5-6'])
+    expect(store.selected?.keys).toEqual(['1-2', '3-4', '5-6'])
+  })
+
+  it('does not touch the selection when a stroke catches nothing new', () => {
+    const store = useScenarioStore()
+    store.addSelected(['1-2'])
+    const first = store.selected
+    store.addSelected(['1-2'])
+    expect(store.selected).toBe(first)
+  })
+
+  it('moves the whole selection onto one direction', () => {
+    const store = useScenarioStore()
+    store.select({ keys: ['1-2', '3-4'], dir: 'both' })
+    store.setSelectedDir('bwd')
+    expect(store.selected).toEqual({ keys: ['1-2', '3-4'], dir: 'bwd' })
+  })
+
+  it('lists the selected streets as a set', () => {
+    const store = useScenarioStore()
+    store.select({ keys: ['1-2', '3-4'], dir: 'both' })
+    expect(store.selectedSet.has('3-4')).toBe(true)
+    expect(store.selectedSet.has('9-9')).toBe(false)
+  })
+})
+
+describe('writing several streets at once', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('replaces the map once for the whole batch', () => {
+    const store = useScenarioStore()
+    const before = store.edgeModifications
+    store.setMany([
+      ['1-2', { action: '30', dir: 'both', name: 'A' }],
+      ['3-4', { action: '30', dir: 'both', name: 'B' }]
+    ])
+    expect(store.edgeModifications).not.toBe(before)
+    expect(store.count).toBe(2)
+  })
+
+  it('folds a one-way street to both directions', () => {
+    const store = useScenarioStore()
+    store.setStreets(new Map([['1-2', street(1, 2, true)]]))
+    store.setMany([['1-2', { action: 'remove', dir: 'fwd', name: 'A' }]])
+    expect(store.get('1-2')?.dir).toBe('both')
+  })
+
+  it('drops several streets at once', () => {
+    const store = useScenarioStore()
+    store.setMany([
+      ['1-2', { action: '30', dir: 'both', name: 'A' }],
+      ['3-4', { action: '30', dir: 'both', name: 'B' }]
+    ])
+    store.removeMany(['1-2', '9-9'])
+    expect(store.count).toBe(1)
+    expect(store.get('3-4')).toBeDefined()
+  })
+
+  it('does nothing when none of the streets are there', () => {
+    const store = useScenarioStore()
+    store.set('1-2', { action: '30', dir: 'both', name: 'A' })
+    const before = store.edgeModifications
+    store.removeMany(['9-9'])
+    expect(store.edgeModifications).toBe(before)
   })
 })
 

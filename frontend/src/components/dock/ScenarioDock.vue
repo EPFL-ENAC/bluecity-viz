@@ -245,10 +245,10 @@ function rowFor(key: string) {
         v-for="edge in scenarioStore.list"
         :key="edge.key"
         class="edge-row edge-row--click"
-        :data-lit="scenarioStore.hovered?.key === edge.key"
+        :data-lit="scenarioStore.hoveredSet.has(edge.key)"
         title="Zoom to this street"
         @click="focus([edge.key])"
-        @mouseenter="scenarioStore.hover({ key: edge.key, dir: edge.dir })"
+        @mouseenter="scenarioStore.hover({ keys: [edge.key], dir: edge.dir })"
         @mouseleave="scenarioStore.hover(null)"
       >
         <span class="edge-row__badge">{{ edgeBadge(edge.action) }}</span>
@@ -277,7 +277,8 @@ function rowFor(key: string) {
       </div>
 
       <p v-if="scenarioStore.count === 0" class="bc-empty edge-empty">
-        Click a street on the map to close it or set a speed limit. ⇧-click picks one direction.
+        Click a street on the map to close it or set a speed limit. ⇧-click adds streets to the
+        selection.
       </p>
     </section>
 
@@ -306,10 +307,10 @@ function rowFor(key: string) {
           v-for="row in absorbers"
           :key="row.key"
           class="edge-row edge-row--absorb edge-row--click"
-          :data-lit="scenarioStore.hovered?.key === row.key"
+          :data-lit="scenarioStore.hoveredSet.has(row.key)"
           title="Zoom to this street"
           @click="focus([row.key])"
-          @mouseenter="scenarioStore.hover({ key: row.key, dir: 'both' })"
+          @mouseenter="scenarioStore.hover({ keys: [row.key], dir: 'both' })"
           @mouseleave="scenarioStore.hover(null)"
         >
           <span class="edge-row__name">{{ row.name || 'Unnamed street' }}</span>

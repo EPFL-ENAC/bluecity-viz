@@ -80,7 +80,7 @@ export function useGraphOverlay(
   graph: Ref<GraphSource | null>,
   callbacks: {
     onHover?: (hover: EdgeHover | null, point: { x: number; y: number }) => void
-    onPick?: (key: string, dir: ScenarioDir, point: { x: number; y: number }) => void
+    onPick?: (point: { x: number; y: number }) => void
     onRoute?: (route: RouteHover | null, point: { x: number; y: number }) => void
   } = {}
 ) {
@@ -474,11 +474,14 @@ export function useGraphOverlay(
     if (!map || mountedOn !== map) return
 
     const hovered = scenarioStore.hovered
-    hoverIds = hovered ? idsFor(hovered.key, hovered.dir) : []
-    // one lane hovered: offset onto it. Both: stay on the centre line.
-    hoverFeatures = hovered
-      ? pointerFeatures(hoverIds, 'hover', hovered.dir === 'both' ? 0 : 1)
-      : []
+    hoverIds = []
+    hoverFeatures = []
+
+    if (hovered) {
+      for (const key of hovered.keys) hoverIds.push(...idsFor(key, hovered.dir))
+      // one lane hovered: offset onto it. Both: stay on the centre line.
+      hoverFeatures = pointerFeatures(hoverIds, 'hover', hovered.dir === 'both' ? 0 : 1)
+    }
     drawPointer(map)
   }
 
@@ -496,16 +499,21 @@ export function useGraphOverlay(
       return
     }
 
-    selectedIds = idsFor(selected.key, selected.dir)
     const lane = selected.dir === 'both' ? 0 : 1
-    selectionFeatures = pointerFeatures(selectedIds, 'selected', lane)
-
     // With one lane selected, the other shows a dotted ghost so the user sees
     // which direction is left out.
-    if (selected.dir !== 'both') {
-      const other = selected.dir === 'fwd' ? 'bwd' : 'fwd'
-      ghostIds = idsFor(selected.key, other)
-      selectionFeatures.push(...pointerFeatures(ghostIds, 'ghost', 1))
+    const other = selected.dir === 'fwd' ? 'bwd' : 'fwd'
+
+    for (const key of selected.keys) {
+      const ids = idsFor(key, selected.dir)
+      selectedIds.push(...ids)
+      selectionFeatures.push(...pointerFeatures(ids, 'selected', lane))
+
+      if (selected.dir !== 'both') {
+        const ghosts = idsFor(key, other)
+        ghostIds.push(...ghosts)
+        selectionFeatures.push(...pointerFeatures(ghosts, 'ghost', 1))
+      }
     }
 
     drawPointer(map)
@@ -600,7 +608,7 @@ export function useGraphOverlay(
 
       const hit = hitAt(event)
       // Hovering points at the street; the lane only matters once we click.
-      scenarioStore.hover(hit ? { key: hit.key, dir: hit.oneway ? 'both' : hit.dir } : null)
+      scenarioStore.hover(hit ? { keys: [hit.key], dir: hit.oneway ? 'both' : hit.dir } : null)
       callbacks.onHover?.(hit, { x: event.point.x, y: event.point.y })
 
       const map = mapRef.value
@@ -649,13 +657,16 @@ export function useGraphOverlay(
       return
     }
 
-    // Click takes both directions, which is what people mean most of the time.
-    // Shift-click takes the single lane under the cursor.
-    const shift = (event.originalEvent as MouseEvent).shiftKey
-    const dir: ScenarioDir = hit.oneway || !shift ? 'both' : hit.dir
+    // A plain click picks one street. Shift-click adds it to the selection, or
+    // takes it back out, the way every map editor does it. Which lane is
+    // chosen in the popover, not here.
+    if ((event.originalEvent as MouseEvent).shiftKey) {
+      scenarioStore.toggleSelected(hit.key)
+    } else {
+      scenarioStore.select({ keys: [hit.key], dir: scenarioStore.get(hit.key)?.dir ?? 'both' })
+    }
 
-    scenarioStore.select({ key: hit.key, dir })
-    callbacks.onPick?.(hit.key, dir, { x: event.point.x, y: event.point.y })
+    if (scenarioStore.selected) callbacks.onPick?.({ x: event.point.x, y: event.point.y })
   }
 
   function onKeyDown(event: KeyboardEvent): void {
@@ -706,8 +717,8 @@ export function useGraphOverlay(
   }
 
   function attach(map: MapLibreMap): void {
-    // Shift-click picks one lane, so the shift-drag box zoom has to go: it eats
-    // the mousedown and MapLibre never fires the click.
+    // Shift-click adds to the selection, so the shift-drag box zoom has to go:
+    // it eats the mousedown and MapLibre never fires the click.
     map.boxZoom.disable()
     map.on('mousemove', onMouseMove)
     map.on('mouseout', onMouseOut)

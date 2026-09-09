@@ -6,7 +6,12 @@ import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useGraphOverlay, type EdgeHover, type RouteHover } from '@/composables/useGraphOverlay'
 import { useMapView } from '@/composables/useMapView'
 import { useCVRPStore } from '@/stores/cvrp'
-import { useScenarioStore, type ScenarioAction, type ScenarioDir } from '@/stores/scenario'
+import {
+  useScenarioStore,
+  type ScenarioAction,
+  type ScenarioDir,
+  type StreetMod
+} from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { routeSummaries } from '@/utils/cvrpSource'
 import { buildGraphSource, type GraphSource } from '@/utils/graphSource'
@@ -114,12 +119,12 @@ function deltaColor(delta: number): string | undefined {
   return scale ? scale(delta) : undefined
 }
 
-// The popover, opened by a click while in edit mode.
-const popover = ref<{ x: number; y: number; key: string; dir: ScenarioDir } | null>(null)
+// Where the popover sits. What it edits is the selection in the store.
+const popover = ref<{ x: number; y: number } | null>(null)
 const popoverRef = ref<InstanceType<typeof EdgePopover> | null>(null)
 
-function onPick(key: string, dir: ScenarioDir, point: { x: number; y: number }) {
-  popover.value = { key, dir, x: point.x, y: point.y }
+function onPick(point: { x: number; y: number }) {
+  popover.value = { x: point.x, y: point.y }
 }
 
 /**
@@ -201,19 +206,34 @@ watch(
   }
 )
 
-const popoverStreet = computed(() => {
-  const open = popover.value
-  if (!open) return null
-  const street = graph.value?.streets.get(open.key)
-  if (!street) return null
+/** The streets the popover edits, in selection order. */
+const selectedStreets = computed(() => {
+  const keys = scenarioStore.selected?.keys ?? []
+  const source = graph.value
+  if (!source) return []
+  return keys.map((key) => source.streets.get(key)).filter((street) => !!street)
+})
 
+/**
+ * What the head and the rows say, for one street or for many.
+ *
+ * With several streets the name becomes a count, and the two direction labels
+ * go away: they name where a single street leads.
+ */
+const popoverStreet = computed(() => {
+  if (!popover.value) return null
+  const streets = selectedStreets.value
+  if (streets.length === 0) return null
+
+  const one = streets.length === 1 ? streets[0] : null
   return {
-    name: street.name || `Edge ${street.lo}→${street.hi}`,
-    edges: street.oneway ? 1 : 2,
-    speed: street.speed,
-    oneway: street.oneway,
-    toForward: destination(street.hi, street.name),
-    toBackward: destination(street.lo, street.name)
+    name: one ? one.name || `Edge ${one.lo}→${one.hi}` : `${streets.length} streets`,
+    edges: streets.reduce((total, street) => total + (street.oneway ? 1 : 2), 0),
+    speed: one ? one.speed : undefined,
+    // Nothing to choose when every street runs one way.
+    oneway: streets.every((street) => street.oneway),
+    toForward: one ? destination(one.hi, one.name) : '',
+    toBackward: one ? destination(one.lo, one.name) : ''
   }
 })
 
@@ -224,36 +244,48 @@ function destination(node: number, own: string): string {
   return other ? `To ${other}` : ''
 }
 
-const currentAction = computed<ScenarioAction | null>(
-  () => (popover.value && scenarioStore.get(popover.value.key)?.action) || null
-)
+/** The action the buttons show as on, only when every street agrees. */
+const currentAction = computed<ScenarioAction | null>(() => {
+  const keys = scenarioStore.selected?.keys ?? []
+  if (keys.length === 0) return null
+  const first = scenarioStore.get(keys[0])?.action ?? null
+  if (!first) return null
+  return keys.every((key) => scenarioStore.get(key)?.action === first) ? first : null
+})
+
+function nameOf(key: string): string {
+  return graph.value?.streets.get(key)?.name || `Edge ${key}`
+}
 
 function setAction(action: ScenarioAction) {
-  const open = popover.value
-  if (!open) return
-  const street = graph.value?.streets.get(open.key)
-  scenarioStore.set(open.key, {
-    action,
-    dir: open.dir,
-    name: street?.name || `Edge ${open.key}`
-  })
+  const selection = scenarioStore.selected
+  if (!selection) return
+  const dir = selection.dir
+  scenarioStore.setMany(
+    selection.keys.map((key) => [key, { action, dir, name: nameOf(key) }] as [string, StreetMod])
+  )
   // The action is the last word: the popover has nothing left to ask.
   scenarioStore.select(null)
 }
 
 function setDir(dir: ScenarioDir) {
-  const open = popover.value
-  if (!open) return
-  popover.value = { ...open, dir }
-  scenarioStore.select({ key: open.key, dir })
-  // move an existing modification onto the direction the user just picked
-  if (scenarioStore.get(open.key)) scenarioStore.setDir(open.key, dir)
+  const selection = scenarioStore.selected
+  if (!selection) return
+  scenarioStore.setSelectedDir(dir)
+  // move the modifications that already exist onto the direction just picked
+  const moved = selection.keys
+    .map((key) => {
+      const mod = scenarioStore.get(key)
+      return mod ? ([key, { ...mod, dir }] as [string, StreetMod]) : null
+    })
+    .filter((entry) => !!entry)
+  scenarioStore.setMany(moved)
 }
 
 function reset() {
-  const open = popover.value
-  if (!open) return
-  scenarioStore.remove(open.key)
+  const selection = scenarioStore.selected
+  if (!selection) return
+  scenarioStore.removeMany(selection.keys)
   scenarioStore.select(null)
 }
 
@@ -283,7 +315,7 @@ onUnmounted(() => {
       :name="popoverStreet.name"
       :edges="popoverStreet.edges"
       :speed="popoverStreet.speed"
-      :dir="popover.dir"
+      :dir="scenarioStore.selected?.dir ?? 'both'"
       :action="currentAction"
       :to-forward="popoverStreet.toForward"
       :to-backward="popoverStreet.toBackward"
