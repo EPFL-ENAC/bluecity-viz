@@ -12,11 +12,7 @@ import { useMapView } from '@/composables/useMapView'
 import { topAbsorbers, valueOf } from '@/composables/useResultStates'
 import { useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
-import {
-  useScenarioStore,
-  type ScenarioAction,
-  type ScenarioDir
-} from '@/stores/scenario'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import type { Map as MapLibre } from 'maplibre-gl'
 import { computed, inject, ref, type Ref } from 'vue'
@@ -206,29 +202,6 @@ function rowFor(key: string) {
   return modifiedRows.value.find((row) => row.key === key) ?? null
 }
 
-/** The action buttons of a group row, the same four as in the map popover. */
-const ACTION_OPTIONS = [
-  { value: 'remove', label: '×' },
-  { value: '50', label: '50' },
-  { value: '30', label: '30' },
-  { value: '10', label: '10' }
-]
-
-const DIR_OPTIONS = [
-  { value: 'both', label: '↔' },
-  { value: 'fwd', label: '→' },
-  { value: 'bwd', label: '←' }
-]
-
-// BcSeg speaks in plain strings, the store wants its own unions.
-function groupAction(id: string, value: string): void {
-  scenarioStore.setGroup(id, { action: value as ScenarioAction })
-}
-
-function groupDir(id: string, value: string): void {
-  scenarioStore.setGroup(id, { dir: value as ScenarioDir })
-}
-
 /** Which groups show their streets. */
 const expanded = ref(new Set<string>())
 
@@ -321,40 +294,31 @@ function litGroup(keys: string[]): boolean {
             :key="row.group.id"
             class="edge-row edge-row--group edge-row--click"
             :data-lit="litGroup(row.group.keys)"
-            title="Zoom to these streets"
+            title="Zoom to this zone and edit it"
             @click="focus(row.group.keys)"
             @mouseenter="scenarioStore.hover({ keys: row.group.keys, dir: row.group.dir })"
             @mouseleave="scenarioStore.hover(null)"
           >
-            <span class="edge-row__badge">{{ edgeBadge(row.group.action) }}</span>
-            <span class="edge-row__name">{{ row.group.label }}</span>
+            <span class="edge-row__badge edge-row__badge--group">
+              {{ edgeBadge(row.group.action) }}
+            </span>
+            <span class="edge-row__name">{{ row.group.id }}</span>
             <span class="edge-row__dir">{{ DIR_GLYPH[row.group.dir] }}</span>
             <button
+              class="edge-row__expand"
+              :title="expanded.has(row.group.id) ? 'Hide the streets' : 'Show the streets'"
+              @click.stop="toggleGroup(row.group.id)"
+            >
+              <span class="edge-row__count">{{ row.group.keys.length }}</span>
+              <BcIcon :name="expanded.has(row.group.id) ? 'chevron-down' : 'chevron-right'" />
+            </button>
+            <button
               class="edge-row__remove"
-              title="Remove this group"
+              title="Remove this zone"
               @click.stop="scenarioStore.removeGroup(row.group.id)"
             >
               <BcIcon name="x" />
             </button>
-
-            <div class="edge-row__group" @click.stop>
-              <BcSeg
-                :model-value="row.group.action"
-                :options="ACTION_OPTIONS"
-                equal
-                @update:model-value="(value) => groupAction(row.group.id, value)"
-              />
-              <BcSeg
-                v-if="row.group.anyTwoWay"
-                :model-value="row.group.dir"
-                :options="DIR_OPTIONS"
-                equal
-                @update:model-value="(value) => groupDir(row.group.id, value)"
-              />
-              <button class="bc-micro clear-btn group-toggle" @click="toggleGroup(row.group.id)">
-                {{ expanded.has(row.group.id) ? 'Hide streets' : 'Show streets' }}
-              </button>
-            </div>
           </div>
 
           <div
@@ -417,7 +381,7 @@ function litGroup(keys: string[]): boolean {
 
       <p v-if="scenarioStore.count === 0" class="bc-empty edge-empty">
         Click a street on the map to close it or set a speed limit. ⇧-click adds streets to the
-        selection.
+        selection, the lasso and the brush take a whole zone at once.
       </p>
     </section>
 
@@ -605,18 +569,39 @@ function litGroup(keys: string[]): boolean {
   box-shadow: -3px 0 0 0 var(--bc-accent);
 }
 
-/* the group controls go on their own line, under the name */
-.edge-row__group {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  cursor: default;
+/*
+ * A zone reads like a street row. What tells it apart is the heavier badge
+ * and the count next to the chevron, not a shape of its own.
+ */
+.edge-row--group {
+  grid-template-columns: 34px 1fr auto auto 14px;
 }
 
-.group-toggle {
-  white-space: nowrap;
+.edge-row__badge--group {
+  border-width: 2px;
+  font-weight: 600;
+}
+
+.edge-row__expand {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--bc-grey);
+  cursor: pointer;
+  transition: color var(--bc-t);
+}
+
+.edge-row__expand:hover {
+  color: var(--bc-ink);
+}
+
+.edge-row__count {
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  font-variant-numeric: tabular-nums;
 }
 
 /* a street inside an open group, stepped in under it */

@@ -39,8 +39,8 @@ export interface StreetMod {
 
 /** Several streets modified in one go, shown as one row in the dock. */
 export interface StreetGroup {
+  /** the readable name of the zone, "Valency 2" or "Around Rue de Genève" */
   id: string
-  label: string
   keys: string[]
   action: ScenarioAction
   dir: ScenarioDir
@@ -180,7 +180,6 @@ export const useScenarioStore = defineStore('scenario', () => {
       if (!found) {
         out.set(mod.group, {
           id: mod.group,
-          label: '',
           keys: [key],
           action: mod.action,
           dir: mod.dir,
@@ -196,9 +195,6 @@ export const useScenarioStore = defineStore('scenario', () => {
       if (twoWay) found.anyTwoWay = true
     }
 
-    for (const group of out.values()) {
-      group.label = `${group.keys.length} streets`
-    }
     return out
   })
 
@@ -209,7 +205,7 @@ export const useScenarioStore = defineStore('scenario', () => {
       .map(([key, mod]) => ({ key, action: mod.action, dir: mod.dir, name: mod.name }))
       .sort((a, b) => a.name.localeCompare(b.name))
 
-    const grouped = Array.from(groups.value.values()).sort((a, b) => b.keys.length - a.keys.length)
+    const grouped = Array.from(groups.value.values()).sort((a, b) => a.id.localeCompare(b.id))
 
     return [
       ...grouped.map((group): DockRow => ({ kind: 'group', group })),
@@ -289,35 +285,21 @@ export const useScenarioStore = defineStore('scenario', () => {
     edgeModifications.value = next
   }
 
-  /** A fresh id, past every group already there, restored ones included. */
-  function newGroupId(): string {
-    let max = 0
+  /**
+   * The name a new group takes: the one asked for, or the same with a number.
+   *
+   * The id is the name, so two zones around Valency read "Valency" and
+   * "Valency 2" and nothing else has to be kept in step.
+   */
+  function freeGroupId(base: string): string {
+    const taken = new Set<string>()
     for (const mod of edgeModifications.value.values()) {
-      if (!mod.group) continue
-      const n = Number(mod.group.slice(1))
-      if (Number.isFinite(n) && n > max) max = n
+      if (mod.group) taken.add(mod.group)
     }
-    return `g${max + 1}`
-  }
-
-  /** Change a group: every street in it moves together. */
-  function setGroup(id: string, patch: { action?: ScenarioAction; dir?: ScenarioDir }): void {
-    const next = new Map(edgeModifications.value)
-    let changed = false
-
-    for (const [key, mod] of next) {
-      if (mod.group !== id) continue
-      next.set(key, {
-        ...mod,
-        action: patch.action ?? mod.action,
-        dir: patch.dir ?? mod.dir
-      })
-      changed = true
-    }
-
-    if (!changed) return
-    edgeModifications.value = next
-    normalizeOneWay()
+    if (!taken.has(base)) return base
+    let n = 2
+    while (taken.has(`${base} ${n}`)) n += 1
+    return `${base} ${n}`
   }
 
   function removeGroup(id: string): void {
@@ -465,8 +447,7 @@ export const useScenarioStore = defineStore('scenario', () => {
     remove,
     removeMany,
     setDir,
-    newGroupId,
-    setGroup,
+    freeGroupId,
     removeGroup,
     clear,
     select,

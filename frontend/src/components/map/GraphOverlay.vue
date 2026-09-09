@@ -14,8 +14,10 @@ import {
   type StreetMod
 } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { collectPlaces } from '@/utils/areaName'
 import { routeSummaries } from '@/utils/cvrpSource'
 import { buildGraphSource, type GraphSource } from '@/utils/graphSource'
+import { groupName, type NamedLine } from '@/utils/groupName'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { computed, inject, onUnmounted, ref, shallowRef, watch, type Ref } from 'vue'
 
@@ -284,6 +286,48 @@ function nameOf(key: string): string {
   return graph.value?.streets.get(key)?.name || `Edge ${key}`
 }
 
+/** The shape and the name of each street, for naming a zone. */
+function linesOf(keys: string[]): NamedLine[] {
+  const source = graph.value
+  if (!source) return []
+
+  const lines: NamedLine[] = []
+  for (const key of keys) {
+    const street = source.streets.get(key)
+    const id = street?.fwdId ?? street?.bwdId
+    if (id === undefined) continue
+    const feature = source.collection.features[id]
+    if (!feature) continue
+    lines.push({
+      name: street?.name ?? '',
+      coordinates: feature.geometry.coordinates as [number, number][]
+    })
+  }
+  return lines
+}
+
+/**
+ * The group a selection belongs to, when it is exactly one whole group.
+ *
+ * Editing a zone from its badge selects every street of it, and that edit has
+ * to keep the name the zone already has instead of making a second one.
+ */
+function groupOfSelection(keys: string[]): string | undefined {
+  for (const group of scenarioStore.groups.values()) {
+    if (group.keys.length !== keys.length) continue
+    const held = new Set(group.keys)
+    if (keys.every((key) => held.has(key))) return group.id
+  }
+  return undefined
+}
+
+/** The name a new zone takes: the place around it, free of any clash. */
+function nameGroup(keys: string[]): string {
+  const instance = map.value
+  const places = instance ? collectPlaces(instance) : []
+  return scenarioStore.freeGroupId(groupName(linesOf(keys), places))
+}
+
 function setAction(action: ScenarioAction) {
   const selection = scenarioStore.selected
   if (!selection) return
@@ -292,7 +336,10 @@ function setAction(action: ScenarioAction) {
   // Several streets edited together become a group, and the dock shows them
   // as one row. Editing a single street takes it out of the group it was in,
   // so a group row never shows two different values.
-  const group = selection.keys.length > 1 ? scenarioStore.newGroupId() : undefined
+  const group =
+    selection.keys.length > 1
+      ? (groupOfSelection(selection.keys) ?? nameGroup(selection.keys))
+      : undefined
 
   scenarioStore.setMany(
     selection.keys.map(

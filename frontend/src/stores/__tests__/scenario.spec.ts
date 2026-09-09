@@ -377,7 +377,6 @@ describe('groups', () => {
     const group = store.groups.get('g1')
     expect(group?.keys).toEqual(['1-2', '3-4'])
     expect(group?.action).toBe('30')
-    expect(group?.label).toBe('2 streets')
     expect(group?.anyTwoWay).toBe(true)
   })
 
@@ -396,20 +395,6 @@ describe('groups', () => {
     expect(store.groups.get('g1')?.dir).toBe('fwd')
   })
 
-  it('moves every street of the group at once', () => {
-    const store = twoStreets()
-    store.setGroup('g1', { action: 'remove' })
-    expect(store.get('1-2')?.action).toBe('remove')
-    expect(store.get('3-4')?.action).toBe('remove')
-  })
-
-  it('does nothing for a group that is not there', () => {
-    const store = twoStreets()
-    const before = store.edgeModifications
-    store.setGroup('g9', { action: 'remove' })
-    expect(store.edgeModifications).toBe(before)
-  })
-
   it('drops the whole group', () => {
     const store = twoStreets()
     store.set('5-6', { action: '10', dir: 'both', name: 'Alone' })
@@ -418,13 +403,24 @@ describe('groups', () => {
     expect(store.get('5-6')).toBeDefined()
   })
 
-  it('gives a fresh id past the groups already there', () => {
+  it('takes the name asked for when it is free', () => {
+    const store = twoStreets()
+    expect(store.freeGroupId('Valency')).toBe('Valency')
+  })
+
+  it('numbers a name that a group already has', () => {
     const store = useScenarioStore()
     store.restore([
-      { key: '1-2', action: '30', dir: 'both', name: 'A', group: 'g3' },
-      { key: '3-4', action: '30', dir: 'both', name: 'B' }
+      { key: '1-2', action: '30', dir: 'both', name: 'A', group: 'Valency' },
+      { key: '3-4', action: '30', dir: 'both', name: 'B', group: 'Valency 2' },
+      { key: '5-6', action: '30', dir: 'both', name: 'C' }
     ])
-    expect(store.newGroupId()).toBe('g4')
+    expect(store.freeGroupId('Valency')).toBe('Valency 3')
+  })
+
+  it('names a group after itself', () => {
+    const store = twoStreets()
+    expect(store.groups.get('g1')?.id).toBe('g1')
   })
 
   it('lists the groups first, then the lone streets by name', () => {
@@ -442,8 +438,6 @@ describe('groups', () => {
   it('leaves the hash alone: a group changes nothing on the wire', () => {
     const store = twoStreets()
     const before = store.hash
-    store.setGroup('g1', { action: '30' })
-    expect(store.hash).toBe(before)
 
     // the same two streets with no group at all hash the same way
     store.setMany([
