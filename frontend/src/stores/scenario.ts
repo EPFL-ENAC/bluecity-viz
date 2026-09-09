@@ -16,6 +16,15 @@ export type ScenarioAction = 'remove' | '50' | '30' | '10'
  */
 export type ScenarioDir = 'both' | 'fwd' | 'bwd'
 
+/**
+ * How the pointer selects streets.
+ *
+ * `pointer` is the plain click. `lasso` draws a shape and takes what it holds,
+ * `brush` paints along the streets. Both drag, so they take the map drag while
+ * they are on.
+ */
+export type SelectTool = 'pointer' | 'lasso' | 'brush'
+
 export interface StreetMod {
   action: ScenarioAction
   dir: ScenarioDir
@@ -94,6 +103,11 @@ export const useScenarioStore = defineStore('scenario', () => {
   /** shared by the dock rows and the map, so hovering one lights the other */
   const hovered = ref<StreetRef | null>(null)
   const mapMode = ref<'scenario' | 'result'>('scenario')
+
+  /** Which gesture the pointer is doing on the map. */
+  const tool = ref<SelectTool>('pointer')
+  /** How wide the brush paints, in screen pixels. */
+  const brushRadius = ref(24)
 
   /**
    * The streets of the loaded graph, filled by useGraphEdges.
@@ -305,6 +319,8 @@ export const useScenarioStore = defineStore('scenario', () => {
     selected,
     hovered,
     mapMode,
+    tool,
+    brushRadius,
     streets,
 
     // Getters

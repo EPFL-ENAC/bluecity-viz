@@ -3,6 +3,8 @@ import AreaPicker from '@/components/dock/AreaPicker.vue'
 import CvrpTab from '@/components/dock/CvrpTab.vue'
 import RoutingTab from '@/components/dock/RoutingTab.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
+import BcSeg from '@/components/ui/BcSeg.vue'
+import BcSlider from '@/components/ui/BcSlider.vue'
 import BcTabs, { type BcTab } from '@/components/ui/BcTabs.vue'
 import { useAreaFeedback } from '@/composables/useAreaFeedback'
 import { useGraphEdges } from '@/composables/useGraphEdges'
@@ -94,6 +96,19 @@ function edgeBadge(action: string) {
 
 // ↔ both directions, → or ← one lane of the street.
 const DIR_GLYPH: Record<string, string> = { both: '↔', fwd: '→', bwd: '←' }
+
+/** The three ways to pick streets. The letters are the keyboard shortcuts. */
+const TOOLS = [
+  { value: 'pointer', label: 'Point' },
+  { value: 'lasso', label: 'Lasso L' },
+  { value: 'brush', label: 'Brush B' }
+]
+
+const TOOL_NOTE: Record<string, string> = {
+  pointer: 'Click a street, ⇧-click to add more',
+  lasso: 'Draw around the streets on screen',
+  brush: 'Paint along the streets, [ and ] resize'
+}
 
 /** What each tab says under its name: not run, a summary, or stale. */
 const tabs = computed<BcTab[]>(() => [
@@ -226,6 +241,22 @@ function rowFor(key: string) {
       @pointerdown.capture="light('scenario')"
       @focusin="light('scenario')"
     >
+      <!-- How the pointer picks streets. Click one, draw a lasso around a
+           block, or paint along an axis. -->
+      <div class="tools">
+        <BcSeg v-model="scenarioStore.tool" :options="TOOLS" equal />
+        <BcSlider
+          v-if="scenarioStore.tool === 'brush'"
+          v-model="scenarioStore.brushRadius"
+          :min="8"
+          :max="80"
+          :step="2"
+          label="Brush width"
+          :display="`${scenarioStore.brushRadius} px`"
+        />
+        <p class="bc-micro tools__note">{{ TOOL_NOTE[scenarioStore.tool] }}</p>
+      </div>
+
       <div class="dock-section__head">
         <span class="bc-micro">Modified edges · {{ scenarioStore.count }}</span>
         <span v-if="scenarioStore.count > 0" class="head-actions">
@@ -380,6 +411,14 @@ function rowFor(key: string) {
   bottom: 0;
   width: 2px;
   background: var(--bc-ink);
+}
+
+.tools {
+  margin-bottom: 12px;
+}
+
+.tools__note {
+  margin: 6px 0 0;
 }
 
 .head-actions {

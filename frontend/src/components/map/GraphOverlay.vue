@@ -5,6 +5,7 @@ import RouteHoverCard, { type RouteCardData } from '@/components/map/RouteHoverC
 import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useGraphOverlay, type EdgeHover, type RouteHover } from '@/composables/useGraphOverlay'
 import { useMapView } from '@/composables/useMapView'
+import { useSelectTools } from '@/composables/useSelectTools'
 import { useCVRPStore } from '@/stores/cvrp'
 import {
   useScenarioStore,
@@ -177,14 +178,40 @@ const overlay = useGraphOverlay(map as Ref<MapLibreMap | undefined>, graph, {
   onRoute
 })
 
+// The lasso and the brush. They only fill the selection, then the popover
+// opens where the stroke ended and asks what to do with it.
+const tools = useSelectTools(map as Ref<MapLibreMap | undefined>, overlay.streetsInBox, {
+  onDone: onPick
+})
+
 watch(
   map,
   (instance, previous) => {
-    if (previous) overlay.detach(previous)
-    if (instance) overlay.attach(instance)
+    if (previous) {
+      overlay.detach(previous)
+      tools.detach(previous)
+    }
+    if (instance) {
+      overlay.attach(instance)
+      tools.attach(instance)
+    }
   },
   { immediate: true }
 )
+
+/** The lasso polygon, ready for the SVG points attribute. */
+const lassoPoints = computed(() => {
+  const shape = tools.shape.value
+  if (shape?.kind !== 'lasso') return ''
+  return shape.points.map((point) => point.join(',')).join(' ')
+})
+
+const brush = computed(() => (tools.shape.value?.kind === 'brush' ? tools.shape.value : null))
+
+const brushTrail = computed(() => {
+  const trail = brush.value?.trail ?? []
+  return trail.map((point) => point.join(',')).join(' ')
+})
 
 // Dropping the selection (Esc, or a click on empty map) closes the popover.
 watch(
@@ -295,6 +322,7 @@ onUnmounted(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown, true)
   const instance = map.value
   if (instance) {
+    tools.detach(instance)
     overlay.detach(instance)
     overlay.unmount()
   }
@@ -303,6 +331,16 @@ onUnmounted(() => {
 
 <template>
   <div class="graph-overlay">
+    <!-- The lasso and the brush, in screen pixels: the map holds still under
+         a stroke, so there is nothing to reproject. -->
+    <svg v-if="tools.shape.value" class="tool-shape">
+      <polygon v-if="lassoPoints" :points="lassoPoints" />
+      <template v-else-if="brush">
+        <polyline v-if="brushTrail" :points="brushTrail" />
+        <circle :cx="brush.at[0]" :cy="brush.at[1]" :r="brush.radius" />
+      </template>
+    </svg>
+
     <!-- The popover sits where the cursor is, so a card would land on top of it. -->
     <EdgeHoverCard ref="hoverCard" :data="popover ? null : hoverData" />
     <RouteHoverCard ref="routeCard" :data="popover ? null : routeData" />
@@ -341,5 +379,40 @@ onUnmounted(() => {
 
 .graph-overlay :deep(.popover) {
   pointer-events: auto;
+}
+
+/*
+ * The pointer is the only thing that wears the accent, so the lasso and the
+ * brush do too: a hairline outline, a wash of blue inside, nothing else.
+ */
+.tool-shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.tool-shape polygon {
+  fill: var(--bc-accent);
+  fill-opacity: 0.08;
+  stroke: var(--bc-accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.tool-shape polyline {
+  fill: none;
+  stroke: var(--bc-accent);
+  stroke-opacity: 0.25;
+  stroke-width: 1;
+}
+
+.tool-shape circle {
+  fill: var(--bc-accent);
+  fill-opacity: 0.08;
+  stroke: var(--bc-accent);
+  stroke-width: 1;
 }
 </style>

@@ -519,6 +519,38 @@ export function useGraphOverlay(
     drawPointer(map)
   }
 
+  /**
+   * The streets drawn inside a box on screen.
+   *
+   * The query only says which edges are near: it reads the tiles, so one
+   * street can come back cut in pieces. The geometry that comes out is the
+   * whole street, taken from the network, so the caller can test the real
+   * shape against a lasso or a brush.
+   *
+   * Only what is on screen is in the tiles, so a tool reaches what the user
+   * can see, which is also what they drew on.
+   */
+  function streetsInBox(
+    box: [[number, number], [number, number]]
+  ): Array<{ key: string; coordinates: [number, number][] }> {
+    const map = mapRef.value
+    const source = graph.value
+    if (!map || !source) return []
+
+    const hits = map.queryRenderedFeatures(box, {
+      layers: PICK_LAYERS.filter((layer) => map.getLayer(layer))
+    })
+
+    const out = new Map<string, { key: string; coordinates: [number, number][] }>()
+    for (const hit of hits) {
+      const edge = source.edgeById.get(hit.id as number)
+      if (!edge) continue
+      const key = streetKey(edge.u, edge.v)
+      if (!out.has(key)) out.set(key, { key, coordinates: edge.coordinates })
+    }
+    return Array.from(out.values())
+  }
+
   /** Which street, and which lane, is under the cursor. */
   function hitAt(event: MapMouseEvent): EdgeHover | null {
     const map = mapRef.value
@@ -592,6 +624,15 @@ export function useGraphOverlay(
         return
       }
 
+      // A lasso or a brush owns the pointer. The shape says what is caught,
+      // a card about one street under the cursor would only get in the way.
+      if (scenarioStore.tool !== 'pointer') {
+        scenarioStore.hover(null)
+        callbacks.onHover?.(null, { x: event.point.x, y: event.point.y })
+        callbacks.onRoute?.(null, { x: event.point.x, y: event.point.y })
+        return
+      }
+
       // A vehicle route sits on top of the graph, so it takes the pointer.
       const route = routeAt(event)
       if (route) {
@@ -649,6 +690,9 @@ export function useGraphOverlay(
     // mode to turn on first. Picking an area is the exception: a click moves
     // the circle, it never touches a street.
     if (!scenarioStore.isOpen || trafficStore.pickMode) return
+    // A short drag with a tool on still fires a click. The tool has already
+    // said what it caught, so this one is not ours.
+    if (scenarioStore.tool !== 'pointer') return
     const hit = hitAt(event)
 
     if (!hit) {
@@ -669,8 +713,35 @@ export function useGraphOverlay(
     if (scenarioStore.selected) callbacks.onPick?.({ x: event.point.x, y: event.point.y })
   }
 
+  /** Typing in a field is not a shortcut. */
+  function isTyping(target: EventTarget | null): boolean {
+    const el = target as HTMLElement | null
+    if (!el || !el.tagName) return false
+    const tag = el.tagName.toLowerCase()
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable
+  }
+
   function onKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'Escape' && scenarioStore.selected) scenarioStore.select(null)
+    if (isTyping(event.target)) return
+
+    if (event.key === 'Escape') {
+      // Esc undoes one step: the selection first, then the tool.
+      if (scenarioStore.selected) scenarioStore.select(null)
+      else if (scenarioStore.tool !== 'pointer') scenarioStore.tool = 'pointer'
+      return
+    }
+
+    if (!scenarioStore.isOpen || trafficStore.pickMode) return
+    if (event.metaKey || event.ctrlKey || event.altKey) return
+
+    const key = event.key.toLowerCase()
+    if (key === 'l') scenarioStore.tool = scenarioStore.tool === 'lasso' ? 'pointer' : 'lasso'
+    if (key === 'b') scenarioStore.tool = scenarioStore.tool === 'brush' ? 'pointer' : 'brush'
+
+    if (scenarioStore.tool === 'brush' && (key === '[' || key === ']')) {
+      const step = key === '[' ? -4 : 4
+      scenarioStore.brushRadius = Math.max(8, Math.min(80, scenarioStore.brushRadius + step))
+    }
   }
 
   /**
@@ -815,6 +886,7 @@ export function useGraphOverlay(
   })
 
   return {
+    streetsInBox,
     mount,
     unmount,
     redraw,
