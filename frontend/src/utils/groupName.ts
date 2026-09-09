@@ -3,21 +3,25 @@
  *
  * The dock used to say "6 streets", which says nothing about where they are.
  *
- * The first idea was to name a zone after its neighbourhood, the way the area
- * picker names a circle. The basemap does not carry them: around the middle of
- * Lausanne the only place points are the city itself and two hamlets over a
- * kilometre away, so every zone came back as "North-east Lausanne". A city
- * name says nothing about six streets, so it is not used at all now.
+ * A zone should be called by its district, the way a person would say it. The
+ * basemap cannot do that: around the middle of Lausanne the only place points
+ * are the city itself and two hamlets over a kilometre away, so every zone
+ * came back as "North-east Lausanne". OpenStreetMap has no quartier boundary
+ * for Lausanne either. So the districts are bundled, see data/districts.ts.
  *
- * What the map does carry is street names, and the graph knows how big each
- * street is. So a zone is named after its main street: the name that adds up
- * to the most road, counting a main road for more than a lane, and counting
- * the traffic on it when a result has been computed. A neighbourhood still
- * wins when there is one close by.
+ * Three tries, in order:
+ * 1. the closest bundled district, when the zone is small enough for one
+ * 2. the closest neighbourhood of the basemap, for the rest of Switzerland
+ * 3. the main street of the zone, the name that adds up to the most road,
+ *    counting a main road for more than a lane and counting the traffic on it
+ *    when a result has been computed
+ *
+ * A city or a town name is never used: it says nothing about six streets.
  *
  * Pure, and unit tested. `collectPlaces` (areaName.ts) is what reads the map.
  */
 
+import { DISTRICT_REACH, DISTRICTS, type DistrictPoint } from '@/data/districts'
 import type { TrafficAreaSelection } from '@/stores/layers/types'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import type { PlacePoint } from '@/utils/areaName'
@@ -45,6 +49,15 @@ const LOCAL_REACH = 500
 
 /** A zone smaller than this is still given this radius, in metres. */
 const ZONE_MIN_RADIUS = 400
+
+/**
+ * A zone wider than this is not one district any more, in metres.
+ *
+ * A brush stroke across the whole town would still find a sector point 300 m
+ * away, and calling half of Lausanne "Cite" would be a lie. Past this the main
+ * street names it.
+ */
+const DISTRICT_MAX_RADIUS = 1000
 
 /** How much the busiest street of the group is favoured over the quietest. */
 const VOLUME_WEIGHT = 2
@@ -85,6 +98,31 @@ export function zoneCircle(lines: NamedLine[]): TrafficAreaSelection | null {
     lat: centre[1],
     radiusM: Math.max(radius, ZONE_MIN_RADIUS)
   }
+}
+
+/**
+ * The district the zone sits in, from the bundled list.
+ *
+ * The points cut the city the way a Voronoi does, so the closest one wins.
+ * Outside Lausanne the list holds nothing in reach and this gives null.
+ */
+export function district(
+  circle: TrafficAreaSelection,
+  points: DistrictPoint[] = DISTRICTS
+): string | null {
+  if (circle.radiusM > DISTRICT_MAX_RADIUS) return null
+
+  let best: string | null = null
+  let bestDistance = DISTRICT_REACH
+
+  for (const point of points) {
+    const distance = distanceM([point.lon, point.lat], [circle.lon, circle.lat])
+    if (distance < bestDistance) {
+      best = point.name
+      bestDistance = distance
+    }
+  }
+  return best
 }
 
 /**
@@ -152,14 +190,14 @@ export function mainAxis(lines: NamedLine[]): string | null {
 }
 
 /**
- * What the zone is called: the neighbourhood around it, else its main street,
- * else how many streets it holds.
+ * What the zone is called: its district, else the neighbourhood around it,
+ * else its main street, else how many streets it holds.
  */
 export function groupName(lines: NamedLine[], places: PlacePoint[]): string {
   const circle = zoneCircle(lines)
   if (circle) {
-    const local = localPlace(circle, places)
-    if (local) return local
+    const name = district(circle) ?? localPlace(circle, places)
+    if (name) return name
   }
 
   const axis = mainAxis(lines)

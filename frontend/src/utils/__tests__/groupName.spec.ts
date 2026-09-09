@@ -1,11 +1,26 @@
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import type { PlacePoint } from '@/utils/areaName'
-import { groupName, localPlace, mainAxis, zoneCircle, type NamedLine } from '@/utils/groupName'
+import {
+  district,
+  groupName,
+  localPlace,
+  mainAxis,
+  zoneCircle,
+  type NamedLine
+} from '@/utils/groupName'
 import { describe, expect, it } from 'vitest'
 
-const LAUSANNE = { lon: 6.632, lat: 46.52 }
+/**
+ * The base point of the fixtures, out in the country north of Yverdon.
+ *
+ * It has to be far from Lausanne: the bundled sector list covers the whole
+ * town, so a fixture inside it would always come back with a district name and
+ * the other steps would never be reached. The district step has its own block
+ * at the bottom, with real Lausanne points.
+ */
+const LAUSANNE = { lon: 6.632, lat: 46.85 }
 
-/** A point put east / north of Lausanne, in metres, so the cases read plainly. */
+/** A point put east / north of the base, in metres, so the cases read plainly. */
 function at(eastM = 0, northM = 0): [number, number] {
   return [LAUSANNE.lon + eastM / mPerDegLon(LAUSANNE.lat), LAUSANNE.lat + northM / mPerDegLat]
 }
@@ -113,8 +128,8 @@ describe('naming a group', () => {
   })
 
   it('names the main street rather than a corner of the city', () => {
-    // the real Lausanne case: the city point is the only one anywhere near
-    const places = [place('Lausanne', 'city', 240)]
+    // a town with nothing but its own point on the basemap
+    const places = [place('Yverdon', 'city', 240)]
     expect(groupName([line('Petite', 100), line('Rue Centrale', 600)], places)).toBe(
       'Around Rue Centrale'
     )
@@ -132,5 +147,45 @@ describe('naming a group', () => {
       { name: '', coordinates: [at(0, 100), at(100, 100)] }
     ]
     expect(groupName(lines, [])).toBe('2 streets')
+  })
+})
+
+describe('the district a zone sits in', () => {
+  /** A circle of `radiusM` on a real spot in Lausanne. */
+  function circleAt(lon: number, lat: number, radiusM = 300) {
+    return { kind: 'circle' as const, lon, lat, radiusM }
+  }
+
+  it('names the middle of town after its sector, not after the city', () => {
+    // la Cite, the sector the user asked for by name
+    expect(district(circleAt(6.6359, 46.5241))).toBe('Cité')
+  })
+
+  it('names a zone in the west after Valency', () => {
+    expect(district(circleAt(6.6114, 46.5314))).toBe('Valency')
+  })
+
+  it('leaves a zone outside Lausanne alone', () => {
+    // Morges, 10 km west
+    expect(district(circleAt(6.4986, 46.5107))).toBeNull()
+  })
+
+  it('does not call half the town one district', () => {
+    expect(district(circleAt(6.6359, 46.5241, 2500))).toBeNull()
+  })
+
+  it('wins over the basemap places', () => {
+    const lines = [
+      {
+        name: 'Rue Centrale',
+        coordinates: [
+          [6.6355, 46.5241],
+          [6.6362, 46.5241]
+        ] as [number, number][]
+      }
+    ]
+    expect(
+      groupName(lines, [{ name: 'Chailly', kind: 'neighbourhood', lon: 6.6355, lat: 46.5242 }])
+    ).toBe('Cité')
   })
 })
