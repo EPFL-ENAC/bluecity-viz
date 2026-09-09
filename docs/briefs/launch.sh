@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Create the six perf worktrees from origin/dev and fire each brief in its claude pane.
 #
-#   docs/briefs/launch.sh            # all six, detached (attach later with: make go BRANCH=...)
+#   docs/briefs/launch.sh            # all six, detached (attach later with: wtx go <branch>)
 #   docs/briefs/launch.sh s1 s4      # only some
 #
 # Works from anywhere: the briefs are read next to this script, the worktrees are created
@@ -20,7 +20,7 @@ if ! git merge-base --is-ancestor 100b7c2 origin/dev 2>/dev/null; then
   echo "origin/dev does not contain 100b7c2 (Workbench redesign), the briefs quote its line numbers." >&2; exit 1
 fi
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-  echo "working tree is dirty; commit or drop the changes first (wt-land refuses dirty trees)" >&2
+  echo "working tree is dirty; commit or drop the changes first (wtx land refuses dirty trees)" >&2
   git status --short --untracked-files=no >&2; exit 1
 fi
 # node_modules and the venv are hardlinked from the pnpm / uv stores; keep 1.2 GB per worktree as margin
@@ -67,9 +67,9 @@ for s in "${sessions[@]}"; do
   b="${BRANCH[$s]:-}"; f="${FILE[$s]:-}"
   [ -n "$b" ] || { echo "unknown session: $s (use s1..s7 or final)" >&2; exit 1; }
   echo "==> $s  $b  ($f)"
-  scripts/wt-new.sh "$b" origin/dev --prompt "$BRIEFS/$f" --no-attach
+  wtx go "$b" origin/dev --prompt "$BRIEFS/$f" --no-attach
 done
 
 echo
-echo "All sessions started detached. Attach with:  make go BRANCH=<branch>"
+echo "All sessions started detached. Attach with:  wtx go <branch>"
 echo "Landing order: s5, s6, s4, s1, s2, s3, then final (docs/briefs/README.md)."

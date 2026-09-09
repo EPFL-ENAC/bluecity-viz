@@ -39,20 +39,20 @@ processing/traffic-analysis/cache/
 # Local settings, read by the root Makefile (see .env.example)
 .env
 
-# --- git worktree dev environment (docs/worktree-env/)
+# --- git worktree dev environment, managed by wtx (see wtx.toml)
 
-# Claude Code local settings, rendered per worktree by scripts/wt-setup.sh
+# Claude Code local settings, written per worktree by wtx
 .claude/settings.local.json
-# Worktrees live inside the repo (see ~/.config/wt/config.toml)
+# Worktrees live inside the repo
 .claude/worktrees/
 
-# Per-worktree ports written by scripts/wt-setup.sh
+# Per-worktree ports written by wtx
 .env.worktree
 
-# Server pane output mirrored by scripts/tmux-dev.sh (pipe-pane)
+# Server pane output mirrored by wtx
 .wt-logs/
 
-# One-shot agent briefs (wtgo --prompt) and local brief drafts
+# One-shot agent briefs (wtx go --prompt) and local brief drafts
 PROMPT.md
 PROMPT.sent.md
 .wt-prompts/

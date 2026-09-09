@@ -54,8 +54,11 @@ A Vue.js application designed to visualize geospatial data using MapLibre, with 
 - `make upload-frontend-geodata` - Push new or changed geodata to S3 (needs
   `BUCKET_NAME`, see `.env.example`; `DRY=1` shows what would go up)
 
-To work on several branches at once, the repo has a git worktree setup
-(`make go BRANCH=feat/x`). See [docs/worktree-env/](docs/worktree-env/).
+To work on several branches at once, the repo uses
+[wtx](https://github.com/EPFL-ENAC/wtx): `wtx go <branch>` gives the branch
+its own worktree, tmux session and pair of ports. The settings are in
+`wtx.toml`, the rules are in the "Dev servers and worktrees" section of
+CLAUDE.md.
 
 ## Project Structure
 
