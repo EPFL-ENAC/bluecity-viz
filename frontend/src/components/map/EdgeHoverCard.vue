@@ -105,7 +105,7 @@ const co2 = computed(() => {
       </div>
 
       <div class="hover-card__foot bc-micro">
-        Click · both directions &nbsp;·&nbsp; ⇧ click · this lane
+        Click · edit &nbsp;·&nbsp; ⇧ click · add to selection
       </div>
     </template>
   </div>

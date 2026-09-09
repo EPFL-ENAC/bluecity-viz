@@ -5,11 +5,19 @@ import RouteHoverCard, { type RouteCardData } from '@/components/map/RouteHoverC
 import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useGraphOverlay, type EdgeHover, type RouteHover } from '@/composables/useGraphOverlay'
 import { useMapView } from '@/composables/useMapView'
+import { useSelectTools } from '@/composables/useSelectTools'
 import { useCVRPStore } from '@/stores/cvrp'
-import { useScenarioStore, type ScenarioAction, type ScenarioDir } from '@/stores/scenario'
+import {
+  useScenarioStore,
+  type ScenarioAction,
+  type ScenarioDir,
+  type StreetMod
+} from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { collectPlaces } from '@/utils/areaName'
 import { routeSummaries } from '@/utils/cvrpSource'
 import { buildGraphSource, type GraphSource } from '@/utils/graphSource'
+import { groupName, type NamedLine } from '@/utils/groupName'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { computed, inject, onUnmounted, ref, shallowRef, watch, type Ref } from 'vue'
 
@@ -114,12 +122,34 @@ function deltaColor(delta: number): string | undefined {
   return scale ? scale(delta) : undefined
 }
 
-// The popover, opened by a click while in edit mode.
-const popover = ref<{ x: number; y: number; key: string; dir: ScenarioDir } | null>(null)
+// Where the popover sits. What it edits is the selection in the store.
+const popover = ref<{ x: number; y: number } | null>(null)
+const popoverRef = ref<InstanceType<typeof EdgePopover> | null>(null)
 
-function onPick(key: string, dir: ScenarioDir, point: { x: number; y: number }) {
-  popover.value = { key, dir, x: point.x, y: point.y }
+function onPick(point: { x: number; y: number }) {
+  popover.value = { x: point.x, y: point.y }
 }
+
+/**
+ * Anything the user touches outside the popover closes it.
+ *
+ * Two exceptions. Inside the popover, of course. And on the map canvas, where
+ * the click handler decides: it may be a click on another street, which must
+ * move the selection, not drop it.
+ */
+function onDocumentPointerDown(event: PointerEvent): void {
+  const target = event.target as Node | null
+  if (!target) return
+  const root = popoverRef.value?.$el as HTMLElement | undefined
+  if (root && root.contains(target)) return
+  if (map.value?.getCanvasContainer().contains(target)) return
+  scenarioStore.select(null)
+}
+
+watch(popover, (open) => {
+  if (open) document.addEventListener('pointerdown', onDocumentPointerDown, true)
+  else document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+})
 
 // Per vehicle totals, so the card can say how far it drives and how many trips.
 const routeTotals = computed(() =>
@@ -150,14 +180,40 @@ const overlay = useGraphOverlay(map as Ref<MapLibreMap | undefined>, graph, {
   onRoute
 })
 
+// The lasso and the brush. They only fill the selection, then the popover
+// opens where the stroke ended and asks what to do with it.
+const tools = useSelectTools(map as Ref<MapLibreMap | undefined>, overlay.streetsInBox, {
+  onDone: onPick
+})
+
 watch(
   map,
   (instance, previous) => {
-    if (previous) overlay.detach(previous)
-    if (instance) overlay.attach(instance)
+    if (previous) {
+      overlay.detach(previous)
+      tools.detach(previous)
+    }
+    if (instance) {
+      overlay.attach(instance)
+      tools.attach(instance)
+    }
   },
   { immediate: true }
 )
+
+/** The lasso polygon, ready for the SVG points attribute. */
+const lassoPoints = computed(() => {
+  const shape = tools.shape.value
+  if (shape?.kind !== 'lasso') return ''
+  return shape.points.map((point) => point.join(',')).join(' ')
+})
+
+const brush = computed(() => (tools.shape.value?.kind === 'brush' ? tools.shape.value : null))
+
+const brushTrail = computed(() => {
+  const trail = brush.value?.trail ?? []
+  return trail.map((point) => point.join(',')).join(' ')
+})
 
 // Dropping the selection (Esc, or a click on empty map) closes the popover.
 watch(
@@ -179,19 +235,36 @@ watch(
   }
 )
 
-const popoverStreet = computed(() => {
-  const open = popover.value
-  if (!open) return null
-  const street = graph.value?.streets.get(open.key)
-  if (!street) return null
+/** The streets the popover edits, in selection order. */
+const selectedStreets = computed(() => {
+  const keys = scenarioStore.selected?.keys ?? []
+  const source = graph.value
+  if (!source) return []
+  return keys.map((key) => source.streets.get(key)).filter((street) => !!street)
+})
 
+/**
+ * What the head and the rows say, for one street or for many.
+ *
+ * With several streets the name becomes a count, and the two direction labels
+ * go away: they name where a single street leads.
+ */
+const popoverStreet = computed(() => {
+  if (!popover.value) return null
+  const streets = selectedStreets.value
+  if (streets.length === 0) return null
+
+  const one = streets.length === 1 ? streets[0] : null
   return {
-    name: street.name || `Edge ${street.lo}→${street.hi}`,
-    edges: street.oneway ? 1 : 2,
-    speed: street.speed,
-    oneway: street.oneway,
-    toForward: destination(street.hi, street.name),
-    toBackward: destination(street.lo, street.name)
+    name: one ? one.name || `Edge ${one.lo}→${one.hi}` : selectionName.value,
+    // The zone name says where, the count says how much.
+    streets: one ? 0 : streets.length,
+    edges: streets.reduce((total, street) => total + (street.oneway ? 1 : 2), 0),
+    speed: one ? one.speed : undefined,
+    // Nothing to choose when every street runs one way.
+    oneway: streets.every((street) => street.oneway),
+    toForward: one ? destination(one.hi, one.name) : '',
+    toBackward: one ? destination(one.lo, one.name) : ''
   }
 })
 
@@ -202,41 +275,136 @@ function destination(node: number, own: string): string {
   return other ? `To ${other}` : ''
 }
 
-const currentAction = computed<ScenarioAction | null>(
-  () => (popover.value && scenarioStore.get(popover.value.key)?.action) || null
-)
+/** The action the buttons show as on, only when every street agrees. */
+const currentAction = computed<ScenarioAction | null>(() => {
+  const keys = scenarioStore.selected?.keys ?? []
+  if (keys.length === 0) return null
+  const first = scenarioStore.get(keys[0])?.action ?? null
+  if (!first) return null
+  return keys.every((key) => scenarioStore.get(key)?.action === first) ? first : null
+})
+
+function nameOf(key: string): string {
+  return graph.value?.streets.get(key)?.name || `Edge ${key}`
+}
+
+/**
+ * Each street of a selection, with what naming a zone needs: its shape, how
+ * big a road it is, and how much traffic the last result put on it.
+ */
+function linesOf(keys: string[]): NamedLine[] {
+  const source = graph.value
+  if (!source) return []
+
+  const volumes = new Map(trafficStore.resultTotals.map((row) => [row.key, row.count]))
+
+  const lines: NamedLine[] = []
+  for (const key of keys) {
+    const street = source.streets.get(key)
+    const id = street?.fwdId ?? street?.bwdId
+    if (id === undefined) continue
+    const feature = source.collection.features[id]
+    if (!feature) continue
+    lines.push({
+      name: street?.name ?? '',
+      coordinates: feature.geometry.coordinates as [number, number][],
+      cls: street?.cls,
+      volume: volumes.get(key)
+    })
+  }
+  return lines
+}
+
+/**
+ * The group a selection belongs to, when it is exactly one whole group.
+ *
+ * Editing a zone from its badge selects every street of it, and that edit has
+ * to keep the name the zone already has instead of making a second one.
+ */
+function groupOfSelection(keys: string[]): string | undefined {
+  for (const group of scenarioStore.groups.values()) {
+    if (group.keys.length !== keys.length) continue
+    const held = new Set(group.keys)
+    if (keys.every((key) => held.has(key))) return group.id
+  }
+  return undefined
+}
+
+/**
+ * What the streets in the popover are called.
+ *
+ * One street goes by its own name. Several go by the name of the zone they
+ * would make, and by the name of the zone they already are when the selection
+ * is one, so the title reads the same before and after the edit.
+ */
+const selectionName = computed(() => {
+  const keys = scenarioStore.selected?.keys ?? []
+  if (keys.length === 0) return ''
+
+  const existing = groupOfSelection(keys)
+  if (existing) return existing
+
+  const instance = map.value
+  return groupName(linesOf(keys), instance ? collectPlaces(instance) : [])
+})
+
+/** The name a new zone takes, free of any clash with one already there. */
+function nameGroup(keys: string[]): string {
+  const existing = groupOfSelection(keys)
+  if (existing) return existing
+  return scenarioStore.freeGroupId(selectionName.value)
+}
 
 function setAction(action: ScenarioAction) {
-  const open = popover.value
-  if (!open) return
-  const street = graph.value?.streets.get(open.key)
-  scenarioStore.set(open.key, {
-    action,
-    dir: open.dir,
-    name: street?.name || `Edge ${open.key}`
-  })
+  const selection = scenarioStore.selected
+  if (!selection) return
+  const dir = selection.dir
+
+  // Several streets edited together become a group, and the dock shows them
+  // as one row. Editing a single street takes it out of the group it was in,
+  // so a group row never shows two different values.
+  const group = selection.keys.length > 1 ? nameGroup(selection.keys) : undefined
+
+  scenarioStore.setMany(
+    selection.keys.map(
+      (key) => [key, { action, dir, name: nameOf(key), group }] as [string, StreetMod]
+    )
+  )
+  // The action is the last word: the popover has nothing left to ask, and the
+  // map goes back to panning instead of drawing another stroke.
+  scenarioStore.select(null)
+  scenarioStore.tool = 'pointer'
 }
 
 function setDir(dir: ScenarioDir) {
-  const open = popover.value
-  if (!open) return
-  popover.value = { ...open, dir }
-  scenarioStore.select({ key: open.key, dir })
-  // move an existing modification onto the direction the user just picked
-  if (scenarioStore.get(open.key)) scenarioStore.setDir(open.key, dir)
+  const selection = scenarioStore.selected
+  if (!selection) return
+  scenarioStore.setSelectedDir(dir)
+  // move the modifications that already exist onto the direction just picked
+  const moved = selection.keys
+    .map((key) => {
+      const mod = scenarioStore.get(key)
+      return mod ? ([key, { ...mod, dir }] as [string, StreetMod]) : null
+    })
+    .filter((entry) => !!entry)
+  scenarioStore.setMany(moved)
 }
 
 function reset() {
-  const open = popover.value
-  if (!open) return
-  scenarioStore.remove(open.key)
+  const selection = scenarioStore.selected
+  if (!selection) return
+  scenarioStore.removeMany(selection.keys)
+  scenarioStore.select(null)
+  scenarioStore.tool = 'pointer'
 }
 
 defineExpose({ hoverRoute: overlay.hoverRoute, focus: overlay.focus })
 
 onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown, true)
   const instance = map.value
   if (instance) {
+    tools.detach(instance)
     overlay.detach(instance)
     overlay.unmount()
   }
@@ -245,18 +413,30 @@ onUnmounted(() => {
 
 <template>
   <div class="graph-overlay">
+    <!-- The lasso and the brush, in screen pixels: the map holds still under
+         a stroke, so there is nothing to reproject. -->
+    <svg v-if="tools.shape.value" class="tool-shape">
+      <polygon v-if="lassoPoints" :points="lassoPoints" />
+      <template v-else-if="brush">
+        <polyline v-if="brushTrail" :points="brushTrail" />
+        <circle :cx="brush.at[0]" :cy="brush.at[1]" :r="brush.radius" />
+      </template>
+    </svg>
+
     <!-- The popover sits where the cursor is, so a card would land on top of it. -->
     <EdgeHoverCard ref="hoverCard" :data="popover ? null : hoverData" />
     <RouteHoverCard ref="routeCard" :data="popover ? null : routeData" />
 
     <EdgePopover
       v-if="popover && popoverStreet"
+      ref="popoverRef"
       :x="popover.x"
       :y="popover.y"
       :name="popoverStreet.name"
       :edges="popoverStreet.edges"
+      :streets="popoverStreet.streets"
       :speed="popoverStreet.speed"
-      :dir="popover.dir"
+      :dir="scenarioStore.selected?.dir ?? 'both'"
       :action="currentAction"
       :to-forward="popoverStreet.toForward"
       :to-backward="popoverStreet.toBackward"
@@ -282,5 +462,40 @@ onUnmounted(() => {
 
 .graph-overlay :deep(.popover) {
   pointer-events: auto;
+}
+
+/*
+ * The pointer is the only thing that wears the accent, so the lasso and the
+ * brush do too: a hairline outline, a wash of blue inside, nothing else.
+ */
+.tool-shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.tool-shape polygon {
+  fill: var(--bc-accent);
+  fill-opacity: 0.08;
+  stroke: var(--bc-accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.tool-shape polyline {
+  fill: none;
+  stroke: var(--bc-accent);
+  stroke-opacity: 0.25;
+  stroke-width: 1;
+}
+
+.tool-shape circle {
+  fill: var(--bc-accent);
+  fill-opacity: 0.08;
+  stroke: var(--bc-accent);
+  stroke-width: 1;
 }
 </style>

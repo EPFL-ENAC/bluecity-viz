@@ -3,6 +3,8 @@ import AreaPicker from '@/components/dock/AreaPicker.vue'
 import CvrpTab from '@/components/dock/CvrpTab.vue'
 import RoutingTab from '@/components/dock/RoutingTab.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
+import BcSeg from '@/components/ui/BcSeg.vue'
+import BcSlider from '@/components/ui/BcSlider.vue'
 import BcTabs, { type BcTab } from '@/components/ui/BcTabs.vue'
 import { useAreaFeedback } from '@/composables/useAreaFeedback'
 import { useGraphEdges } from '@/composables/useGraphEdges'
@@ -10,10 +12,10 @@ import { useMapView } from '@/composables/useMapView'
 import { topAbsorbers, valueOf } from '@/composables/useResultStates'
 import { useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
-import { useScenarioStore } from '@/stores/scenario'
+import { useScenarioStore, type ScenarioDir, type StreetRef } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import type { Map as MapLibre } from 'maplibre-gl'
-import { computed, inject, type Ref } from 'vue'
+import { computed, inject, ref, type Ref } from 'vue'
 
 /**
  * The scenario workbench.
@@ -25,7 +27,7 @@ import { computed, inject, type Ref } from 'vue'
 
 const emit = defineEmits<{
   (event: 'hover-route', routeId: number | null): void
-  (event: 'focus', keys: string[]): void
+  (event: 'focus', keys: string[], select?: StreetRef): void
 }>()
 
 const layersStore = useLayersStore()
@@ -85,6 +87,16 @@ function focus(keys: string[]): void {
   if (keys.length) emit('focus', keys)
 }
 
+/**
+ * Fit the map on a row and open its popover there.
+ *
+ * A row and the badge of the same streets do the same thing, so the map is
+ * the one place where a modification is edited.
+ */
+function edit(keys: string[], dir: ScenarioDir): void {
+  if (keys.length) emit('focus', keys, { keys, dir })
+}
+
 const title = computed(() => layersStore.activeInvestigation?.name ?? 'Road closure scenario')
 
 // The badge in front of each modified edge: x to remove, else the speed limit.
@@ -94,6 +106,19 @@ function edgeBadge(action: string) {
 
 // ↔ both directions, → or ← one lane of the street.
 const DIR_GLYPH: Record<string, string> = { both: '↔', fwd: '→', bwd: '←' }
+
+/** The three ways to pick streets. The letters are the keyboard shortcuts. */
+const TOOLS = [
+  { value: 'pointer', label: 'Point' },
+  { value: 'lasso', label: 'Lasso L' },
+  { value: 'brush', label: 'Brush B' }
+]
+
+const TOOL_NOTE: Record<string, string> = {
+  pointer: 'Click a street, ⇧-click to add more',
+  lasso: 'Draw around the streets on screen',
+  brush: 'Paint along the streets, [ and ] resize'
+}
 
 /** What each tab says under its name: not run, a summary, or stale. */
 const tabs = computed<BcTab[]>(() => [
@@ -186,6 +211,20 @@ function deltaText(value: number): string {
 function rowFor(key: string) {
   return modifiedRows.value.find((row) => row.key === key) ?? null
 }
+
+/** Which groups show their streets. */
+const expanded = ref(new Set<string>())
+
+function toggleGroup(id: string): void {
+  const next = new Set(expanded.value)
+  if (!next.delete(id)) next.add(id)
+  expanded.value = next
+}
+
+/** A group row lights up when the map points at any of its streets. */
+function litGroup(keys: string[]): boolean {
+  return keys.some((key) => scenarioStore.hoveredSet.has(key))
+}
 </script>
 
 <template>
@@ -226,6 +265,22 @@ function rowFor(key: string) {
       @pointerdown.capture="light('scenario')"
       @focusin="light('scenario')"
     >
+      <!-- How the pointer picks streets. Click one, draw a lasso around a
+           block, or paint along an axis. -->
+      <div class="tools">
+        <BcSeg v-model="scenarioStore.tool" :options="TOOLS" equal />
+        <BcSlider
+          v-if="scenarioStore.tool === 'brush'"
+          v-model="scenarioStore.brushRadius"
+          :min="8"
+          :max="80"
+          :step="2"
+          label="Brush width"
+          :display="`${scenarioStore.brushRadius} px`"
+        />
+        <p class="bc-micro tools__note">{{ TOOL_NOTE[scenarioStore.tool] }}</p>
+      </div>
+
       <div class="dock-section__head">
         <span class="bc-micro">Modified edges · {{ scenarioStore.count }}</span>
         <span v-if="scenarioStore.count > 0" class="head-actions">
@@ -241,43 +296,102 @@ function rowFor(key: string) {
         </span>
       </div>
 
-      <div
-        v-for="edge in scenarioStore.list"
-        :key="edge.key"
-        class="edge-row edge-row--click"
-        :data-lit="scenarioStore.hovered?.key === edge.key"
-        title="Zoom to this street"
-        @click="focus([edge.key])"
-        @mouseenter="scenarioStore.hover({ key: edge.key, dir: edge.dir })"
-        @mouseleave="scenarioStore.hover(null)"
-      >
-        <span class="edge-row__badge">{{ edgeBadge(edge.action) }}</span>
-        <span class="edge-row__name">{{ edge.name }}</span>
-        <span class="edge-row__dir">{{ DIR_GLYPH[edge.dir] }}</span>
-        <button
-          class="edge-row__remove"
-          title="Remove this modification"
-          @click.stop="scenarioStore.remove(edge.key)"
-        >
-          <BcIcon name="x" />
-        </button>
+      <template v-for="row in scenarioStore.dockRows">
+        <!-- A group: the streets of one lasso or one brush stroke, edited
+             together and shown as one row. -->
+        <template v-if="row.kind === 'group'">
+          <div
+            :key="row.group.id"
+            class="edge-row edge-row--group edge-row--click"
+            :data-lit="litGroup(row.group.keys)"
+            title="Zoom to this zone and edit it"
+            @click="edit(row.group.keys, row.group.dir)"
+            @mouseenter="scenarioStore.hover({ keys: row.group.keys, dir: row.group.dir })"
+            @mouseleave="scenarioStore.hover(null)"
+          >
+            <span class="edge-row__badge edge-row__badge--group">
+              {{ edgeBadge(row.group.action) }}
+            </span>
+            <span class="edge-row__name">{{ row.group.id }}</span>
+            <span class="edge-row__dir">{{ DIR_GLYPH[row.group.dir] }}</span>
+            <button
+              class="edge-row__expand"
+              :title="expanded.has(row.group.id) ? 'Hide the streets' : 'Show the streets'"
+              @click.stop="toggleGroup(row.group.id)"
+            >
+              <span class="edge-row__count">{{ row.group.keys.length }}</span>
+              <BcIcon :name="expanded.has(row.group.id) ? 'chevron-down' : 'chevron-right'" />
+            </button>
+            <button
+              class="edge-row__remove"
+              title="Remove this zone"
+              @click.stop="scenarioStore.removeGroup(row.group.id)"
+            >
+              <BcIcon name="x" />
+            </button>
+          </div>
 
-        <div v-if="rowFor(edge.key)" class="edge-row__meta">
-          <span class="edge-row__bar">
-            <span
-              class="edge-row__bar-fill"
-              :style="{
-                width: barWidth(rowFor(edge.key)!.value),
-                background: rowFor(edge.key)!.color
-              }"
-            ></span>
-          </span>
-          <span class="edge-row__delta">{{ deltaText(rowFor(edge.key)!.value) }}</span>
+          <div
+            v-for="key in expanded.has(row.group.id) ? row.group.keys : []"
+            :key="`${row.group.id}-${key}`"
+            class="edge-row edge-row--child edge-row--click"
+            :data-lit="scenarioStore.hoveredSet.has(key)"
+            title="Zoom to this street"
+            @click="focus([key])"
+            @mouseenter="scenarioStore.hover({ keys: [key], dir: row.group.dir })"
+            @mouseleave="scenarioStore.hover(null)"
+          >
+            <span class="edge-row__name">{{ scenarioStore.get(key)?.name || key }}</span>
+            <button
+              class="edge-row__remove"
+              title="Take this street out of the group"
+              @click.stop="scenarioStore.remove(key)"
+            >
+              <BcIcon name="x" />
+            </button>
+          </div>
+        </template>
+
+        <!-- A street edited on its own. -->
+        <div
+          v-else
+          :key="row.key"
+          class="edge-row edge-row--click"
+          :data-lit="scenarioStore.hoveredSet.has(row.key)"
+          title="Zoom to this street and edit it"
+          @click="edit([row.key], row.dir)"
+          @mouseenter="scenarioStore.hover({ keys: [row.key], dir: row.dir })"
+          @mouseleave="scenarioStore.hover(null)"
+        >
+          <span class="edge-row__badge">{{ edgeBadge(row.action) }}</span>
+          <span class="edge-row__name">{{ row.name }}</span>
+          <span class="edge-row__dir">{{ DIR_GLYPH[row.dir] }}</span>
+          <button
+            class="edge-row__remove"
+            title="Remove this modification"
+            @click.stop="scenarioStore.remove(row.key)"
+          >
+            <BcIcon name="x" />
+          </button>
+
+          <div v-if="rowFor(row.key)" class="edge-row__meta">
+            <span class="edge-row__bar">
+              <span
+                class="edge-row__bar-fill"
+                :style="{
+                  width: barWidth(rowFor(row.key)!.value),
+                  background: rowFor(row.key)!.color
+                }"
+              ></span>
+            </span>
+            <span class="edge-row__delta">{{ deltaText(rowFor(row.key)!.value) }}</span>
+          </div>
         </div>
-      </div>
+      </template>
 
       <p v-if="scenarioStore.count === 0" class="bc-empty edge-empty">
-        Click a street on the map to close it or set a speed limit. ⇧-click picks one direction.
+        Click a street on the map to close it or set a speed limit. ⇧-click adds streets to the
+        selection, the lasso and the brush take a whole zone at once.
       </p>
     </section>
 
@@ -306,10 +420,10 @@ function rowFor(key: string) {
           v-for="row in absorbers"
           :key="row.key"
           class="edge-row edge-row--absorb edge-row--click"
-          :data-lit="scenarioStore.hovered?.key === row.key"
+          :data-lit="scenarioStore.hoveredSet.has(row.key)"
           title="Zoom to this street"
           @click="focus([row.key])"
-          @mouseenter="scenarioStore.hover({ key: row.key, dir: 'both' })"
+          @mouseenter="scenarioStore.hover({ keys: [row.key], dir: 'both' })"
           @mouseleave="scenarioStore.hover(null)"
         >
           <span class="edge-row__name">{{ row.name || 'Unnamed street' }}</span>
@@ -379,6 +493,14 @@ function rowFor(key: string) {
   bottom: 0;
   width: 2px;
   background: var(--bc-ink);
+}
+
+.tools {
+  margin-bottom: 12px;
+}
+
+.tools__note {
+  margin: 6px 0 0;
 }
 
 .head-actions {
@@ -455,6 +577,48 @@ function rowFor(key: string) {
 .edge-row[data-lit='true'] {
   background: var(--bc-hover);
   box-shadow: -3px 0 0 0 var(--bc-accent);
+}
+
+/*
+ * A zone reads like a street row. What tells it apart is the heavier badge
+ * and the count next to the chevron, not a shape of its own.
+ */
+.edge-row--group {
+  grid-template-columns: 34px 1fr auto auto 14px;
+}
+
+.edge-row__badge--group {
+  border-width: 2px;
+  font-weight: 600;
+}
+
+.edge-row__expand {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--bc-grey);
+  cursor: pointer;
+  transition: color var(--bc-t);
+}
+
+.edge-row__expand:hover {
+  color: var(--bc-ink);
+}
+
+.edge-row__count {
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+/* a street inside an open group, stepped in under it */
+.edge-row--child {
+  grid-template-columns: 1fr 14px;
+  padding-left: 12px;
+  color: var(--bc-grey);
 }
 
 /* absorbers carry no badge, so the name takes the whole first line */

@@ -27,6 +27,8 @@ export interface ScenarioModEntry {
   action: string
   dir: string
   name?: string
+  /** the group the street was edited with, when there was one */
+  group?: string
 }
 
 // The modified graph. Shared by every tool, so it sits beside the tool inputs

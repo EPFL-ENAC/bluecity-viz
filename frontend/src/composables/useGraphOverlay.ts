@@ -2,7 +2,7 @@ import { useMapView } from '@/composables/useMapView'
 import { valueOf } from '@/composables/useResultStates'
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
 import { useCVRPStore } from '@/stores/cvrp'
-import { streetKey, useScenarioStore, type ScenarioDir } from '@/stores/scenario'
+import { streetKey, useScenarioStore, type ScenarioDir, type StreetRef } from '@/stores/scenario'
 import { useThemeStore } from '@/stores/theme'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import {
@@ -33,6 +33,7 @@ import {
   setData,
   setGraphEdges,
   setPointer,
+  ZONE_SOURCE,
   type CvrpRouteRef,
   type PointerFeature,
   type PointerRole
@@ -46,6 +47,22 @@ import { computed, watch, type Ref } from 'vue'
 
 /** The layers the pointer can hit. */
 const PICK_LAYERS = ['bc-graph-one', 'bc-graph-two', 'bc-lanes']
+
+/**
+ * The badge layers, which the pointer hits before the streets.
+ *
+ * The badge of a zone is its handle: clicking it takes every street of the
+ * zone and opens the popover on them, so a zone is edited again the same way
+ * it was made.
+ */
+const BADGE_PICK_LAYERS = [
+  'bc-badge-both-closed',
+  'bc-badge-both-speed',
+  'bc-badge-fwd-closed',
+  'bc-badge-fwd-speed',
+  'bc-badge-bwd-closed',
+  'bc-badge-bwd-speed'
+]
 
 /** The dock hides this much of the map on the right (--bc-dock-w). */
 const DOCK_WIDTH = 340
@@ -80,7 +97,7 @@ export function useGraphOverlay(
   graph: Ref<GraphSource | null>,
   callbacks: {
     onHover?: (hover: EdgeHover | null, point: { x: number; y: number }) => void
-    onPick?: (key: string, dir: ScenarioDir, point: { x: number; y: number }) => void
+    onPick?: (point: { x: number; y: number }) => void
     onRoute?: (route: RouteHover | null, point: { x: number; y: number }) => void
   } = {}
 ) {
@@ -263,6 +280,12 @@ export function useGraphOverlay(
           data: emptyBadges() as unknown as FeatureCollection
         })
       }
+      if (!map.getSource(ZONE_SOURCE)) {
+        map.addSource(ZONE_SOURCE, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] } as FeatureCollection
+        })
+      }
       if (!map.getSource(POINTER_SOURCE)) {
         map.addSource(POINTER_SOURCE, {
           type: 'geojson',
@@ -330,10 +353,24 @@ export function useGraphOverlay(
     mountedOn = null
   }
 
+  /** The whole path of a street, for the outline of its zone. */
+  function shapeOf(key: string): [number, number][] {
+    const source = graph.value
+    const street = source?.streets.get(key)
+    const id = street?.fwdId ?? street?.bwdId
+    if (!source || id === undefined) return []
+    return (source.collection.features[id]?.geometry.coordinates ?? []) as [number, number][]
+  }
+
   function redraw(): void {
     const map = mapRef.value
     if (!map || mountedOn !== map || !graph.value) return
-    const draw = drawFor(scenarioStore.edgeModifications, graph.value.streets)
+    const draw = drawFor(
+      scenarioStore.edgeModifications,
+      graph.value.streets,
+      scenarioStore.groups,
+      shapeOf
+    )
 
     // the stroke of a one-direction modification rides its own lane
     const lane = new Set(draw.laneIds)
@@ -474,11 +511,14 @@ export function useGraphOverlay(
     if (!map || mountedOn !== map) return
 
     const hovered = scenarioStore.hovered
-    hoverIds = hovered ? idsFor(hovered.key, hovered.dir) : []
-    // one lane hovered: offset onto it. Both: stay on the centre line.
-    hoverFeatures = hovered
-      ? pointerFeatures(hoverIds, 'hover', hovered.dir === 'both' ? 0 : 1)
-      : []
+    hoverIds = []
+    hoverFeatures = []
+
+    if (hovered) {
+      for (const key of hovered.keys) hoverIds.push(...idsFor(key, hovered.dir))
+      // one lane hovered: offset onto it. Both: stay on the centre line.
+      hoverFeatures = pointerFeatures(hoverIds, 'hover', hovered.dir === 'both' ? 0 : 1)
+    }
     drawPointer(map)
   }
 
@@ -496,22 +536,84 @@ export function useGraphOverlay(
       return
     }
 
-    selectedIds = idsFor(selected.key, selected.dir)
     const lane = selected.dir === 'both' ? 0 : 1
-    selectionFeatures = pointerFeatures(selectedIds, 'selected', lane)
-
     // With one lane selected, the other shows a dotted ghost so the user sees
     // which direction is left out.
-    if (selected.dir !== 'both') {
-      const other = selected.dir === 'fwd' ? 'bwd' : 'fwd'
-      ghostIds = idsFor(selected.key, other)
-      selectionFeatures.push(...pointerFeatures(ghostIds, 'ghost', 1))
+    const other = selected.dir === 'fwd' ? 'bwd' : 'fwd'
+
+    for (const key of selected.keys) {
+      const ids = idsFor(key, selected.dir)
+      selectedIds.push(...ids)
+      selectionFeatures.push(...pointerFeatures(ids, 'selected', lane))
+
+      if (selected.dir !== 'both') {
+        const ghosts = idsFor(key, other)
+        ghostIds.push(...ghosts)
+        selectionFeatures.push(...pointerFeatures(ghosts, 'ghost', 1))
+      }
     }
 
     drawPointer(map)
   }
 
+  /**
+   * The streets drawn inside a box on screen.
+   *
+   * The query only says which edges are near: it reads the tiles, so one
+   * street can come back cut in pieces. The geometry that comes out is the
+   * whole street, taken from the network, so the caller can test the real
+   * shape against a lasso or a brush.
+   *
+   * Only what is on screen is in the tiles, so a tool reaches what the user
+   * can see, which is also what they drew on.
+   */
+  function streetsInBox(
+    box: [[number, number], [number, number]]
+  ): Array<{ key: string; coordinates: [number, number][] }> {
+    const map = mapRef.value
+    const source = graph.value
+    if (!map || !source) return []
+
+    const hits = map.queryRenderedFeatures(box, {
+      layers: PICK_LAYERS.filter((layer) => map.getLayer(layer))
+    })
+
+    const out = new Map<string, { key: string; coordinates: [number, number][] }>()
+    for (const hit of hits) {
+      const edge = source.edgeById.get(hit.id as number)
+      if (!edge) continue
+      const key = streetKey(edge.u, edge.v)
+      if (!out.has(key)) out.set(key, { key, coordinates: edge.coordinates })
+    }
+    return Array.from(out.values())
+  }
+
   /** Which street, and which lane, is under the cursor. */
+  /** The streets a badge under the cursor stands for, its zone or its street. */
+  function badgeAt(event: MapMouseEvent): StreetRef | null {
+    const map = mapRef.value
+    if (!map) return null
+
+    const box: [[number, number], [number, number]] = [
+      [event.point.x - 4, event.point.y - 4],
+      [event.point.x + 4, event.point.y + 4]
+    ]
+    const layers = BADGE_PICK_LAYERS.filter((l) => map.getLayer(l))
+    if (layers.length === 0) return null
+
+    const hits = map.queryRenderedFeatures(box, { layers })
+    if (hits.length === 0) return null
+
+    const properties = hits[0].properties ?? {}
+    const id = typeof properties.group === 'string' ? properties.group : ''
+    const key = typeof properties.key === 'string' ? properties.key : ''
+
+    const group = id ? scenarioStore.groups.get(id) : undefined
+    if (group) return { keys: group.keys, dir: group.dir }
+    if (!key) return null
+    return { keys: [key], dir: scenarioStore.get(key)?.dir ?? 'both' }
+  }
+
   function hitAt(event: MapMouseEvent): EdgeHover | null {
     const map = mapRef.value
     const source = graph.value
@@ -584,6 +686,15 @@ export function useGraphOverlay(
         return
       }
 
+      // A lasso or a brush owns the pointer. The shape says what is caught,
+      // a card about one street under the cursor would only get in the way.
+      if (scenarioStore.tool !== 'pointer') {
+        scenarioStore.hover(null)
+        callbacks.onHover?.(null, { x: event.point.x, y: event.point.y })
+        callbacks.onRoute?.(null, { x: event.point.x, y: event.point.y })
+        return
+      }
+
       // A vehicle route sits on top of the graph, so it takes the pointer.
       const route = routeAt(event)
       if (route) {
@@ -598,9 +709,20 @@ export function useGraphOverlay(
       hoverRoute(null)
       callbacks.onRoute?.(null, { x: event.point.x, y: event.point.y })
 
+      // A badge lights the whole zone it stands for. No card: the popover it
+      // opens is about several streets, one street's numbers would mislead.
+      const badge = badgeAt(event)
+      if (badge) {
+        scenarioStore.hover(badge)
+        callbacks.onHover?.(null, { x: event.point.x, y: event.point.y })
+        const over = mapRef.value
+        if (over) over.getCanvas().style.cursor = 'pointer'
+        return
+      }
+
       const hit = hitAt(event)
       // Hovering points at the street; the lane only matters once we click.
-      scenarioStore.hover(hit ? { key: hit.key, dir: hit.oneway ? 'both' : hit.dir } : null)
+      scenarioStore.hover(hit ? { keys: [hit.key], dir: hit.oneway ? 'both' : hit.dir } : null)
       callbacks.onHover?.(hit, { x: event.point.x, y: event.point.y })
 
       const map = mapRef.value
@@ -641,6 +763,20 @@ export function useGraphOverlay(
     // mode to turn on first. Picking an area is the exception: a click moves
     // the circle, it never touches a street.
     if (!scenarioStore.isOpen || trafficStore.pickMode) return
+    // A short drag with a tool on still fires a click. The tool has already
+    // said what it caught, so this one is not ours.
+    if (scenarioStore.tool !== 'pointer') return
+
+    // A badge sits on top of its street and answers first, so a zone is
+    // re-edited by clicking the sign that says what was done to it.
+    const badge = badgeAt(event)
+    if (badge) {
+      if ((event.originalEvent as MouseEvent).shiftKey) scenarioStore.addSelected(badge.keys)
+      else scenarioStore.select(badge)
+      callbacks.onPick?.({ x: event.point.x, y: event.point.y })
+      return
+    }
+
     const hit = hitAt(event)
 
     if (!hit) {
@@ -649,17 +785,57 @@ export function useGraphOverlay(
       return
     }
 
-    // Click takes both directions, which is what people mean most of the time.
-    // Shift-click takes the single lane under the cursor.
-    const shift = (event.originalEvent as MouseEvent).shiftKey
-    const dir: ScenarioDir = hit.oneway || !shift ? 'both' : hit.dir
+    // A plain click picks one street. Shift-click adds it to the selection, or
+    // takes it back out, the way every map editor does it. Which lane is
+    // chosen in the popover, not here.
+    if ((event.originalEvent as MouseEvent).shiftKey) {
+      scenarioStore.toggleSelected(hit.key)
+    } else {
+      scenarioStore.select({ keys: [hit.key], dir: scenarioStore.get(hit.key)?.dir ?? 'both' })
+    }
 
-    scenarioStore.select({ key: hit.key, dir })
-    callbacks.onPick?.(hit.key, dir, { x: event.point.x, y: event.point.y })
+    if (scenarioStore.selected) callbacks.onPick?.({ x: event.point.x, y: event.point.y })
+  }
+
+  /** Typing in a field is not a shortcut. */
+  function isTyping(target: EventTarget | null): boolean {
+    const el = target as HTMLElement | null
+    if (!el || !el.tagName) return false
+    const tag = el.tagName.toLowerCase()
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable
   }
 
   function onKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'Escape' && scenarioStore.selected) scenarioStore.select(null)
+    if (isTyping(event.target)) return
+
+    if (event.key === 'Escape') {
+      // Esc undoes one step: the selection first, then the tool.
+      if (scenarioStore.selected) scenarioStore.select(null)
+      else if (scenarioStore.tool !== 'pointer') scenarioStore.tool = 'pointer'
+      return
+    }
+
+    if (!scenarioStore.isOpen || trafficStore.pickMode) return
+    if (event.metaKey || event.ctrlKey || event.altKey) return
+
+    const key = event.key.toLowerCase()
+    if (key === 'l') scenarioStore.tool = scenarioStore.tool === 'lasso' ? 'pointer' : 'lasso'
+    if (key === 'b') scenarioStore.tool = scenarioStore.tool === 'brush' ? 'pointer' : 'brush'
+
+    if (scenarioStore.tool === 'brush' && (key === '[' || key === ']')) {
+      const step = key === '[' ? -4 : 4
+      scenarioStore.brushRadius = Math.max(8, Math.min(80, scenarioStore.brushRadius + step))
+    }
+  }
+
+  /**
+   * Moving the map drops the selection.
+   *
+   * The popover sits at fixed screen pixels, so a pan or a zoom would leave it
+   * pointing at the wrong street.
+   */
+  function onMoveStart(): void {
+    if (scenarioStore.selected) scenarioStore.select(null)
   }
 
   /**
@@ -668,7 +844,7 @@ export function useGraphOverlay(
    * The dock covers the right of the canvas, so the right padding carries its
    * width on top of the normal margin.
    */
-  function focus(keys: string[]): void {
+  function focus(keys: string[], select?: StreetRef): void {
     const map = mapRef.value
     const source = graph.value
     if (!map || !source || keys.length === 0) return
@@ -693,15 +869,31 @@ export function useGraphOverlay(
       maxZoom: 16,
       duration: 600
     })
+
+    if (!select) return
+
+    // The popover waits for the camera: moving the map clears the selection,
+    // and its screen pixels would point at the old place anyway.
+    const open = (): void => {
+      const centre = bounds.getCenter()
+      const point = map.project(centre)
+      scenarioStore.select(select)
+      callbacks.onPick?.({ x: point.x, y: point.y })
+    }
+
+    // A camera already where it should be never moves, and fires no moveend.
+    if (map.isMoving()) map.once('moveend', open)
+    else open()
   }
 
   function attach(map: MapLibreMap): void {
-    // Shift-click picks one lane, so the shift-drag box zoom has to go: it eats
-    // the mousedown and MapLibre never fires the click.
+    // Shift-click adds to the selection, so the shift-drag box zoom has to go:
+    // it eats the mousedown and MapLibre never fires the click.
     map.boxZoom.disable()
     map.on('mousemove', onMouseMove)
     map.on('mouseout', onMouseOut)
     map.on('click', onClick)
+    map.on('movestart', onMoveStart)
     // style.load fires on every setStyle, which drops our layers with it
     map.on('style.load', mount)
     window.addEventListener('keydown', onKeyDown)
@@ -712,6 +904,7 @@ export function useGraphOverlay(
     map.off('mousemove', onMouseMove)
     map.off('mouseout', onMouseOut)
     map.off('click', onClick)
+    map.off('movestart', onMoveStart)
     map.off('style.load', mount)
     window.removeEventListener('keydown', onKeyDown)
   }
@@ -792,6 +985,7 @@ export function useGraphOverlay(
   })
 
   return {
+    streetsInBox,
     mount,
     unmount,
     redraw,

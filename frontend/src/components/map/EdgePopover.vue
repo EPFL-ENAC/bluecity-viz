@@ -11,6 +11,8 @@ const props = defineProps<{
   y: number
   name: string
   edges: number
+  /** how many streets are picked, 0 when it is a single one */
+  streets: number
   speed?: number
   dir: ScenarioDir
   action: ScenarioAction | null
@@ -61,6 +63,7 @@ watch(
     <div class="popover__head">
       <span class="popover__name">{{ props.name }}</span>
       <span class="popover__meta">
+        <template v-if="props.streets">{{ props.streets }} STREETS · </template>
         {{ props.edges }} EDGES<template v-if="props.speed">
           · {{ Math.round(props.speed) }} KM/H</template
         >

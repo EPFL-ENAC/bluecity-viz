@@ -112,7 +112,8 @@ export function pickScenarioInputs(raw: any, legacyTraffic: any): ScenarioInputs
           key: String(mod.key),
           action: String(mod.action ?? 'remove'),
           dir: String(mod.dir ?? 'both'),
-          name: typeof mod.name === 'string' ? mod.name : undefined
+          name: typeof mod.name === 'string' ? mod.name : undefined,
+          group: typeof mod.group === 'string' && mod.group ? mod.group : undefined
         }))
     }
   }

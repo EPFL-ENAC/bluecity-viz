@@ -92,6 +92,30 @@ describe('share link', () => {
     ])
   })
 
+  it('carries the group a lasso made', () => {
+    const investigation: Investigation = {
+      id: 'inv-1',
+      name: 'Bern closure',
+      selectedSources: [],
+      selectedLayers: [],
+      createdAt: new Date(),
+      trafficAnalysis: trafficInputs(BERN),
+      scenario: {
+        edgeModifications: [
+          { key: '4-9', action: '30', dir: 'both', name: 'Rue Y', group: 'g1' },
+          { key: '5-9', action: '30', dir: 'both', name: 'Rue Z', group: 'g1' }
+        ]
+      }
+    }
+
+    vi.stubGlobal('location', { origin: 'http://x', pathname: '/', search: '' })
+    const url = makeSharing(investigation).sharing.generateShareableUrl()
+    vi.unstubAllGlobals()
+
+    const shared = receive(url).projects.value[0].investigations[0]
+    expect(shared.scenario.edgeModifications.map((mod: any) => mod.group)).toEqual(['g1', 'g1'])
+  })
+
   it('reads a broken area back as the default city', () => {
     const investigation: Investigation = {
       id: 'inv-1',

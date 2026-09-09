@@ -222,18 +222,125 @@ describe('scenario store', () => {
 
   it('clears the selection', () => {
     const store = useScenarioStore()
-    store.select({ key: '3-7', dir: 'fwd' })
-    expect(store.selected).toEqual({ key: '3-7', dir: 'fwd' })
+    store.select({ keys: ['3-7'], dir: 'fwd' })
+    expect(store.selected).toEqual({ keys: ['3-7'], dir: 'fwd' })
     store.select(null)
     expect(store.selected).toBeNull()
   })
 
-  it('does not re-set the same hovered edge', () => {
+  it('takes an empty selection for none', () => {
     const store = useScenarioStore()
-    store.hover({ key: '3-7', dir: 'fwd' })
+    store.select({ keys: [], dir: 'both' })
+    expect(store.selected).toBeNull()
+  })
+
+  it('does not re-set the same hovered streets', () => {
+    const store = useScenarioStore()
+    store.hover({ keys: ['3-7'], dir: 'fwd' })
     const first = store.hovered
-    store.hover({ key: '3-7', dir: 'fwd' })
+    store.hover({ keys: ['3-7'], dir: 'fwd' })
     expect(store.hovered).toBe(first)
+  })
+
+  it('re-sets the hover when the streets differ', () => {
+    const store = useScenarioStore()
+    store.hover({ keys: ['3-7'], dir: 'both' })
+    const first = store.hovered
+    store.hover({ keys: ['3-7', '1-2'], dir: 'both' })
+    expect(store.hovered).not.toBe(first)
+    expect(store.hoveredSet.has('1-2')).toBe(true)
+  })
+})
+
+describe('the selection', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('adds a street on shift-click and takes it back out', () => {
+    const store = useScenarioStore()
+    store.toggleSelected('1-2')
+    store.toggleSelected('3-4')
+    expect(store.selected?.keys).toEqual(['1-2', '3-4'])
+    store.toggleSelected('1-2')
+    expect(store.selected?.keys).toEqual(['3-4'])
+    store.toggleSelected('3-4')
+    expect(store.selected).toBeNull()
+  })
+
+  it('keeps the direction while toggling', () => {
+    const store = useScenarioStore()
+    store.select({ keys: ['1-2'], dir: 'fwd' })
+    store.toggleSelected('3-4')
+    expect(store.selected?.dir).toBe('fwd')
+  })
+
+  it('adds a stroke in order, without repeats', () => {
+    const store = useScenarioStore()
+    store.addSelected(['1-2', '3-4'])
+    store.addSelected(['3-4', '5-6'])
+    expect(store.selected?.keys).toEqual(['1-2', '3-4', '5-6'])
+  })
+
+  it('does not touch the selection when a stroke catches nothing new', () => {
+    const store = useScenarioStore()
+    store.addSelected(['1-2'])
+    const first = store.selected
+    store.addSelected(['1-2'])
+    expect(store.selected).toBe(first)
+  })
+
+  it('moves the whole selection onto one direction', () => {
+    const store = useScenarioStore()
+    store.select({ keys: ['1-2', '3-4'], dir: 'both' })
+    store.setSelectedDir('bwd')
+    expect(store.selected).toEqual({ keys: ['1-2', '3-4'], dir: 'bwd' })
+  })
+
+  it('lists the selected streets as a set', () => {
+    const store = useScenarioStore()
+    store.select({ keys: ['1-2', '3-4'], dir: 'both' })
+    expect(store.selectedSet.has('3-4')).toBe(true)
+    expect(store.selectedSet.has('9-9')).toBe(false)
+  })
+})
+
+describe('writing several streets at once', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('replaces the map once for the whole batch', () => {
+    const store = useScenarioStore()
+    const before = store.edgeModifications
+    store.setMany([
+      ['1-2', { action: '30', dir: 'both', name: 'A' }],
+      ['3-4', { action: '30', dir: 'both', name: 'B' }]
+    ])
+    expect(store.edgeModifications).not.toBe(before)
+    expect(store.count).toBe(2)
+  })
+
+  it('folds a one-way street to both directions', () => {
+    const store = useScenarioStore()
+    store.setStreets(new Map([['1-2', street(1, 2, true)]]))
+    store.setMany([['1-2', { action: 'remove', dir: 'fwd', name: 'A' }]])
+    expect(store.get('1-2')?.dir).toBe('both')
+  })
+
+  it('drops several streets at once', () => {
+    const store = useScenarioStore()
+    store.setMany([
+      ['1-2', { action: '30', dir: 'both', name: 'A' }],
+      ['3-4', { action: '30', dir: 'both', name: 'B' }]
+    ])
+    store.removeMany(['1-2', '9-9'])
+    expect(store.count).toBe(1)
+    expect(store.get('3-4')).toBeDefined()
+  })
+
+  it('does nothing when none of the streets are there', () => {
+    const store = useScenarioStore()
+    store.set('1-2', { action: '30', dir: 'both', name: 'A' })
+    const before = store.edgeModifications
+    store.removeMany(['9-9'])
+    expect(store.edgeModifications).toBe(before)
   })
 })
 
@@ -244,5 +351,122 @@ describe('scenarioSignature', () => {
       ['1-2', { action: '30', dir: 'fwd' }]
     ]
     expect(scenarioSignature(entries)).toBe('1-2:30:fwd|3-7:remove:both')
+  })
+})
+
+describe('groups', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  function twoStreets() {
+    const store = useScenarioStore()
+    store.setStreets(
+      new Map([
+        ['1-2', street(1, 2)],
+        ['3-4', street(3, 4)]
+      ])
+    )
+    store.setMany([
+      ['1-2', { action: '30', dir: 'both', name: 'A', group: 'g1' }],
+      ['3-4', { action: '30', dir: 'both', name: 'B', group: 'g1' }]
+    ])
+    return store
+  }
+
+  it('gathers the streets of one group', () => {
+    const store = twoStreets()
+    const group = store.groups.get('g1')
+    expect(group?.keys).toEqual(['1-2', '3-4'])
+    expect(group?.action).toBe('30')
+    expect(group?.anyTwoWay).toBe(true)
+  })
+
+  it('takes the direction from a street that has two lanes', () => {
+    const store = useScenarioStore()
+    store.setStreets(
+      new Map([
+        ['1-2', street(1, 2, true)],
+        ['3-4', street(3, 4)]
+      ])
+    )
+    store.setMany([
+      ['1-2', { action: '30', dir: 'both', name: 'One way', group: 'g1' }],
+      ['3-4', { action: '30', dir: 'fwd', name: 'Two way', group: 'g1' }]
+    ])
+    expect(store.groups.get('g1')?.dir).toBe('fwd')
+  })
+
+  it('drops the whole group', () => {
+    const store = twoStreets()
+    store.set('5-6', { action: '10', dir: 'both', name: 'Alone' })
+    store.removeGroup('g1')
+    expect(store.count).toBe(1)
+    expect(store.get('5-6')).toBeDefined()
+  })
+
+  it('takes the name asked for when it is free', () => {
+    const store = twoStreets()
+    expect(store.freeGroupId('Valency')).toBe('Valency')
+  })
+
+  it('numbers a name that a group already has', () => {
+    const store = useScenarioStore()
+    store.restore([
+      { key: '1-2', action: '30', dir: 'both', name: 'A', group: 'Valency' },
+      { key: '3-4', action: '30', dir: 'both', name: 'B', group: 'Valency 2' },
+      { key: '5-6', action: '30', dir: 'both', name: 'C' }
+    ])
+    expect(store.freeGroupId('Valency')).toBe('Valency 3')
+  })
+
+  it('names a group after itself', () => {
+    const store = twoStreets()
+    expect(store.groups.get('g1')?.id).toBe('g1')
+  })
+
+  it('lists the groups first, then the lone streets by name', () => {
+    const store = twoStreets()
+    store.set('5-6', { action: '10', dir: 'both', name: 'Zebra' })
+    store.set('7-8', { action: '10', dir: 'both', name: 'Alpha' })
+    const rows = store.dockRows
+    expect(rows[0].kind).toBe('group')
+    expect(rows.slice(1).map((row) => (row.kind === 'street' ? row.name : ''))).toEqual([
+      'Alpha',
+      'Zebra'
+    ])
+  })
+
+  it('leaves the hash alone: a group changes nothing on the wire', () => {
+    const store = twoStreets()
+    const before = store.hash
+
+    // the same two streets with no group at all hash the same way
+    store.setMany([
+      ['1-2', { action: '30', dir: 'both', name: 'A' }],
+      ['3-4', { action: '30', dir: 'both', name: 'B' }]
+    ])
+    expect(store.groups.size).toBe(0)
+    expect(store.hash).toBe(before)
+  })
+
+  it('writes no group field when there is none', () => {
+    const store = useScenarioStore()
+    store.set('1-2', { action: '30', dir: 'both', name: 'A' })
+    expect(store.serialize()).toEqual([{ key: '1-2', action: '30', dir: 'both', name: 'A' }])
+  })
+
+  it('round-trips a group through serialize and restore', () => {
+    const store = twoStreets()
+    const saved = store.serialize()
+    store.clear()
+    store.restore(saved)
+    expect(store.groups.get('g1')?.keys).toEqual(['1-2', '3-4'])
+  })
+
+  it('restores an old scenario that has no group', () => {
+    const store = useScenarioStore()
+    store.restore([{ key: '1-2', action: '30', dir: 'both', name: 'A' }])
+    expect(store.get('1-2')?.group).toBeUndefined()
+    expect(store.groups.size).toBe(0)
+    expect(store.dockRows).toHaveLength(1)
   })
 })
