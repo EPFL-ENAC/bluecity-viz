@@ -519,7 +519,14 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
    * here and not at the top of the file, they need each other.
    */
   function setArea(selection: AreaSelection | null) {
-    if (areaKey(selection) === areaKey(area.value)) return
+    if (areaKey(selection) === areaKey(area.value)) {
+      // Same circle: nothing to rebuild, but the picker may have found a name
+      // for an area saved before we had one.
+      if (selection && area.value && selection.name !== area.value.name) {
+        area.value = { ...area.value, name: selection.name }
+      }
+      return
+    }
 
     forgetArea(areaId.value ?? DEFAULT_AREA_ID)
     area.value = selection
@@ -615,6 +622,16 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   function setDraftRadius(radiusM: number) {
     if (draftArea.value) draftArea.value = { ...draftArea.value, radiusM }
+  }
+
+  /** The place the draft circle sits on, read from the basemap by the picker. */
+  function setDraftName(name: string | null) {
+    if (!draftArea.value) return
+    if ((draftArea.value.name ?? null) === name) return
+    const next = { ...draftArea.value }
+    if (name) next.name = name
+    else delete next.name
+    draftArea.value = next
   }
 
   /** The rules the picker checks, read once from the server. */
@@ -805,6 +822,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     useDefaultArea,
     moveDraft,
     setDraftRadius,
+    setDraftName,
     loadAreaLimits,
     setEdgeUsage,
     clearResults,

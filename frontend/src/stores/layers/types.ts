@@ -50,12 +50,15 @@ export interface TrafficAnalysisInputs {
   area: TrafficAreaSelection | null
 }
 
-// A circle on the map, the only shape the picker draws today.
+// A circle on the map, the only shape the picker draws today. `name` is the
+// place the circle is on ("East Lausanne"), read from the basemap when it was
+// picked. It is a label only: the id of an area is its geometry (areaKey).
 export interface TrafficAreaSelection {
   kind: 'circle'
   lon: number
   lat: number
   radiusM: number
+  name?: string
 }
 
 // The results of a run. Big (about 10k rows per array), kept in memory only.

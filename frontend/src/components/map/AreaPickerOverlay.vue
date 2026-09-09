@@ -16,6 +16,7 @@ import {
   ringOf
 } from '@/utils/areaCircle'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
+import { areaLabel, collectPlaces, type PlacePoint } from '@/utils/areaName'
 import { BEFORE_LAYER, setData } from '@/utils/bluecityGraph'
 import { cdnRequest } from '@/utils/cdnRequest'
 import { GRAPH_COLORS } from '@/utils/epflBasemap'
@@ -60,6 +61,23 @@ let painted = ''
 let savedCamera: { center: [number, number]; zoom: number } | null = null
 // The area when the picker opened, to tell a confirm from a cancel.
 let savedKey: string | null = null
+// The towns of the loaded tiles, read once per camera stop. The drag itself
+// then only runs the naming, which is arithmetic on this list.
+let places: PlacePoint[] = []
+
+/** Read the towns again, the map has new tiles. */
+function readPlaces(): void {
+  const current = map.value
+  if (!current) return
+  places = collectPlaces(current)
+  nameDraft()
+}
+
+/** Put the name of the place under the circle in the draft. */
+function nameDraft(): void {
+  const circle = trafficStore.draftArea
+  if (circle) trafficStore.setDraftName(areaLabel(circle, places))
+}
 
 function draw(): void {
   const current = map.value
@@ -261,6 +279,12 @@ function onClick(event: MapMouseEvent): void {
 
 watch([() => trafficStore.draftArea, canUse], draw, { deep: true })
 
+// The circle moved or grew: same towns, new answer.
+watch(
+  () => [trafficStore.draftArea?.lon, trafficStore.draftArea?.lat, trafficStore.draftArea?.radiusM],
+  nameDraft
+)
+
 // The radius slider moves the circle without a drag, check that one too.
 watch(
   () => trafficStore.draftArea?.radiusM,
@@ -291,6 +315,7 @@ function attach(current: MapLibreMap): void {
   current.on('mouseup', onMouseUp)
   current.on('click', onClick)
   current.on('style.load', mount)
+  current.on('idle', readPlaces)
   mount()
   mountNetwork(current)
   // Stay where the user is. The country view needs basemap tiles nobody has
@@ -298,6 +323,7 @@ function attach(current: MapLibreMap): void {
   // and the circle only needs room around it to be dragged.
   const draft = trafficStore.draftArea
   if (draft) fitCircle(current, draft, PICK_ROOM)
+  readPlaces()
   checkNow()
 }
 
@@ -308,6 +334,7 @@ function detach(current: MapLibreMap): void {
   current.off('mouseup', onMouseUp)
   current.off('click', onClick)
   current.off('style.load', mount)
+  current.off('idle', readPlaces)
   current.dragPan.enable()
   current.getCanvas().style.cursor = ''
   unmountNetwork(current)

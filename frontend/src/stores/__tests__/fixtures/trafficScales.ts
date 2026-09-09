@@ -196,6 +196,7 @@ export const EXPECTED_PUBLIC_KEYS = [
   'resultTotals',
   'setActiveVisualization',
   'setArea',
+  'setDraftName',
   'setDraftRadius',
   'setEdgeUsage',
   'setNodePairs',
