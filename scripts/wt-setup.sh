@@ -54,8 +54,9 @@ link_from_main() {
   echo "linked $rel -> $MAIN/$rel"
 }
 link_from_main frontend/public/geodata          # PMTiles served at /geodata in dev
-# The CVRP centroid CSVs are untracked; the graphml/geojson next to them are
-# tracked, so git already brought those.
+# The CVRP centroid CSVs are tracked now (the image needs them), like the
+# graphml/geojson next to them, so git already brought all of those and
+# link_from_main skips them. The loop stays for any other CSV you drop there.
 for csv in "$MAIN"/backend/data/*.csv; do
   [ -e "$csv" ] || continue
   link_from_main "backend/data/$(basename "$csv")"

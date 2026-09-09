@@ -73,7 +73,9 @@ function number(value?: number): string {
         <span class="route-card__value">{{ props.data.trips ?? '—' }}</span>
         <span class="route-card__label">Distance</span>
         <span class="route-card__value">
-          {{ props.data.distance_m === undefined ? '—' : (props.data.distance_m / 1000).toFixed(1) }}
+          {{
+            props.data.distance_m === undefined ? '—' : (props.data.distance_m / 1000).toFixed(1)
+          }}
           km
         </span>
       </div>

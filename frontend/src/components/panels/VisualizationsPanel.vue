@@ -2,10 +2,11 @@
 import LegendMap from '@/components/LegendMap.vue'
 import MapLibreMap from '@/components/MapLibreMap.vue'
 import ScenarioDock from '@/components/dock/ScenarioDock.vue'
+import AreaPickerOverlay from '@/components/map/AreaPickerOverlay.vue'
 import GraphOverlay from '@/components/map/GraphOverlay.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
 import { useCVRPStore } from '@/stores/cvrp'
-import { useScenarioStore } from '@/stores/scenario'
+import { useScenarioStore, type StreetRef } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { computed, inject, ref, watch, type Ref } from 'vue'
 
@@ -37,9 +38,14 @@ function hoverRoute(routeId: number | null) {
   graphOverlay.value?.hoverRoute(routeId)
 }
 
-/** The scenario block asking the map to fit some streets. */
-function focusStreets(keys: string[]) {
-  graphOverlay.value?.focus(keys)
+/**
+ * The scenario block asking the map to fit some streets.
+ *
+ * With a `select`, the popover opens on them once the camera has landed, so a
+ * dock row and a badge on the map do the same thing.
+ */
+function focusStreets(keys: string[], select?: StreetRef) {
+  graphOverlay.value?.focus(keys, select)
 }
 
 // Get the provided map ref from parent
@@ -92,13 +98,11 @@ watch(
     </MapLibreMap>
 
     <!-- The street graph, the result, the routes, the hover card and the editor -->
-    <GraphOverlay
-      v-if="graphMounted"
-      ref="graphOverlay"
-      :class="{ 'is-docked': anyToolOpen }"
-    />
+    <GraphOverlay v-if="graphMounted" ref="graphOverlay" :class="{ 'is-docked': anyToolOpen }" />
 
     <!-- The scenario workbench, on the right edge of the map -->
+    <AreaPickerOverlay v-if="trafficStore.pickMode" />
+
     <div v-if="anyToolOpen" class="dock">
       <ScenarioDock @hover-route="hoverRoute" @focus="focusStreets" />
     </div>

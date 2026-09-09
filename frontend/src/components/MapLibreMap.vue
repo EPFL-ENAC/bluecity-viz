@@ -20,7 +20,6 @@ import {
   AttributionControl,
   Map as MapLibre,
   NavigationControl,
-  ScaleControl,
   VectorTileSource,
   type AddLayerObject,
   type FilterSpecification,
@@ -35,6 +34,7 @@ import { markRaw, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 import { useApiKeyStore } from '@/stores/apiKey'
 import { useLayersStore } from '@/stores/layers'
 import { useThemeStore } from '@/stores/theme'
+import { cdnRequest } from '@/utils/cdnRequest'
 import { Protocol } from 'pmtiles'
 
 const apiKeyStore = useApiKeyStore()
@@ -195,25 +195,7 @@ async function initMap() {
     minZoom: props.minZoom,
     maxZoom: props.maxZoom,
     attributionControl: false,
-    transformRequest: function (url, resourceType) {
-      const apiKey = apiKeyStore.apiKey
-
-      if (resourceType === 'Tile' && url.includes('pmtiles://')) {
-        return {
-          url: url + '?apikey=' + apiKey,
-          credentials: 'include'
-        }
-      }
-
-      if (url.includes('/bluecity/')) {
-        return {
-          url: url + '?apikey=' + apiKey,
-          credentials: 'include'
-        }
-      }
-
-      return { url: url }
-    }
+    transformRequest: cdnRequest(() => apiKeyStore.apiKey)
   })
 
   map.value = markRaw(newMap)
@@ -223,8 +205,9 @@ async function initMap() {
   wirePatterns(newMap)
 
   newMap.addControl(new NavigationControl({ showCompass: false }), 'top-right')
-  newMap.addControl(new ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-left')
   newMap.addControl(new AttributionControl({ compact: true }), 'bottom-right')
+  // No ScaleControl: the scale is a block of the legend (useMapScale), so it
+  // has the padding and the ink of the rest of the box.
 
   // Loading bar. 'dataloading' fires per tile, so wait a bit before showing
   // the bar, and 'idle' fires once the map has nothing left to load.

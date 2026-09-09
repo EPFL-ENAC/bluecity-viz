@@ -27,6 +27,8 @@ export interface ScenarioModEntry {
   action: string
   dir: string
   name?: string
+  /** the group the street was edited with, when there was one */
+  group?: string
 }
 
 // The modified graph. Shared by every tool, so it sits beside the tool inputs
@@ -46,6 +48,19 @@ export interface TrafficAnalysisInputs {
   filterBusRoutes: boolean
   /** how many OD pairs to route, null for the server default */
   odPairs: number | null
+  /** the area the scenario runs on, null for the default city */
+  area: TrafficAreaSelection | null
+}
+
+// A circle on the map, the only shape the picker draws today. `name` is the
+// place the circle is on ("East Lausanne"), read from the basemap when it was
+// picked. It is a label only: the id of an area is its geometry (areaKey).
+export interface TrafficAreaSelection {
+  kind: 'circle'
+  lon: number
+  lat: number
+  radiusM: number
+  name?: string
 }
 
 // The results of a run. Big (about 10k rows per array), kept in memory only.
@@ -56,6 +71,8 @@ export interface TrafficResults {
   impactStatistics: any | null
   /** the OD pair count these results were computed with */
   resultOdPairs: number | null
+  /** the area these results were computed on, so we never show them on another */
+  resultAreaKey: string | null
   /** the scenario these results were computed on, to tell when they go stale */
   resultScenarioHash?: string | null
 }

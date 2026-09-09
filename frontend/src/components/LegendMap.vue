@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { useMapScale } from '@/composables/useMapScale'
+import { useMapView } from '@/composables/useMapView'
 import type { MapLayerConfig } from '@/config/layerTypes'
 import { getVehicleColor, useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
-import { useMapView } from '@/composables/useMapView'
 import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { graphLegendRows } from '@/utils/graphLegend'
@@ -13,7 +14,8 @@ import {
   type TrafficLegendMode
 } from '@/utils/legendColor'
 import { interpolateViridis } from 'd3-scale-chromatic'
-import { computed } from 'vue'
+import type { Map as MapLibreMap } from 'maplibre-gl'
+import { computed, inject, type Ref } from 'vue'
 
 const props = defineProps<{
   layers: MapLayerConfig[]
@@ -25,6 +27,10 @@ const cvrpStore = useCVRPStore()
 const scenarioStore = useScenarioStore()
 // The legend explains the map, so it reads the same source of truth.
 const { shown } = useMapView()
+
+// The scale is part of the legend, not a control of its own in the corner.
+const mapComponentRef = inject<Ref<{ map?: MapLibreMap } | undefined>>('mapRef')
+const scale = useMapScale(computed(() => mapComponentRef?.value?.map))
 
 // The key to the graph vocabulary. Shown whenever a tool draws on the graph.
 const graphRows = computed(() => {
@@ -137,13 +143,15 @@ const toggleCategory = (
   }
 }
 
-const shouldShowLegend = computed(() => {
+// The blocks that explain the colours. The scale is always there, so the box
+// itself never hides.
+const hasKeys = computed(() => {
   return allLegends.value.length > 0 || trafficLegend.value !== null || graphRows.value.length > 0
 })
 </script>
 
 <template>
-  <div v-if="shouldShowLegend" class="legend">
+  <div v-if="hasKeys || scale" class="legend">
     <div v-for="layer in allLegends" :key="layer?.id || layer?.label" class="block">
       <div class="bc-micro block__title">
         {{ layer.label }}<span v-if="layer.unit"> · {{ layer.unit }}</span>
@@ -214,6 +222,12 @@ const shouldShowLegend = computed(() => {
         <span class="key__label">{{ row.label }}</span>
       </div>
     </div>
+
+    <!-- How far one is from the other, last because it reads the map, not a layer -->
+    <div v-if="scale" class="block scale">
+      <span class="scale__bar" :style="{ width: `${scale.widthPx}px` }"></span>
+      <span class="bc-micro scale__label">{{ scale.label }}</span>
+    </div>
   </div>
 </template>
 
@@ -231,6 +245,27 @@ const shouldShowLegend = computed(() => {
 
 .block + .block {
   margin-top: 10px;
+}
+
+/* The scale: one hairline with a tick at each end, and the distance next to it.
+   Same ink as the rest of the legend, no box of its own. */
+.scale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scale__bar {
+  height: 4px;
+  border: 1px solid var(--bc-grey);
+  border-top: 0;
+  /* The width is the reading, do not let a long label squeeze it. */
+  flex: none;
+  transition: width var(--bc-t);
+}
+
+.scale__label {
+  line-height: 1;
 }
 
 .block__title {
@@ -271,11 +306,7 @@ const shouldShowLegend = computed(() => {
 
 .key__mark--dashed::before {
   height: 2px;
-  background: repeating-linear-gradient(
-    to right,
-    var(--bc-ink) 0 2px,
-    transparent 2px 4px
-  );
+  background: repeating-linear-gradient(to right, var(--bc-ink) 0 2px, transparent 2px 4px);
 }
 
 .key__mark--arrows::before {

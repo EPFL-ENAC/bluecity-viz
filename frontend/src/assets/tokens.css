@@ -92,10 +92,6 @@
   border-color: #f2f2f2 !important;
   background: #1b1b1b;
 }
-[data-theme='dark'] .maplibregl-ctrl-scale {
-  background: rgba(20, 20, 20, 0.6) !important;
-  color: #b6b6b6 !important;
-}
 
 /* element defaults */
 html,
@@ -243,15 +239,6 @@ a:hover {
 }
 .maplibregl-ctrl-group button {
   border-radius: 0 !important;
-}
-.maplibregl-ctrl-scale {
-  border-radius: 0 !important;
-  border: 1px solid var(--bc-grey) !important;
-  border-top: 0 !important;
-  font-family: var(--bc-font-mono) !important;
-  font-size: 9px !important;
-  color: #6f6f6f !important;
-  background: rgba(255, 255, 255, 0.6) !important;
 }
 .maplibregl-ctrl-attrib {
   font-family: var(--bc-font-mono) !important;

@@ -25,6 +25,34 @@ class Settings(BaseSettings):
     od_pairs: int = 20_000  # default N when a request does not say
     od_pairs_max: int = 76_400  # sampled at startup, the largest N allowed
 
+    # Areas kept in memory at the same time. One area is its mirror, its OD
+    # pairs, its baseline and its payloads: about 25 MB at 76,400 pairs on a
+    # Lausanne-sized graph. The budget counts what an area holds; the process
+    # RSS runs higher because the allocator keeps the routing buffers, so
+    # leave headroom. The default area (Lausanne) is pinned and never dropped.
+    area_memory_budget_mb: int = 1024
+    area_max_count: int = 20
+
+    # The Swiss road graph, cut in cells. Empty or missing means the /areas
+    # endpoints answer 503 and only the default city works.
+    swiss_graph_dir: str = "data/swiss_graph"
+
+    # What an area must look like for the tool to run on it. The node cap is
+    # about twice Lausanne (4,771 nodes, 10,854 edges), which keeps a
+    # recalculate around a second.
+    # 500 junctions, measured on the country store: every Swiss town passes at
+    # a 3 km radius (the thinnest are Chur 534 and Neuchatel 542) and every
+    # alpine or lake spot is still refused (the densest is Davos at 175). At
+    # 1000 the tool only worked in the six biggest cities.
+    area_min_junctions: int = 500  # the OD sampler pool, not every node
+    area_max_nodes: int = 10_000
+    area_max_edges: int = 20_000
+    area_min_scc_fraction: float = 0.9
+    area_min_radius_m: float = 500.0
+    area_max_radius_m: float = 10_000.0
+    # Road length of the network daily_km_driven was calibrated on (Lausanne).
+    reference_network_km: float = 1547.0
+
     # CVRP settings
     # Directory containing *_final_clustered_centroids.csv files.
     cvrp_centroids_dir: str = "data"

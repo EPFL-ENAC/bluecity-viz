@@ -33,3 +33,4 @@ htmlcov/
 *.geojson
 !data/lausanne.geojson
 !data/lausanne.graphml
+!data/*_final_clustered_centroids.csv

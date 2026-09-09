@@ -16,10 +16,13 @@
  *  - the accent blue is only ever the pointer: hover and selection.
  */
 import type { GraphColors } from '@/utils/epflBasemap'
+import { convexHull, type Pt } from '@/utils/geometry'
 import type { ExpressionSpecification, LayerSpecification, Map as MapLibreMap } from 'maplibre-gl'
 
 export const GRAPH_SOURCE = 'bc-edges'
 export const BADGE_SOURCE = 'bc-badges'
+/** The outline drawn around the streets of one zone, one polygon per group. */
+export const ZONE_SOURCE = 'bc-zones'
 export const CVRP_SOURCE = 'bc-cvrp-routes'
 export const CVRP_POINT_SOURCE = 'bc-cvrp-pts'
 /**
@@ -53,6 +56,11 @@ export function emptyPointer(): { type: 'FeatureCollection'; features: PointerFe
 /** Put the one or two edges under the pointer on the map. */
 export function setPointer(map: MapLibreMap, features: PointerFeature[]): void {
   setData(map, POINTER_SOURCE, { type: 'FeatureCollection', features })
+}
+
+/** Swap the street network, when the user picks another area. */
+export function setGraphEdges(map: MapLibreMap, collection: unknown): void {
+  setData(map, GRAPH_SOURCE, collection)
 }
 
 export const BADGE_PAPER = 'bc-badge-paper'
@@ -252,7 +260,31 @@ export function buildGraphLayers(options: GraphLayerOptions): LayerSpecification
       }
     },
 
-    // 3 · modifications, ink and shape. Scenario mode draws the full ink
+    // 3 · the zones: what a lasso or a brush stroke took in one go. A faint
+    //     hull under the ink, so a dozen streets read as one thing.
+    {
+      source: ZONE_SOURCE,
+      id: 'bc-zone-fill',
+      type: 'fill',
+      paint: {
+        'fill-color': ink,
+        // In result mode the colours own the map, a tint would lie about them.
+        'fill-opacity': result ? 0 : 0.05
+      }
+    },
+    {
+      source: ZONE_SOURCE,
+      id: 'bc-zone-line',
+      type: 'line',
+      paint: {
+        'line-color': ink,
+        'line-width': 1,
+        'line-opacity': result ? 0.25 : 0.5,
+        'line-dasharray': [3, 2]
+      }
+    },
+
+    // 4 · modifications, ink and shape. Scenario mode draws the full ink
     //     stroke; result mode lets the data colour own it and keeps the shape.
     {
       ...src,
@@ -565,6 +597,25 @@ function badgeLayers(colors: GraphColors): LayerSpecification[] {
     })
   }
 
+  // The name of a zone, under its badge. Only one badge of a zone carries it.
+  out.push({
+    source: BADGE_SOURCE,
+    id: 'bc-badge-name',
+    type: 'symbol',
+    filter: ['!=', ['get', 'label'], ''],
+    layout: {
+      'text-field': ['get', 'label'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 10,
+      'text-offset': [0, 1.7],
+      'text-rotation-alignment': 'viewport',
+      'text-pitch-alignment': 'viewport',
+      'text-allow-overlap': true,
+      'text-ignore-placement': true
+    },
+    paint: { 'text-color': ink, 'text-halo-color': paper, 'text-halo-width': 1.6 }
+  })
+
   return out
 }
 
@@ -652,6 +703,8 @@ export interface ModDraw {
   /** ids that sit on one lane only, so the stroke is offset onto it */
   laneIds: number[]
   badges: BadgeFeature[]
+  /** one outline per zone, the hull of the streets it holds */
+  zones: ZoneFeature[]
 }
 
 export interface BadgeFeature {
@@ -661,8 +714,19 @@ export interface BadgeFeature {
     dir: string
     closed: number
     glyph: string
+    /** the street this badge stands on, or the first one of a zone */
     key: string
+    /** the zone this badge edits, empty for a street on its own */
+    group: string
+    /** the name printed under the badge, only on the first badge of a zone */
+    label: string
   }
+}
+
+export interface ZoneFeature {
+  type: 'Feature'
+  geometry: { type: 'Polygon'; coordinates: Array<Array<[number, number]>> }
+  properties: { group: string }
 }
 
 export function emptyBadges(): { type: 'FeatureCollection'; features: BadgeFeature[] } {
@@ -679,23 +743,98 @@ interface StreetLike {
 interface ModLike {
   action: string
   dir: string
+  group?: string
+}
+
+interface GroupLike {
+  id: string
+  keys: string[]
+}
+
+/** How far apart two badges of the same zone are, in degrees of latitude. */
+const BADGE_SPACING = 600 / 111320
+
+/** At most this many badges on one zone, however wide it is. */
+const MAX_ZONE_BADGES = 4
+
+function distance(a: [number, number], b: [number, number]): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1])
 }
 
 /**
- * Turn the scenario into the ids each modification layer draws and one badge
- * per modified street.
+ * Where the badges of a zone go.
+ *
+ * A zone shows one badge, not one per street: twenty speed signs on twenty
+ * streets say the same thing twenty times. The badge sits on the street
+ * closest to the middle of the zone, so it never floats over a rooftop. A
+ * wide zone gets a few more, each as far as possible from the ones already
+ * placed, so the two ends of a long corridor both carry a sign.
+ */
+export function zoneAnchors(points: [number, number][]): [number, number][] {
+  if (points.length === 0) return []
+
+  let sumX = 0
+  let sumY = 0
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const point of points) {
+    sumX += point[0]
+    sumY += point[1]
+    minX = Math.min(minX, point[0])
+    minY = Math.min(minY, point[1])
+    maxX = Math.max(maxX, point[0])
+    maxY = Math.max(maxY, point[1])
+  }
+
+  const centre: [number, number] = [sumX / points.length, sumY / points.length]
+  const first = points.reduce((best, point) =>
+    distance(point, centre) < distance(best, centre) ? point : best
+  )
+
+  const extent = Math.hypot(maxX - minX, maxY - minY)
+  const wanted = Math.max(1, Math.min(MAX_ZONE_BADGES, Math.ceil(extent / BADGE_SPACING)))
+
+  const anchors: [number, number][] = [first]
+  while (anchors.length < wanted) {
+    let farthest: [number, number] | null = null
+    let best = 0
+    for (const point of points) {
+      const gap = Math.min(...anchors.map((anchor) => distance(anchor, point)))
+      if (gap > best) {
+        best = gap
+        farthest = point
+      }
+    }
+    if (!farthest) break
+    anchors.push(farthest)
+  }
+
+  return anchors
+}
+
+/**
+ * Turn the scenario into the ids each modification layer draws, the badges,
+ * and the outline of every zone.
  */
 export function drawFor(
   mods: Iterable<[string, ModLike]>,
-  streets: Map<string, StreetLike>
+  streets: Map<string, StreetLike>,
+  groups: Map<string, GroupLike> = new Map(),
+  shapes: (key: string) => [number, number][] = () => []
 ): ModDraw {
   const draw: ModDraw = {
     strokeIds: [],
     closedIds: [],
     arrowIds: [],
     laneIds: [],
-    badges: []
+    badges: [],
+    zones: []
   }
+
+  /** The streets of each zone that made it onto the map, in order. */
+  const drawn = new Map<string, Array<{ key: string; mod: ModLike; at: [number, number] }>>()
 
   for (const [key, mod] of mods) {
     const street = streets.get(key)
@@ -714,6 +853,14 @@ export function drawFor(
     else draw.arrowIds.push(...ids)
     if (oneLane) draw.laneIds.push(...ids)
 
+    // A street of a zone waits: its zone draws one badge for all of them.
+    if (mod.group && groups.has(mod.group)) {
+      const list = drawn.get(mod.group) ?? []
+      list.push({ key, mod, at: street.at })
+      drawn.set(mod.group, list)
+      continue
+    }
+
     draw.badges.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: street.at },
@@ -721,8 +868,42 @@ export function drawFor(
         dir: mod.dir,
         closed: closed ? 1 : 0,
         glyph: closed ? '×' : mod.action,
-        key
+        key,
+        group: '',
+        label: ''
       }
+    })
+  }
+
+  for (const [id, members] of drawn) {
+    const first = members[0]
+    const closed = first.mod.action === 'remove'
+
+    for (const [index, at] of zoneAnchors(members.map((member) => member.at)).entries()) {
+      draw.badges.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: at },
+        properties: {
+          dir: first.mod.dir,
+          closed: closed ? 1 : 0,
+          glyph: closed ? '×' : first.mod.action,
+          key: first.key,
+          group: id,
+          // One name per zone, on the badge closest to the middle.
+          label: index === 0 ? id : ''
+        }
+      })
+    }
+
+    const points: [number, number][] = []
+    for (const member of members) points.push(...shapes(member.key))
+    const hull = convexHull(points as Pt[]) as [number, number][]
+    if (hull.length < 3) continue
+
+    draw.zones.push({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [[...hull, hull[0]]] },
+      properties: { group: id }
     })
   }
 
@@ -756,13 +937,8 @@ export function applyModifications(
   setFilter(map, 'bc-mod-closed-result', idFilter(result ? draw.closedIds : []))
   setFilter(map, 'bc-mod-arrows', idFilter(draw.arrowIds))
 
-  const source = map.getSource(BADGE_SOURCE)
-  if (source && 'setData' in source) {
-    ;(source as { setData: (data: unknown) => void }).setData({
-      type: 'FeatureCollection',
-      features: draw.badges
-    })
-  }
+  setData(map, BADGE_SOURCE, { type: 'FeatureCollection', features: draw.badges })
+  setData(map, ZONE_SOURCE, { type: 'FeatureCollection', features: draw.zones })
 }
 
 // ---------- waste collection, on the map ----------
@@ -793,7 +969,8 @@ export function emptyPoints(): { type: 'FeatureCollection'; features: CvrpPointF
   return { type: 'FeatureCollection', features: [] }
 }
 
-function setData(map: MapLibreMap, id: string, data: unknown): void {
+/** Write a GeoJSON source, if it is on the map. */
+export function setData(map: MapLibreMap, id: string, data: unknown): void {
   const source = map.getSource(id)
   if (source && 'setData' in source) {
     ;(source as { setData: (value: unknown) => void }).setData(data)

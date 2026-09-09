@@ -16,11 +16,42 @@ export type ScenarioAction = 'remove' | '50' | '30' | '10'
  */
 export type ScenarioDir = 'both' | 'fwd' | 'bwd'
 
+/**
+ * How the pointer selects streets.
+ *
+ * `pointer` is the plain click. `lasso` draws a shape and takes what it holds,
+ * `brush` paints along the streets. Both drag, so they take the map drag while
+ * they are on.
+ */
+export type SelectTool = 'pointer' | 'lasso' | 'brush'
+
 export interface StreetMod {
   action: ScenarioAction
   dir: ScenarioDir
   name: string
+  /**
+   * The group this street was edited with, when it came from a selection of
+   * several. The wire does not know about it: a group is a way to show and to
+   * re-edit the same streets together, nothing more.
+   */
+  group?: string
 }
+
+/** Several streets modified in one go, shown as one row in the dock. */
+export interface StreetGroup {
+  /** the readable name of the zone, "Valency 2" or "Around Rue de Genève" */
+  id: string
+  keys: string[]
+  action: ScenarioAction
+  dir: ScenarioDir
+  /** at least one of them has two lanes, so a direction is worth offering */
+  anyTwoWay: boolean
+}
+
+/** What the dock lists: a street on its own, or a whole group. */
+export type DockRow =
+  | { kind: 'street'; key: string; action: ScenarioAction; dir: ScenarioDir; name: string }
+  | { kind: 'group'; group: StreetGroup }
 
 /** One street of the graph, both of its directed edges. */
 export interface Street {
@@ -41,9 +72,23 @@ export interface Street {
   bus: boolean
 }
 
-export interface EdgeRef {
-  key: string
+/**
+ * The streets pointed at together: a click, a lasso stroke, a dock row.
+ *
+ * One selection, one direction. Editing several streets at once means the
+ * same action on all of them, which is what a group is.
+ */
+export interface StreetRef {
+  keys: string[]
   dir: ScenarioDir
+}
+
+/** Same streets, same order, same direction. */
+export function sameRef(a: StreetRef | null, b: StreetRef | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  if (a.dir !== b.dir || a.keys.length !== b.keys.length) return false
+  return a.keys.every((key, index) => key === b.keys[index])
 }
 
 /** The two nodes of a street, smaller first. Same key both ways round. */
@@ -75,11 +120,16 @@ export const useScenarioStore = defineStore('scenario', () => {
   const isOpen = ref(false)
   const activeTab = ref<'routing' | 'cvrp'>('routing')
 
-  /** the street picked by a click, shown as an accent band with its popover */
-  const selected = ref<EdgeRef | null>(null)
+  /** the streets picked by a click, a lasso or a brush, with their popover */
+  const selected = ref<StreetRef | null>(null)
   /** shared by the dock rows and the map, so hovering one lights the other */
-  const hovered = ref<EdgeRef | null>(null)
+  const hovered = ref<StreetRef | null>(null)
   const mapMode = ref<'scenario' | 'result'>('scenario')
+
+  /** Which gesture the pointer is doing on the map. */
+  const tool = ref<SelectTool>('pointer')
+  /** How wide the brush paints, in screen pixels. */
+  const brushRadius = ref(24)
 
   /**
    * The streets of the loaded graph, filled by useGraphEdges.
@@ -91,6 +141,10 @@ export const useScenarioStore = defineStore('scenario', () => {
    * map is replaced whole, so reactivity on the entries buys us nothing.
    */
   const streets = shallowRef<Map<string, Street>>(markRaw(new Map()))
+
+  /** For the map and the dock rows, which ask "is this one of them?". */
+  const selectedSet = computed(() => new Set(selected.value?.keys ?? []))
+  const hoveredSet = computed(() => new Set(hovered.value?.keys ?? []))
 
   const count = computed(() => edgeModifications.value.size)
   const hasModifications = computed(() => edgeModifications.value.size > 0)
@@ -105,6 +159,58 @@ export const useScenarioStore = defineStore('scenario', () => {
       ...mod
     }))
     return rows.sort((a, b) => a.name.localeCompare(b.name))
+  })
+
+  /**
+   * The groups, read back from the entries.
+   *
+   * Nothing stores them: an entry carries its group id, and this walks the map
+   * to gather them. One less thing to keep in step, and an old saved scenario
+   * simply has no group.
+   */
+  const groups = computed<Map<string, StreetGroup>>(() => {
+    const out = new Map<string, StreetGroup>()
+
+    for (const [key, mod] of edgeModifications.value) {
+      if (!mod.group) continue
+      const street = streets.value.get(key)
+      const twoWay = street ? !street.oneway : false
+      const found = out.get(mod.group)
+
+      if (!found) {
+        out.set(mod.group, {
+          id: mod.group,
+          keys: [key],
+          action: mod.action,
+          dir: mod.dir,
+          anyTwoWay: twoWay
+        })
+        continue
+      }
+
+      found.keys.push(key)
+      // A one-way street is always 'both', so the direction of the group has
+      // to come from a street that has two lanes to pick from.
+      if (twoWay && !found.anyTwoWay) found.dir = mod.dir
+      if (twoWay) found.anyTwoWay = true
+    }
+
+    return out
+  })
+
+  /** The dock list: the groups first, then the streets edited on their own. */
+  const dockRows = computed<DockRow[]>(() => {
+    const singles = Array.from(edgeModifications.value.entries())
+      .filter(([, mod]) => !mod.group)
+      .map(([key, mod]) => ({ key, action: mod.action, dir: mod.dir, name: mod.name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    const grouped = Array.from(groups.value.values()).sort((a, b) => a.id.localeCompare(b.id))
+
+    return [
+      ...grouped.map((group): DockRow => ({ kind: 'group', group })),
+      ...singles.map((row): DockRow => ({ kind: 'street', ...row }))
+    ]
   })
 
   /**
@@ -162,6 +268,48 @@ export const useScenarioStore = defineStore('scenario', () => {
     edgeModifications.value = next
   }
 
+  /** Several streets in one go, so the watchers that persist and redraw run once. */
+  function setMany(entries: Array<[string, StreetMod]>): void {
+    if (entries.length === 0) return
+    const next = new Map(edgeModifications.value)
+    for (const [key, mod] of entries) next.set(key, mod)
+    edgeModifications.value = next
+    normalizeOneWay()
+  }
+
+  function removeMany(keys: string[]): void {
+    const next = new Map(edgeModifications.value)
+    let changed = false
+    for (const key of keys) if (next.delete(key)) changed = true
+    if (!changed) return
+    edgeModifications.value = next
+  }
+
+  /**
+   * The name a new group takes: the one asked for, or the same with a number.
+   *
+   * The id is the name, so two zones around Valency read "Valency" and
+   * "Valency 2" and nothing else has to be kept in step.
+   */
+  function freeGroupId(base: string): string {
+    const taken = new Set<string>()
+    for (const mod of edgeModifications.value.values()) {
+      if (mod.group) taken.add(mod.group)
+    }
+    if (!taken.has(base)) return base
+    let n = 2
+    while (taken.has(`${base} ${n}`)) n += 1
+    return `${base} ${n}`
+  }
+
+  function removeGroup(id: string): void {
+    const keys: string[] = []
+    for (const [key, mod] of edgeModifications.value) {
+      if (mod.group === id) keys.push(key)
+    }
+    removeMany(keys)
+  }
+
   function setDir(key: string, dir: ScenarioDir): void {
     const mod = edgeModifications.value.get(key)
     if (!mod) return
@@ -173,15 +321,42 @@ export const useScenarioStore = defineStore('scenario', () => {
     edgeModifications.value = new Map()
   }
 
-  function select(ref_: EdgeRef | null): void {
-    selected.value = ref_
+  function select(ref_: StreetRef | null): void {
+    selected.value = ref_ && ref_.keys.length > 0 ? ref_ : null
   }
 
-  function hover(ref_: EdgeRef | null): void {
-    const now = hovered.value
-    if (now === ref_) return
-    if (now && ref_ && now.key === ref_.key && now.dir === ref_.dir) return
-    hovered.value = ref_
+  /** Shift-click: put the street in, or take it out when it was already in. */
+  function toggleSelected(key: string): void {
+    const now = selected.value
+    if (!now) {
+      selected.value = { keys: [key], dir: 'both' }
+      return
+    }
+    const keys = now.keys.includes(key)
+      ? now.keys.filter((other) => other !== key)
+      : [...now.keys, key]
+    selected.value = keys.length > 0 ? { keys, dir: now.dir } : null
+  }
+
+  /** What a lasso or a brush stroke caught, in stroke order, no repeats. */
+  function addSelected(keys: string[]): void {
+    const now = selected.value
+    const have = new Set(now?.keys ?? [])
+    const fresh = keys.filter((key) => !have.has(key))
+    if (fresh.length === 0) return
+    selected.value = { keys: [...(now?.keys ?? []), ...fresh], dir: now?.dir ?? 'both' }
+  }
+
+  function setSelectedDir(dir: ScenarioDir): void {
+    const now = selected.value
+    if (!now || now.dir === dir) return
+    selected.value = { keys: now.keys, dir }
+  }
+
+  function hover(ref_: StreetRef | null): void {
+    const next = ref_ && ref_.keys.length > 0 ? ref_ : null
+    if (sameRef(hovered.value, next)) return
+    hovered.value = next
   }
 
   /** Put the streets of the loaded graph in, and fold what they teach us. */
@@ -211,14 +386,17 @@ export const useScenarioStore = defineStore('scenario', () => {
     if (changed) edgeModifications.value = next
   }
 
-  function restore(entries: Array<{ key: string; action: string; dir: string; name?: string }>) {
+  function restore(
+    entries: Array<{ key: string; action: string; dir: string; name?: string; group?: string }>
+  ) {
     const next = new Map<string, StreetMod>()
     for (const entry of entries) {
       if (!entry || typeof entry.key !== 'string') continue
       next.set(entry.key, {
         action: entry.action as ScenarioAction,
         dir: (entry.dir as ScenarioDir) || 'both',
-        name: entry.name || ''
+        name: entry.name || '',
+        ...(typeof entry.group === 'string' && entry.group ? { group: entry.group } : {})
       })
     }
     edgeModifications.value = next
@@ -227,11 +405,14 @@ export const useScenarioStore = defineStore('scenario', () => {
 
   /** What goes to localStorage. */
   function serialize() {
+    // The group is left out when there is none, so a scenario without groups
+    // writes exactly what it used to.
     return Array.from(edgeModifications.value.entries()).map(([key, mod]) => ({
       key,
       action: mod.action,
       dir: mod.dir,
-      name: mod.name
+      name: mod.name,
+      ...(mod.group ? { group: mod.group } : {})
     }))
   }
 
@@ -243,23 +424,36 @@ export const useScenarioStore = defineStore('scenario', () => {
     selected,
     hovered,
     mapMode,
+    tool,
+    brushRadius,
     streets,
 
     // Getters
+    selectedSet,
+    hoveredSet,
     count,
     hasModifications,
     signature,
     hash,
     list,
+    groups,
+    dockRows,
     wire,
 
     // Actions
     get,
     set,
+    setMany,
     remove,
+    removeMany,
     setDir,
+    freeGroupId,
+    removeGroup,
     clear,
     select,
+    toggleSelected,
+    addSelected,
+    setSelectedDir,
     hover,
     setStreets,
     normalizeOneWay,

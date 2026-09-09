@@ -78,11 +78,7 @@ describe('routeDistance', () => {
 })
 
 describe('routeSummaries', () => {
-  const segments = [
-    segment(0, 0, LINE, 3000),
-    segment(0, 1, LINE, 5000),
-    segment(1, 0, LINE, 1000)
-  ]
+  const segments = [segment(0, 0, LINE, 3000), segment(0, 1, LINE, 5000), segment(1, 0, LINE, 1000)]
 
   it('gives one row per vehicle, sorted, with its trips and its worst load', () => {
     const rows = routeSummaries(segments)

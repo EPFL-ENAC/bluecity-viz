@@ -5,10 +5,10 @@ import {
   cvrpHoverStates,
   drawFor,
   GRAPH_SOURCE,
-  POINTER_SOURCE,
   graphLayerIds,
   idFilter,
   laneOffset,
+  POINTER_SOURCE,
   wData,
   wGraph,
   wMod
@@ -253,6 +253,70 @@ describe('drawFor', () => {
     const draw = drawFor([['9-9', { action: 'remove', dir: 'both' }]], streets)
     expect(draw.strokeIds).toEqual([])
     expect(draw.badges).toEqual([])
+  })
+
+  it('draws one badge and one outline for a whole zone', () => {
+    const zone = new Map<string, Street>([
+      ['1-2', street(1, 2, { at: [6.6, 46.5] })],
+      ['3-4', street(3, 4, { fwdId: 20, bwdId: 21, at: [6.601, 46.5] })]
+    ])
+    const shapes: Record<string, [number, number][]> = {
+      '1-2': [
+        [6.6, 46.5],
+        [6.6, 46.501]
+      ],
+      '3-4': [
+        [6.601, 46.5],
+        [6.601, 46.501]
+      ]
+    }
+
+    const draw = drawFor(
+      [
+        ['1-2', { action: '30', dir: 'both', group: 'Valency' }],
+        ['3-4', { action: '30', dir: 'both', group: 'Valency' }]
+      ],
+      zone,
+      new Map([['Valency', { id: 'Valency', keys: ['1-2', '3-4'] }]]),
+      (key) => shapes[key] ?? []
+    )
+
+    expect(draw.badges).toHaveLength(1)
+    expect(draw.badges[0].properties).toMatchObject({ group: 'Valency', label: 'Valency' })
+    // the ink still covers every street of the zone
+    expect(draw.strokeIds.sort((a, b) => a - b)).toEqual([10, 11, 20, 21])
+
+    expect(draw.zones).toHaveLength(1)
+    const ring = draw.zones[0].geometry.coordinates[0]
+    expect(ring).toHaveLength(5)
+    expect(ring[0]).toEqual(ring[ring.length - 1])
+  })
+
+  it('names only the first badge of a wide zone', () => {
+    // two streets 2 km apart, so the zone gets more than one badge
+    const wide = new Map<string, Street>([
+      ['1-2', street(1, 2, { at: [6.6, 46.5] })],
+      ['3-4', street(3, 4, { fwdId: 20, bwdId: 21, at: [6.6, 46.52] })]
+    ])
+    const draw = drawFor(
+      [
+        ['1-2', { action: 'remove', dir: 'both', group: 'Ouest' }],
+        ['3-4', { action: 'remove', dir: 'both', group: 'Ouest' }]
+      ],
+      wide,
+      new Map([['Ouest', { id: 'Ouest', keys: ['1-2', '3-4'] }]])
+    )
+
+    expect(draw.badges.length).toBeGreaterThan(1)
+    expect(draw.badges.filter((badge) => badge.properties.label).length).toBe(1)
+    // no shape was given, so there is nothing to outline
+    expect(draw.zones).toEqual([])
+  })
+
+  it('leaves a street of an unknown group on its own', () => {
+    const draw = drawFor([['1-2', { action: '30', dir: 'both', group: 'gone' }]], streets)
+    expect(draw.badges).toHaveLength(1)
+    expect(draw.badges[0].properties.group).toBe('')
   })
 })
 

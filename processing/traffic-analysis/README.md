@@ -30,6 +30,83 @@ The backend loads `lausanne.graphml` at startup for routing and serves
 The frontend also loads `lausanne_drive.pmtiles` directly as a vector tile
 layer for interactive edge highlighting.
 
+## The whole country
+
+The scenario workbench used to run on Lausanne only. It now runs on any circle
+the user draws in Switzerland, so the backend needs the country. A country
+graph is about a million edges: too big to hold as a routing graph, so it is
+written as a **graph store**, two parquet files cut in about 5 km grid cells.
+The backend reads only the cells under the circle, which takes milliseconds.
+
+```
+switzerland-latest.osm.pbf (Geofabrik, ~520 MB)
+    │
+    ▼
+build_swiss_graph.py         ← osmium filter, then tile by tile:
+    │                          osmnx + speeds + elevation
+    │
+    └── ../../backend/data/swiss_graph/
+             ├── nodes.parquet    one row group per cell
+             ├── edges.parquet    one row group per cell
+             ├── index.json       the grid and the counts per cell
+             └── density.json     counts on a 1 km grid, for the picker
+                      │
+                      ├── generate_graph_tiles.py --store
+                      │       └── ../../frontend/public/geodata/swiss_drive.pmtiles
+                      │
+                      └── make swiss-copy
+                              └── ../../frontend/public/geodata/swiss_graph_density.json
+```
+
+```bash
+make pbf-download          # once, ~520 MB from Geofabrik
+make swiss-all             # elevation + store + tiles + density, about an hour
+```
+
+**The graph is built tile by tile.** osmnx cannot hold the country at once: fed
+the national XML it grows past 20 GB and the kernel kills it. So the country is
+cut in 4 by 3 tiles and each one is built on its own, on a rectangle a bit
+larger than the piece it keeps. The margin matters, osmnx merges chains of
+degree-2 nodes into one edge and a chain cut at a boundary would give a street
+that stops in the middle of nowhere. A node belongs to exactly one tile and an
+edge to the tile of its start node, so nothing is written twice or lost. On a
+seam that cuts through a test circle the result differs from a single build by
+one street out of 2959.
+
+The densest tile (Zurich to St. Gallen) peaks around 5 GB and takes 95 seconds.
+Each tile is cached in the work directory, so a run that dies picks up where it
+stopped. On a machine with less memory, cut smaller tiles:
+
+```bash
+make swiss-store SWISS_TILES=6x5
+```
+
+Try it on a region first, it takes a minute:
+
+```bash
+make swiss-store SWISS_BBOX=6.4,46.4,6.9,46.7
+```
+
+`density.json` has its own grid, five times finer than the store's. The store
+cells are 5 km because that is a good parquet row group, but the picker sums
+them under a 3 km circle and assumes each cell is evenly filled. A town is not
+spread evenly over 25 km2, so at 5 km the picker read 20 to 40 percent low and
+said "too sparse" over towns the server accepts. At 1 km it lands within 3% of
+the server everywhere we checked. The file is 527 kB for the country.
+
+Elevation comes from swissALTIRegio, the national model swisstopo publishes as
+one cloud optimised GeoTIFF. `make dem` does not fetch the 10 GB file: it reads
+the 40 m overview the file already carries and writes a 360 MB local raster in
+about 30 seconds. 40 m is the right scale for the slope of a street. DHM25 is
+retired and its old URL now serves the 200 m model, which is too coarse.
+
+Lausanne keeps its own GraphML: it is the default area, it has the finer
+swissALTI3D elevation, and nothing about it changes.
+
+The store is not committed. In production it is baked into the backend image
+or downloaded at startup, and the two frontend files go to the CDN with
+`make upload-frontend-geodata` from the repo root.
+
 ## Prerequisites
 
 **Python environment** — install [uv](https://docs.astral.sh/uv/):
@@ -179,6 +256,19 @@ processing/traffic-analysis/
 │   └── elevation/
 │       └── *.tif                    Swiss ALTI3D rasters (downloaded)
 └── traffic_analysis.py              Exploratory PoC (requires external data)
+```
+
+## Checking a store
+
+Two scripts in `backend/scripts/` read a store, neither is part of the pipeline:
+
+```bash
+cd ../../backend
+# Cut the Lausanne circle out of the country store and compare it with the
+# GraphML the backend loads today: road types, road length, extra streets.
+uv run python scripts/lausanne_parity.py data/swiss_graph data/lausanne.graphml
+# Write a store from a single GraphML, without the country build.
+uv run python scripts/graphml_to_store.py data/lausanne.graphml data/one_city
 ```
 
 ## Troubleshooting
