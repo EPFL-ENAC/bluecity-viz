@@ -4,7 +4,7 @@ import ShareDialog from '@/components/dialogs/ShareDialog.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcRow from '@/components/ui/BcRow.vue'
 import { useLayersStore } from '@/stores/layers'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 
 // Use the layers store. initializeInvestigations() is called once by HomeView.
 const layersStore = useLayersStore()
@@ -22,6 +22,39 @@ const editInvestigationName = ref('')
 // Create new project functionality
 const creatingNewProject = ref(false)
 const newProjectName = ref('')
+
+// Esc removes the input, which fires blur, and blur saves. Without this flag
+// the cancel would be undone by the save right after it.
+let cancelled = false
+
+// The field we already opened. Vue runs a ref callback on every patch, not
+// only on mount, so without this the text would be selected again on each
+// keystroke and every letter would replace the last one.
+let openedField: HTMLInputElement | null = null
+
+/**
+ * Put the caret in a field the moment it appears, and select what is in it so
+ * typing replaces the old name. The autofocus attribute only works on page
+ * load, not on a node Vue inserts later.
+ */
+function openField(el: unknown) {
+  const input = el as HTMLInputElement | null
+  if (!input) {
+    openedField = null
+    return
+  }
+  if (input === openedField || input === document.activeElement) return
+  openedField = input
+  nextTick(() => {
+    input.focus()
+    input.select()
+  })
+}
+
+function cancelOnEsc(cancel: () => void) {
+  cancelled = true
+  cancel()
+}
 
 // Delete confirmation functionality
 const showDeleteDialog = ref(false)
@@ -76,6 +109,10 @@ function cancelProjectEdit() {
 }
 
 function saveProjectEdit() {
+  if (cancelled) {
+    cancelled = false
+    return
+  }
   if (editingProject.value && editProjectName.value.trim()) {
     const project = layersStore.projects.find((p) => p.id === editingProject.value)
     if (project) {
@@ -96,6 +133,10 @@ function cancelInvestigationEdit() {
 }
 
 function saveInvestigationEdit() {
+  if (cancelled) {
+    cancelled = false
+    return
+  }
   if (editingInvestigation.value && editInvestigationName.value.trim()) {
     const investigation = layersStore.findInvestigation(editingInvestigation.value)
     if (investigation) {
@@ -117,6 +158,10 @@ function cancelProjectCreation() {
 }
 
 function saveNewProject() {
+  if (cancelled) {
+    cancelled = false
+    return
+  }
   if (newProjectName.value.trim()) {
     layersStore.createProject(newProjectName.value.trim())
   }
@@ -204,11 +249,34 @@ function deleteActive() {
       </span>
     </div>
 
-    <div v-if="layersStore.activeInvestigation" class="section__title">
-      {{ layersStore.activeInvestigation.name }}
-    </div>
-    <div v-else class="section__title">No investigation</div>
-    <div v-if="subLine" class="section__sub">{{ subLine }}</div>
+    <!-- Renaming the active investigation happens here, under the pencil, not
+         in the tree below: the field takes the place of the name it edits. -->
+    <template
+      v-if="editingInvestigation && editingInvestigation === layersStore.activeInvestigationId"
+    >
+      <input
+        :ref="openField"
+        v-model="editInvestigationName"
+        class="title-input"
+        aria-label="Investigation name"
+        @keyup.enter="saveInvestigationEdit"
+        @keyup.esc="cancelOnEsc(cancelInvestigationEdit)"
+        @blur="saveInvestigationEdit"
+      />
+      <div class="bc-micro edit-hint">Enter to save · Esc to cancel</div>
+    </template>
+    <template v-else>
+      <div
+        v-if="layersStore.activeInvestigation"
+        class="section__title section__title--edit"
+        title="Double-click to rename"
+        @dblclick="editActive"
+      >
+        {{ layersStore.activeInvestigation.name }}
+      </div>
+      <div v-else class="section__title">No investigation</div>
+      <div v-if="subLine" class="section__sub">{{ subLine }}</div>
+    </template>
 
     <div class="tree">
       <template v-for="project in layersStore.projects" :key="project.id">
@@ -218,11 +286,12 @@ function deleteActive() {
           </button>
           <input
             v-if="editingProject === project.id"
+            :ref="openField"
             v-model="editProjectName"
             class="inline-input"
-            autofocus
+            aria-label="Project name"
             @keyup.enter="saveProjectEdit"
-            @keyup.esc="cancelProjectEdit"
+            @keyup.esc="cancelOnEsc(cancelProjectEdit)"
             @blur="saveProjectEdit"
           />
           <span
@@ -254,14 +323,17 @@ function deleteActive() {
             :indent="inv.id !== layersStore.activeInvestigationId"
             @click="layersStore.switchToInvestigation(inv.id)"
           >
+            <!-- The active investigation is renamed from the title above, so
+                 the two inputs never bind the same model at the same time. -->
             <input
-              v-if="editingInvestigation === inv.id"
+              v-if="editingInvestigation === inv.id && inv.id !== layersStore.activeInvestigationId"
+              :ref="openField"
               v-model="editInvestigationName"
               class="inline-input"
-              autofocus
+              aria-label="Investigation name"
               @click.stop
               @keyup.enter="saveInvestigationEdit"
-              @keyup.esc="cancelInvestigationEdit"
+              @keyup.esc="cancelOnEsc(cancelInvestigationEdit)"
               @blur="saveInvestigationEdit"
             />
             <span v-else @dblclick.stop="startEditingInvestigation(inv.id, inv.name)">{{
@@ -274,11 +346,12 @@ function deleteActive() {
 
       <div v-if="creatingNewProject" class="project-row">
         <input
+          :ref="openField"
           v-model="newProjectName"
           class="inline-input"
-          autofocus
+          aria-label="New project name"
           @keyup.enter="saveNewProject"
-          @keyup.esc="cancelProjectCreation"
+          @keyup.esc="cancelOnEsc(cancelProjectCreation)"
           @blur="saveNewProject"
         />
       </div>
@@ -371,15 +444,45 @@ function deleteActive() {
   color: var(--bc-ink);
 }
 
-.inline-input {
-  flex: 1;
+/* A field must look like one: a hairline box on the panel, the accent when it
+   holds the caret. Shared by the two renames and the new project. */
+.inline-input,
+.title-input {
   min-width: 0;
   font: inherit;
   color: inherit;
-  background: transparent;
-  border: 0;
+  background: var(--bc-panel);
+  border: 1px solid var(--bc-grey-2);
+  border-radius: var(--bc-radius);
   outline: none;
-  padding: 0;
+  padding: 3px 6px;
+  transition: border-color var(--bc-t);
+}
+
+.inline-input:focus,
+.title-input:focus {
+  border-color: var(--bc-accent);
+}
+
+.inline-input {
+  flex: 1;
+}
+
+.title-input {
+  display: block;
+  width: 100%;
+  font-size: var(--bc-fs-display);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.section__title--edit {
+  cursor: text;
+}
+
+.edit-hint {
+  margin-top: 6px;
 }
 
 .new-project {
