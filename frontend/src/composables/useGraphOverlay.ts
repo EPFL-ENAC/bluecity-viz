@@ -33,6 +33,7 @@ import {
   setData,
   setGraphEdges,
   setPointer,
+  ZONE_SOURCE,
   type CvrpRouteRef,
   type PointerFeature,
   type PointerRole
@@ -263,6 +264,12 @@ export function useGraphOverlay(
           data: emptyBadges() as unknown as FeatureCollection
         })
       }
+      if (!map.getSource(ZONE_SOURCE)) {
+        map.addSource(ZONE_SOURCE, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] } as FeatureCollection
+        })
+      }
       if (!map.getSource(POINTER_SOURCE)) {
         map.addSource(POINTER_SOURCE, {
           type: 'geojson',
@@ -330,10 +337,24 @@ export function useGraphOverlay(
     mountedOn = null
   }
 
+  /** The whole path of a street, for the outline of its zone. */
+  function shapeOf(key: string): [number, number][] {
+    const source = graph.value
+    const street = source?.streets.get(key)
+    const id = street?.fwdId ?? street?.bwdId
+    if (!source || id === undefined) return []
+    return (source.collection.features[id]?.geometry.coordinates ?? []) as [number, number][]
+  }
+
   function redraw(): void {
     const map = mapRef.value
     if (!map || mountedOn !== map || !graph.value) return
-    const draw = drawFor(scenarioStore.edgeModifications, graph.value.streets)
+    const draw = drawFor(
+      scenarioStore.edgeModifications,
+      graph.value.streets,
+      scenarioStore.groups,
+      shapeOf
+    )
 
     // the stroke of a one-direction modification rides its own lane
     const lane = new Set(draw.laneIds)

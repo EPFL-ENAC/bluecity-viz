@@ -137,3 +137,37 @@ export function polylineNearSegment(line: Pt[], c0: Pt, c1: Pt, radius: number):
   }
   return false
 }
+
+/**
+ * The smallest polygon that holds every point, walked anticlockwise.
+ *
+ * Monotone chain: sort the points, build the lower side then the upper one.
+ * The scale does not matter, so it runs on lon/lat as well as on pixels. A
+ * flat or tiny input comes back with fewer than 3 points, and the caller then
+ * draws nothing.
+ */
+export function convexHull(points: Pt[]): Pt[] {
+  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  // Drop the duplicates, they only make collinear turns.
+  const unique: Pt[] = []
+  for (const point of sorted) {
+    const last = unique[unique.length - 1]
+    if (!last || last[0] !== point[0] || last[1] !== point[1]) unique.push(point)
+  }
+  if (unique.length < 3) return unique
+
+  function half(list: Pt[]): Pt[] {
+    const out: Pt[] = []
+    for (const point of list) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], point) <= 0) {
+        out.pop()
+      }
+      out.push(point)
+    }
+    out.pop()
+    return out
+  }
+
+  const hull = [...half(unique), ...half([...unique].reverse())]
+  return hull.length < 3 ? unique.slice(0, 2) : hull
+}

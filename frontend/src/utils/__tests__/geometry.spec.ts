@@ -1,12 +1,13 @@
 import {
+  type Pt,
   bbox,
+  convexHull,
   pointInPolygon,
   pointToSegmentDistance,
   polylineIntersectsPolygon,
   polylineNearSegment,
   segmentsDistance,
-  segmentsIntersect,
-  type Pt
+  segmentsIntersect
 } from '@/utils/geometry'
 import { describe, expect, it } from 'vitest'
 
@@ -31,10 +32,12 @@ const NOTCHED: Pt[] = [
 
 describe('bbox', () => {
   it('holds every point', () => {
-    expect(bbox([
-      [2, 5],
-      [8, 1]
-    ])).toEqual([
+    expect(
+      bbox([
+        [2, 5],
+        [8, 1]
+      ])
+    ).toEqual([
       [2, 1],
       [8, 5]
     ])
@@ -61,10 +64,15 @@ describe('pointInPolygon', () => {
   })
 
   it('needs three points to be a shape', () => {
-    expect(pointInPolygon([0, 0], [
-      [0, 0],
-      [1, 1]
-    ])).toBe(false)
+    expect(
+      pointInPolygon(
+        [0, 0],
+        [
+          [0, 0],
+          [1, 1]
+        ]
+      )
+    ).toBe(false)
   })
 })
 
@@ -92,32 +100,52 @@ describe('segmentsIntersect', () => {
 
 describe('polylineIntersectsPolygon', () => {
   it('catches a street with a point inside', () => {
-    expect(polylineIntersectsPolygon([
-      [5, 5],
-      [50, 50]
-    ], SQUARE)).toBe(true)
+    expect(
+      polylineIntersectsPolygon(
+        [
+          [5, 5],
+          [50, 50]
+        ],
+        SQUARE
+      )
+    ).toBe(true)
   })
 
   it('catches a street that only passes through', () => {
     // both ends are outside, the middle crosses the square
-    expect(polylineIntersectsPolygon([
-      [-5, 5],
-      [15, 5]
-    ], SQUARE)).toBe(true)
+    expect(
+      polylineIntersectsPolygon(
+        [
+          [-5, 5],
+          [15, 5]
+        ],
+        SQUARE
+      )
+    ).toBe(true)
   })
 
   it('leaves a street that stays outside', () => {
-    expect(polylineIntersectsPolygon([
-      [20, 20],
-      [30, 30]
-    ], SQUARE)).toBe(false)
+    expect(
+      polylineIntersectsPolygon(
+        [
+          [20, 20],
+          [30, 30]
+        ],
+        SQUARE
+      )
+    ).toBe(false)
   })
 
   it('leaves a street crossing the notch of a concave shape', () => {
-    expect(polylineIntersectsPolygon([
-      [5, 5],
-      [9, 5]
-    ], NOTCHED)).toBe(false)
+    expect(
+      polylineIntersectsPolygon(
+        [
+          [5, 5],
+          [9, 5]
+        ],
+        NOTCHED
+      )
+    ).toBe(false)
   })
 
   it('says no for an empty line', () => {
@@ -180,5 +208,39 @@ describe('polylineNearSegment', () => {
   it('takes a single point line', () => {
     expect(polylineNearSegment([[10, 2]], [0, 0], [20, 0], 3)).toBe(true)
     expect(polylineNearSegment([], [0, 0], [20, 0], 3)).toBe(false)
+  })
+})
+
+describe('convexHull', () => {
+  it('drops the point inside the square', () => {
+    const hull = convexHull([
+      [0, 0],
+      [10, 0],
+      [10, 10],
+      [0, 10],
+      [5, 5]
+    ])
+    expect(hull).toHaveLength(4)
+    expect(hull).not.toContainEqual([5, 5])
+  })
+
+  it('gives back the two ends of a flat line', () => {
+    expect(
+      convexHull([
+        [0, 0],
+        [5, 0],
+        [10, 0]
+      ])
+    ).toHaveLength(2)
+  })
+
+  it('folds the duplicates', () => {
+    expect(
+      convexHull([
+        [1, 1],
+        [1, 1],
+        [1, 1]
+      ])
+    ).toEqual([[1, 1]])
   })
 })
