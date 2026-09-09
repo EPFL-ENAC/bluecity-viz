@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/EPFL-ENAC/bluecity-viz/compare/v0.4.0...v0.4.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **ci:** drop the component prefix from release tags ([bcf3e3d](https://github.com/EPFL-ENAC/bluecity-viz/commit/bcf3e3d119d18bbd9ed1d5de00d000db2a5460e0))
+* **ci:** drop the component prefix from release tags ([1ec6fca](https://github.com/EPFL-ENAC/bluecity-viz/commit/1ec6fcadb307806064c62bc663c69928c39638ac))
+
 ## [0.4.0](https://github.com/EPFL-ENAC/bluecity-viz/compare/bluecity-viz-v0.3.0...bluecity-viz-v0.4.0) (2026-09-07)
 
 
