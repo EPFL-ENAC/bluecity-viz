@@ -346,8 +346,10 @@ function setAction(action: ScenarioAction) {
       (key) => [key, { action, dir, name: nameOf(key), group }] as [string, StreetMod]
     )
   )
-  // The action is the last word: the popover has nothing left to ask.
+  // The action is the last word: the popover has nothing left to ask, and the
+  // map goes back to panning instead of drawing another stroke.
   scenarioStore.select(null)
+  scenarioStore.tool = 'pointer'
 }
 
 function setDir(dir: ScenarioDir) {
@@ -369,6 +371,7 @@ function reset() {
   if (!selection) return
   scenarioStore.removeMany(selection.keys)
   scenarioStore.select(null)
+  scenarioStore.tool = 'pointer'
 }
 
 defineExpose({ hoverRoute: overlay.hoverRoute, focus: overlay.focus })

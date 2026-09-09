@@ -6,7 +6,7 @@ import AreaPickerOverlay from '@/components/map/AreaPickerOverlay.vue'
 import GraphOverlay from '@/components/map/GraphOverlay.vue'
 import { useMapLogic } from '@/composables/useMapLogic'
 import { useCVRPStore } from '@/stores/cvrp'
-import { useScenarioStore } from '@/stores/scenario'
+import { useScenarioStore, type StreetRef } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { computed, inject, ref, watch, type Ref } from 'vue'
 
@@ -38,9 +38,14 @@ function hoverRoute(routeId: number | null) {
   graphOverlay.value?.hoverRoute(routeId)
 }
 
-/** The scenario block asking the map to fit some streets. */
-function focusStreets(keys: string[]) {
-  graphOverlay.value?.focus(keys)
+/**
+ * The scenario block asking the map to fit some streets.
+ *
+ * With a `select`, the popover opens on them once the camera has landed, so a
+ * dock row and a badge on the map do the same thing.
+ */
+function focusStreets(keys: string[], select?: StreetRef) {
+  graphOverlay.value?.focus(keys, select)
 }
 
 // Get the provided map ref from parent

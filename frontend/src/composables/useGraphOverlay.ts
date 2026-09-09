@@ -2,7 +2,7 @@ import { useMapView } from '@/composables/useMapView'
 import { valueOf } from '@/composables/useResultStates'
 import type { EdgeGeometry } from '@/services/trafficAnalysis'
 import { useCVRPStore } from '@/stores/cvrp'
-import { streetKey, useScenarioStore, type ScenarioDir } from '@/stores/scenario'
+import { streetKey, useScenarioStore, type ScenarioDir, type StreetRef } from '@/stores/scenario'
 import { useThemeStore } from '@/stores/theme'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import {
@@ -47,6 +47,22 @@ import { computed, watch, type Ref } from 'vue'
 
 /** The layers the pointer can hit. */
 const PICK_LAYERS = ['bc-graph-one', 'bc-graph-two', 'bc-lanes']
+
+/**
+ * The badge layers, which the pointer hits before the streets.
+ *
+ * The badge of a zone is its handle: clicking it takes every street of the
+ * zone and opens the popover on them, so a zone is edited again the same way
+ * it was made.
+ */
+const BADGE_PICK_LAYERS = [
+  'bc-badge-both-closed',
+  'bc-badge-both-speed',
+  'bc-badge-fwd-closed',
+  'bc-badge-fwd-speed',
+  'bc-badge-bwd-closed',
+  'bc-badge-bwd-speed'
+]
 
 /** The dock hides this much of the map on the right (--bc-dock-w). */
 const DOCK_WIDTH = 340
@@ -573,6 +589,31 @@ export function useGraphOverlay(
   }
 
   /** Which street, and which lane, is under the cursor. */
+  /** The streets a badge under the cursor stands for, its zone or its street. */
+  function badgeAt(event: MapMouseEvent): StreetRef | null {
+    const map = mapRef.value
+    if (!map) return null
+
+    const box: [[number, number], [number, number]] = [
+      [event.point.x - 4, event.point.y - 4],
+      [event.point.x + 4, event.point.y + 4]
+    ]
+    const layers = BADGE_PICK_LAYERS.filter((l) => map.getLayer(l))
+    if (layers.length === 0) return null
+
+    const hits = map.queryRenderedFeatures(box, { layers })
+    if (hits.length === 0) return null
+
+    const properties = hits[0].properties ?? {}
+    const id = typeof properties.group === 'string' ? properties.group : ''
+    const key = typeof properties.key === 'string' ? properties.key : ''
+
+    const group = id ? scenarioStore.groups.get(id) : undefined
+    if (group) return { keys: group.keys, dir: group.dir }
+    if (!key) return null
+    return { keys: [key], dir: scenarioStore.get(key)?.dir ?? 'both' }
+  }
+
   function hitAt(event: MapMouseEvent): EdgeHover | null {
     const map = mapRef.value
     const source = graph.value
@@ -668,6 +709,17 @@ export function useGraphOverlay(
       hoverRoute(null)
       callbacks.onRoute?.(null, { x: event.point.x, y: event.point.y })
 
+      // A badge lights the whole zone it stands for. No card: the popover it
+      // opens is about several streets, one street's numbers would mislead.
+      const badge = badgeAt(event)
+      if (badge) {
+        scenarioStore.hover(badge)
+        callbacks.onHover?.(null, { x: event.point.x, y: event.point.y })
+        const over = mapRef.value
+        if (over) over.getCanvas().style.cursor = 'pointer'
+        return
+      }
+
       const hit = hitAt(event)
       // Hovering points at the street; the lane only matters once we click.
       scenarioStore.hover(hit ? { keys: [hit.key], dir: hit.oneway ? 'both' : hit.dir } : null)
@@ -714,6 +766,17 @@ export function useGraphOverlay(
     // A short drag with a tool on still fires a click. The tool has already
     // said what it caught, so this one is not ours.
     if (scenarioStore.tool !== 'pointer') return
+
+    // A badge sits on top of its street and answers first, so a zone is
+    // re-edited by clicking the sign that says what was done to it.
+    const badge = badgeAt(event)
+    if (badge) {
+      if ((event.originalEvent as MouseEvent).shiftKey) scenarioStore.addSelected(badge.keys)
+      else scenarioStore.select(badge)
+      callbacks.onPick?.({ x: event.point.x, y: event.point.y })
+      return
+    }
+
     const hit = hitAt(event)
 
     if (!hit) {
@@ -781,7 +844,7 @@ export function useGraphOverlay(
    * The dock covers the right of the canvas, so the right padding carries its
    * width on top of the normal margin.
    */
-  function focus(keys: string[]): void {
+  function focus(keys: string[], select?: StreetRef): void {
     const map = mapRef.value
     const source = graph.value
     if (!map || !source || keys.length === 0) return
@@ -806,6 +869,21 @@ export function useGraphOverlay(
       maxZoom: 16,
       duration: 600
     })
+
+    if (!select) return
+
+    // The popover waits for the camera: moving the map clears the selection,
+    // and its screen pixels would point at the old place anyway.
+    const open = (): void => {
+      const centre = bounds.getCenter()
+      const point = map.project(centre)
+      scenarioStore.select(select)
+      callbacks.onPick?.({ x: point.x, y: point.y })
+    }
+
+    // A camera already where it should be never moves, and fires no moveend.
+    if (map.isMoving()) map.once('moveend', open)
+    else open()
   }
 
   function attach(map: MapLibreMap): void {

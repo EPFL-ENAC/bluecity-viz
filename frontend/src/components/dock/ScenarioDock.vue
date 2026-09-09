@@ -12,7 +12,7 @@ import { useMapView } from '@/composables/useMapView'
 import { topAbsorbers, valueOf } from '@/composables/useResultStates'
 import { useCVRPStore } from '@/stores/cvrp'
 import { useLayersStore } from '@/stores/layers'
-import { useScenarioStore } from '@/stores/scenario'
+import { useScenarioStore, type ScenarioDir, type StreetRef } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import type { Map as MapLibre } from 'maplibre-gl'
 import { computed, inject, ref, type Ref } from 'vue'
@@ -27,7 +27,7 @@ import { computed, inject, ref, type Ref } from 'vue'
 
 const emit = defineEmits<{
   (event: 'hover-route', routeId: number | null): void
-  (event: 'focus', keys: string[]): void
+  (event: 'focus', keys: string[], select?: StreetRef): void
 }>()
 
 const layersStore = useLayersStore()
@@ -85,6 +85,16 @@ function changeArea(): void {
 /** Fit the map on the modified streets, or on one of them. */
 function focus(keys: string[]): void {
   if (keys.length) emit('focus', keys)
+}
+
+/**
+ * Fit the map on a row and open its popover there.
+ *
+ * A row and the badge of the same streets do the same thing, so the map is
+ * the one place where a modification is edited.
+ */
+function edit(keys: string[], dir: ScenarioDir): void {
+  if (keys.length) emit('focus', keys, { keys, dir })
 }
 
 const title = computed(() => layersStore.activeInvestigation?.name ?? 'Road closure scenario')
@@ -295,7 +305,7 @@ function litGroup(keys: string[]): boolean {
             class="edge-row edge-row--group edge-row--click"
             :data-lit="litGroup(row.group.keys)"
             title="Zoom to this zone and edit it"
-            @click="focus(row.group.keys)"
+            @click="edit(row.group.keys, row.group.dir)"
             @mouseenter="scenarioStore.hover({ keys: row.group.keys, dir: row.group.dir })"
             @mouseleave="scenarioStore.hover(null)"
           >
@@ -348,8 +358,8 @@ function litGroup(keys: string[]): boolean {
           :key="row.key"
           class="edge-row edge-row--click"
           :data-lit="scenarioStore.hoveredSet.has(row.key)"
-          title="Zoom to this street"
-          @click="focus([row.key])"
+          title="Zoom to this street and edit it"
+          @click="edit([row.key], row.dir)"
           @mouseenter="scenarioStore.hover({ keys: [row.key], dir: row.dir })"
           @mouseleave="scenarioStore.hover(null)"
         >

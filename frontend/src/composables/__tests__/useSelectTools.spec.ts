@@ -2,7 +2,7 @@ import { useSelectTools, type StreetsInBox } from '@/composables/useSelectTools'
 import { useScenarioStore } from '@/stores/scenario'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 
 // A street running east-west at y = 12, and one far to the south.
 const NEAR: [number, number][] = [
@@ -73,11 +73,7 @@ function setup(tool: 'lasso' | 'brush' | 'pointer') {
 
   const map = fakeMap()
   const done = vi.fn()
-  const tools = useSelectTools(
-    ref(map) as never,
-    allStreets,
-    { onDone: done }
-  )
+  const tools = useSelectTools(ref(map) as never, allStreets, { onDone: done })
   tools.attach(map as never)
   return { store, map, tools, done }
 }
@@ -183,5 +179,44 @@ describe('the pointer', () => {
     map.fire('mouseup', 100, 40)
     expect(store.selected).toBeNull()
     expect(map.dragPan.disable).not.toHaveBeenCalled()
+  })
+})
+
+describe('giving the map back', () => {
+  beforeEach(stubFrames)
+
+  it('drops the tool when a result lights the map', async () => {
+    const { store } = setup('lasso')
+    store.mapMode = 'result'
+    await nextTick()
+    expect(store.tool).toBe('pointer')
+  })
+
+  it('drops the tool when the workbench closes', async () => {
+    const { store } = setup('brush')
+    store.isOpen = false
+    await nextTick()
+    expect(store.tool).toBe('pointer')
+  })
+
+  it('leaves the drag to the map while Space is held', () => {
+    const { store, map } = setup('lasso')
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' }))
+
+    map.fire('mousedown', 0, 0)
+    map.fire('mousemove', 100, 0)
+    map.fire('mousemove', 100, 40)
+    map.fire('mouseup', 0, 40)
+
+    expect(map.dragPan.disable).not.toHaveBeenCalled()
+    expect(store.selected).toBeNull()
+
+    // and the tool is back as soon as Space goes up
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space' }))
+    map.fire('mousedown', 0, 0)
+    map.fire('mousemove', 100, 0)
+    map.fire('mousemove', 100, 40)
+    map.fire('mouseup', 0, 40)
+    expect(store.selected?.keys).toEqual(['1-2'])
   })
 })

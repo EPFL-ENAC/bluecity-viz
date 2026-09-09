@@ -18,8 +18,7 @@ import { shallowRef, watch, type Ref } from 'vue'
 
 /** What the overlay draws while a tool is in use. */
 export type ToolShape =
-  | { kind: 'lasso'; points: Pt[] }
-  | { kind: 'brush'; at: Pt; radius: number; trail: Pt[] }
+  { kind: 'lasso'; points: Pt[] } | { kind: 'brush'; at: Pt; radius: number; trail: Pt[] }
 
 /** The streets drawn inside a box, from useGraphOverlay. */
 export type StreetsInBox = (
@@ -43,6 +42,8 @@ export function useSelectTools(
   /** null when no tool is drawing anything. */
   const shape = shallowRef<ToolShape | null>(null)
 
+  /** Space held: the map pans instead of the tool drawing, like in Figma. */
+  let paused = false
   let dragging = false
   let points: Pt[] = []
   let caught = 0
@@ -97,6 +98,8 @@ export function useSelectTools(
     if (!map || !scenarioStore.isOpen || scenarioStore.tool === 'pointer') return
     // Picking an area owns the drag then, and it moves its own circle.
     if (trafficStore.pickMode) return
+    // Space is held: this drag belongs to the map.
+    if (paused) return
 
     // The map must not pan under the stroke.
     event.preventDefault()
@@ -116,7 +119,7 @@ export function useSelectTools(
   }
 
   function onMouseMove(event: MapMouseEvent): void {
-    if (scenarioStore.tool === 'pointer') return
+    if (scenarioStore.tool === 'pointer' || paused) return
     pending = [event.point.x, event.point.y]
     if (frame) return
 
@@ -210,25 +213,63 @@ export function useSelectTools(
   }
 
   function cursorFor(tool: string): string {
+    // Space held: the map is a plain map again, and says so.
+    if (paused) return 'grab'
     if (tool === 'lasso') return 'crosshair'
     // The brush draws its own circle, the arrow would sit on top of it.
     if (tool === 'brush') return 'none'
     return ''
   }
 
+  function setCursor(): void {
+    const map = mapRef.value
+    if (map) map.getCanvas().style.cursor = cursorFor(scenarioStore.tool)
+  }
+
+  /** Typing in a field is not a shortcut. */
+  function isTyping(target: EventTarget | null): boolean {
+    const el = target as HTMLElement | null
+    if (!el || !el.tagName) return false
+    const tag = el.tagName.toLowerCase()
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable
+  }
+
+  /**
+   * Hold Space to pan without leaving the tool.
+   *
+   * Drawing takes the drag, so moving the map used to mean going back to the
+   * pointer and picking the tool again. A stroke already under way is left
+   * alone, only the next one goes to the map.
+   */
+  function onKeyDown(event: KeyboardEvent): void {
+    if (event.code !== 'Space' || paused || isTyping(event.target)) return
+    if (!scenarioStore.isOpen || scenarioStore.tool === 'pointer') return
+    // Space on a focused button would press it.
+    event.preventDefault()
+    paused = true
+    if (!dragging) shape.value = null
+    setCursor()
+  }
+
+  function onKeyUp(event: KeyboardEvent): void {
+    if (event.code !== 'Space' || !paused) return
+    paused = false
+    setCursor()
+  }
+
   watch(
     () => scenarioStore.tool,
-    (tool) => {
+    () => {
       cancel()
-      const map = mapRef.value
-      if (map) map.getCanvas().style.cursor = cursorFor(tool)
+      setCursor()
     }
   )
 
-  // The workbench owns the tools. Closing it, or going to pick an area, puts
-  // the pointer back so the map is a plain map again.
+  // The workbench owns the tools. Closing it, going to pick an area, or
+  // running a tool (the result lights, the scenario steps back) puts the
+  // pointer back, so a drag on the map pans it again.
   watch(
-    () => scenarioStore.isOpen && !trafficStore.pickMode,
+    () => scenarioStore.isOpen && !trafficStore.pickMode && scenarioStore.mapMode === 'scenario',
     (live) => {
       if (!live) scenarioStore.tool = 'pointer'
     }
@@ -240,7 +281,9 @@ export function useSelectTools(
     map.on('mouseup', onMouseUp)
     map.on('mouseout', onMouseOut)
     window.addEventListener('mouseup', onWindowMouseUp)
-    map.getCanvas().style.cursor = cursorFor(scenarioStore.tool)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    setCursor()
   }
 
   function detach(map: MapLibreMap): void {
@@ -250,6 +293,9 @@ export function useSelectTools(
     map.off('mouseup', onMouseUp)
     map.off('mouseout', onMouseOut)
     window.removeEventListener('mouseup', onWindowMouseUp)
+    window.removeEventListener('keydown', onKeyDown)
+    window.removeEventListener('keyup', onKeyUp)
+    paused = false
     map.getCanvas().style.cursor = ''
   }
 
