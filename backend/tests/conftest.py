@@ -155,19 +155,41 @@ STORE_COLS, STORE_ROWS = 40, 40
 STORE_STEP = 0.002  # about 160 m, so a 2 km circle holds a few hundred nodes
 
 
-def build_lattice_store(directory, cut_column=None):
+# Where the lattice people live and work, by (row, column). The dense block
+# sits inside the 2 km test circle (centred near row 29, column 28), so a
+# population weighted sample has to lean towards it.
+DENSE_ROWS = range(30, STORE_ROWS)
+DENSE_COLS = range(30, STORE_COLS)
+
+
+def lattice_population(r: int, c: int):
+    """(residents, jobs_fte) of one lattice node: a dense block, a few houses elsewhere."""
+    if r in DENSE_ROWS and c in DENSE_COLS:
+        return 400, 250.0
+    if (r + c) % 5 == 0:
+        return 3, 0.0
+    return 0, 0.0
+
+
+def build_lattice_store(directory, cut_column=None, population=True):
     """A lattice of two-way streets, written as a graph store.
 
     `cut_column` removes every street crossing that column, which splits the
     lattice in two networks that cannot reach each other. That is the shape a
     circle over a lake or a valley has.
+
+    `population` fills residents and jobs_fte with `lattice_population`.
+    False leaves them out, like a store built without the federal statistics.
     """
-    node_id, xs, ys = [], [], []
+    node_id, xs, ys, residents, jobs_fte = [], [], [], [], []
     for r in range(STORE_ROWS):
         for c in range(STORE_COLS):
             node_id.append(2000 + r * STORE_COLS + c)
             xs.append(7.05 + c * STORE_STEP)
             ys.append(46.05 + r * STORE_STEP)
+            people, jobs = lattice_population(r, c)
+            residents.append(people)
+            jobs_fte.append(jobs)
     node_id = np.array(node_id, dtype=np.int64)
     xs, ys = np.array(xs), np.array(ys)
     pos = {int(n): i for i, n in enumerate(node_id)}
@@ -212,6 +234,9 @@ def build_lattice_store(directory, cut_column=None):
         "street_count": np.full(len(node_id), 3, dtype=np.int16),
         "elevation": np.zeros(len(node_id)),
     }
+    if population:
+        nodes["residents"] = np.array(residents, dtype=np.int32)
+        nodes["jobs_fte"] = np.array(jobs_fte, dtype=np.float32)
     edges = {
         "u": u,
         "v": v,
@@ -255,9 +280,9 @@ def small_area_limits(monkeypatch):
 def make_store(tmp_path):
     """Build a lattice store on demand, with an optional cut in the middle."""
 
-    def _make(cut_column=None):
-        directory = tmp_path / f"store_{cut_column}"
-        build_lattice_store(directory, cut_column=cut_column)
+    def _make(cut_column=None, population=True):
+        directory = tmp_path / f"store_{cut_column}_{population}"
+        build_lattice_store(directory, cut_column=cut_column, population=population)
         return GraphStore.open(directory)
 
     return _make

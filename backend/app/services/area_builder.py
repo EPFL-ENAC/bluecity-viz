@@ -19,7 +19,7 @@ the component search.
 import logging
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 import igraph as ig
@@ -97,6 +97,9 @@ class Selection:
     street_count: np.ndarray
     elevation: np.ndarray
     edges: Dict[str, np.ndarray]
+    # raw counts from the federal statistics, zeros when the store has none
+    residents: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.int32))
+    jobs_fte: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.float32))
 
     @property
     def n_nodes(self) -> int:
@@ -134,6 +137,8 @@ def select(store: GraphStore, spec: AreaSpec, with_geometry: bool = False) -> Se
         street_count=nodes["street_count"][inside],
         elevation=nodes["elevation"][inside],
         edges=_take_edges(edges, keep),
+        residents=nodes["residents"][inside],
+        jobs_fte=nodes["jobs_fte"][inside],
     )
 
 
@@ -196,6 +201,8 @@ def restrict(selection: Selection, mask: np.ndarray) -> Selection:
         street_count=selection.street_count[mask],
         elevation=selection.elevation[mask],
         edges=_take_edges(selection.edges, keep),
+        residents=selection.residents[mask],
+        jobs_fte=selection.jobs_fte[mask],
     )
 
 
@@ -325,6 +332,8 @@ def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> Are
         node_x=selection.x,
         node_y=selection.y,
         street_count=selection.street_count,
+        residents=selection.residents,
+        jobs_fte=selection.jobs_fte,
     )
     area = AreaGraph(meta, mirror, dynamic=True)
 

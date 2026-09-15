@@ -142,6 +142,15 @@ class RecalculateRequest(BaseModel):
             "Resample trip destinations using travel times on the modified graph (elastic demand)"
         ),
     )
+    node_weighting: Literal["uniform", "population"] = Field(
+        default="uniform",
+        description=(
+            "How the OD pairs are drawn. 'uniform': every junction alike. "
+            "'population': junctions weighted by their residents and jobs "
+            "(422 no_population_data on an area without them). Each weighting "
+            "has its own OD sample and baseline."
+        ),
+    )
 
     @field_validator("od_pairs")
     @classmethod

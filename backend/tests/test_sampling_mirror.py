@@ -10,12 +10,15 @@ import hashlib
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from app.services.graph_mirror import GraphMirror
 from app.services.sampling.betweenness import (
+    POPULATION_SCORE_FLOOR,
     considered_nodes_from_mirror,
     get_considered_nodes,
+    population_score,
 )
 from app.services.sampling.config import SamplingConfig
 from app.services.sampling.od_sampler import (
@@ -70,11 +73,77 @@ def test_same_node_pool_on_the_synthetic_graph(synthetic_graph):
     assert list(new.values) == list(old.values)
 
 
-def test_node_pool_needs_the_graph_for_a_real_weight_column(synthetic_graph):
+def test_node_pool_refuses_a_column_the_mirror_does_not_have(synthetic_graph):
     with pytest.raises(ValueError, match="node_weight_col"):
         considered_nodes_from_mirror(
-            GraphMirror(synthetic_graph), np.random.RandomState(42), 100, "population"
+            GraphMirror(synthetic_graph), np.random.RandomState(42), 100, "elevation"
         )
+
+
+# ── Population weight ─────────────────────────────────────────────────────────
+
+
+def test_the_score_is_the_mean_of_the_two_percentiles():
+    # 20 nodes, counts 1..20: the node with 15 residents is at the 75th
+    # percentile, the node with 17 jobs at the 85th.
+    residents = np.arange(1, 21)
+    jobs = np.arange(1, 21)
+    jobs[[14, 16]] = jobs[[16, 14]]  # node 14 now has 17 jobs
+
+    score = population_score(residents, jobs)
+
+    assert score[14] == pytest.approx(80.0)
+    assert score.max() == pytest.approx(100.0)
+    assert np.all((score >= POPULATION_SCORE_FLOOR) & (score <= 100.0))
+
+
+def test_a_node_with_nobody_keeps_the_floor():
+    residents = np.array([0, 10, 0, 50])
+    jobs = np.array([0, 0, 5, 20])
+
+    score = population_score(residents, jobs)
+
+    assert score[0] == POPULATION_SCORE_FLOOR, "no resident, no job: floor, not out of the draw"
+    # a zero ranks 0, it does not share the average rank of all the zeros
+    assert score[1] == pytest.approx(100 * (0.75 + 0) / 2)
+    assert score[3] == pytest.approx(100.0)
+
+
+def test_the_population_pool_carries_the_score(synthetic_graph):
+    graph = synthetic_graph.copy()
+    for i, node in enumerate(graph.nodes):
+        graph.nodes[node]["residents"] = i * 10
+        graph.nodes[node]["jobs_fte"] = 0.0 if i % 2 else float(i)
+    mirror = GraphMirror(graph)
+
+    pool = considered_nodes_from_mirror(mirror, np.random.RandomState(42), 100, "population")
+
+    keep = mirror.street_count >= 3
+    assert list(pool.index) == list(mirror.node_ids[keep])
+    assert np.allclose(pool.values, population_score(mirror.residents[keep], mirror.jobs_fte[keep]))
+    assert mirror.has_population
+
+
+def test_a_skewed_population_still_draws_a_small_pool(synthetic_graph):
+    """One node holds almost everybody: the pool draw must not refuse it.
+
+    The pool is drawn uniformly, the score only weighs the OD draws later.
+    """
+    graph = synthetic_graph.copy()
+    for i, node in enumerate(graph.nodes):
+        graph.nodes[node]["residents"] = 10_000 if i == 0 else 0
+        graph.nodes[node]["jobs_fte"] = 0.0
+    mirror = GraphMirror(graph)
+    score = pd.Series(population_score(mirror.residents, mirror.jobs_fte), index=mirror.node_ids)
+
+    pool = considered_nodes_from_mirror(mirror, np.random.RandomState(42), 5, "population")
+
+    assert len(pool) == 5
+    assert np.allclose(pool.values, score[pool.index].values)
+
+
+def test_a_graph_without_population_says_so(synthetic_graph):
+    assert not GraphMirror(synthetic_graph).has_population
 
 
 @pytest.mark.skipif(not GRAPH.exists(), reason=f"graph not found: {GRAPH}")

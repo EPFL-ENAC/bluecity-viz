@@ -83,7 +83,12 @@ def get_considered_nodes(
     logger.info(f"{len(n):,} nodes available for sampling.")
 
     if len(n) > max_nodes:
-        n = n.sample(max_nodes, random_state=rng, replace=False, weights=n)
+        # The pool is drawn uniformly: it only spreads the junctions of the
+        # travel time matrix. The population score weighs the origins and the
+        # destinations later, once. Weighting the pool too would count it
+        # twice, and pandas refuses a skewed draw without replacement.
+        pool_weights = n if node_weight_col == "dummy" else None
+        n = n.sample(max_nodes, random_state=rng, replace=False, weights=pool_weights)
         logger.info(f"Sampled {max_nodes:,} nodes for processing.")
 
     return n
@@ -121,6 +126,43 @@ def edge_betweenness_igraph(
     return bc_dict
 
 
+# The node weights the mirror knows. "dummy" is uniform, every junction weighs
+# 1. "population" is the score of `population_score`.
+MIRROR_NODE_WEIGHTS = ("dummy", "population")
+
+# Weight of a node with no resident and no job. Not 0: a rural area has many
+# such junctions, and a 0 would take them out of the draw completely, so a
+# trip could never start at the edge of a village. 1 against up to 100 keeps
+# them rare.
+POPULATION_SCORE_FLOOR = 1.0
+
+
+def population_score(residents, jobs_fte) -> np.ndarray:
+    """Node weight from its residents and jobs, from 1 to 100.
+
+    ``node_coef = 100 * (rank_pct(residents) + rank_pct(jobs_fte)) / 2``, so a
+    node at the 75th percentile of residents and the 85th of jobs scores 80.
+    The ranks are over the nodes given, which is one area: the score says
+    "busy for this area", not "busy for Switzerland".
+
+    Ties share their average rank (pandas default). A count of 0 ranks 0, not
+    the average rank of all the zeros: in a town half the junctions have no
+    job at all, and they would otherwise get a quarter of the top weight.
+    The score then never goes under ``POPULATION_SCORE_FLOOR``.
+    """
+    residents = pd.Series(np.asarray(residents, dtype=np.float64))
+    jobs_fte = pd.Series(np.asarray(jobs_fte, dtype=np.float64))
+    if residents.empty:
+        return np.empty(0, dtype=np.float64)
+
+    def rank_pct(values: pd.Series) -> np.ndarray:
+        ranks = values.rank(pct=True).to_numpy()
+        return np.where(values.to_numpy() > 0, ranks, 0.0)
+
+    score = 100.0 * (rank_pct(residents) + rank_pct(jobs_fte)) / 2.0
+    return np.maximum(score, POPULATION_SCORE_FLOOR)
+
+
 def considered_nodes_from_mirror(
     mirror,
     rng: np.random.RandomState,
@@ -133,25 +175,36 @@ def considered_nodes_from_mirror(
     the same index order as the GeoDataFrame the NetworkX version builds, and
     ``sample`` draws exactly the same nodes for the same seed.
 
-    Only the "dummy" weight column exists on the mirror: the mirror does not
-    carry arbitrary node attributes.
+    The mirror does not carry arbitrary node attributes, so only the weights
+    of ``MIRROR_NODE_WEIGHTS`` exist: "dummy" (uniform) and "population"
+    (residents and jobs, see ``population_score``). The score is ranked over
+    all the junctions, and the pool is drawn uniformly from them.
     """
-    if node_weight_col != "dummy":
+    if node_weight_col not in MIRROR_NODE_WEIGHTS:
         raise ValueError(
-            f"node_weight_col={node_weight_col!r} needs the NetworkX graph, "
-            "the mirror only knows the uniform 'dummy' weight"
+            f"node_weight_col={node_weight_col!r} is not known on the graph mirror, "
+            f"use one of {MIRROR_NODE_WEIGHTS}"
         )
 
     keep = mirror.street_count >= 3
+    if node_weight_col == "population":
+        weights = population_score(mirror.residents[keep], mirror.jobs_fte[keep])
+    else:
+        weights = 1
     n = pd.Series(
-        1,
+        weights,
         index=pd.Index(mirror.node_ids[keep], name="osmid"),
         name=node_weight_col,
     )
     logger.info(f"{len(n):,} nodes available for sampling.")
 
     if len(n) > max_nodes:
-        n = n.sample(max_nodes, random_state=rng, replace=False, weights=n)
+        # The pool is drawn uniformly: it only spreads the junctions of the
+        # travel time matrix. The population score weighs the origins and the
+        # destinations later, once. Weighting the pool too would count it
+        # twice, and pandas refuses a skewed draw without replacement.
+        pool_weights = n if node_weight_col == "dummy" else None
+        n = n.sample(max_nodes, random_state=rng, replace=False, weights=pool_weights)
         logger.info(f"Sampled {max_nodes:,} nodes for processing.")
 
     return n

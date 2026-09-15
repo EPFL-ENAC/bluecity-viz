@@ -173,6 +173,48 @@ def test_two_areas_never_share_a_baseline_etag(areas_client):
     assert first.headers["etag"] != second.headers["etag"]
 
 
+def test_the_population_weighting_gives_other_numbers(areas_client):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    url = f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100"
+
+    uniform = areas_client.get(url)
+    population = areas_client.get(url + "&node_weighting=population")
+
+    assert uniform.status_code == population.status_code == 200
+    assert uniform.headers["etag"] != population.headers["etag"]
+    assert uniform.json()["edge_usage"] != population.json()["edge_usage"]
+
+    result = areas_client.post(
+        "/api/v1/routes/recalculate",
+        json={
+            "area_id": area_id,
+            "od_pairs": 100,
+            "edge_modifications": [],
+            "node_weighting": "population",
+        },
+    )
+    assert result.status_code == 200
+    assert result.json()["new_edge_usage"]
+
+
+def test_population_on_a_graph_without_it_is_a_422(areas_client):
+    baseline = areas_client.get("/api/v1/routes/baseline?od_pairs=10&node_weighting=population")
+    result = areas_client.post(
+        "/api/v1/routes/recalculate",
+        json={"edge_modifications": [], "od_pairs": 10, "node_weighting": "population"},
+    )
+
+    for answer in (baseline, result):
+        assert answer.status_code == 422
+        assert answer.json()["detail"]["code"] == "no_population_data"
+
+
+def test_an_unknown_weighting_is_refused(areas_client):
+    answer = areas_client.get("/api/v1/routes/baseline?od_pairs=10&node_weighting=cats")
+
+    assert answer.status_code == 422
+
+
 # ── Losing an area ────────────────────────────────────────────────────────────
 
 
