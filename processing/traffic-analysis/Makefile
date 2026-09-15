@@ -1,5 +1,6 @@
 .PHONY: help elevation network geojson tiles copy all clean clean-all pbf-download pbf-lausanne \
-        dem swiss-store swiss-tiles swiss-copy swiss-all bfs-download swiss-store-population
+        dem swiss-store swiss-tiles swiss-copy swiss-all bfs-download swiss-store-population \
+        swiss-boundaries swiss-communes
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -41,6 +42,16 @@ BFS_DIR            := .data/bfs
 STATPOP_CSV        := $(BFS_DIR)/statistik-bevoelkerung_haushalte_2025_ha_2056.csv
 STATENT_CSV        := $(BFS_DIR)/betriebszaehlungen_2024_ha_2056.csv
 
+# The municipal boundaries, for the "pick municipalities" area mode
+SWISS_BOUNDARIES_RELEASE := 2026-01
+SWISS_BOUNDARIES_URL     := https://data.geo.admin.ch/ch.swisstopo.swissboundaries3d/swissboundaries3d_$(SWISS_BOUNDARIES_RELEASE)/swissboundaries3d_$(SWISS_BOUNDARIES_RELEASE)_2056_5728.gpkg.zip
+# The release is in the directory name: the build script reads it from there.
+SWISS_BOUNDARIES_DIR     := .data/swissboundaries3d_$(SWISS_BOUNDARIES_RELEASE)
+SWISS_BOUNDARIES         ?= $(SWISS_BOUNDARIES_DIR)/swissBOUNDARIES3D_1_5_LV95_LN02.gpkg
+SWISS_COMMUNES           := $(BACKEND_DATA)/swiss_communes.parquet
+SWISS_COMMUNES_INDEX     := $(FRONTEND_GEODATA)/swiss_communes.json
+SWISS_COMMUNES_PMTILES   := $(FRONTEND_GEODATA)/swiss_communes.pmtiles
+
 # ---------------------------------------------------------------------------
 # Help
 # ---------------------------------------------------------------------------
@@ -66,10 +77,13 @@ help:
 	@echo "  make swiss-store    Build the country graph store (~20 min, tile by tile)"
 	@echo "  make swiss-tiles    Cut the country network into PMTiles"
 	@echo "  make swiss-copy     Copy density.json to the frontend"
-	@echo "  make swiss-all      The three above"
+	@echo "  make swiss-boundaries  Download swissBOUNDARIES3D (swisstopo, ~250 MB)"
+	@echo "  make swiss-communes     Municipalities for the backend, the picker index and tiles"
+	@echo "  make swiss-all      All of the above"
 	@echo "  make swiss-store-population  Add residents and jobs to the store, roads untouched"
 	@echo "  Try it small first:  make swiss-store SWISS_BBOX=6.4,46.4,6.9,46.7"
 	@echo "  Less memory:         make swiss-store SWISS_TILES=6x5"
+	@echo "  A local copy:        make swiss-communes SWISS_BOUNDARIES=/path/to/HOHEITSGEBIET.shp"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  make clean       Remove generated GeoJSON and PMTiles"
@@ -221,7 +235,36 @@ swiss-copy: ## The small file the picker sums under the circle
 	@cp $(SWISS_STORE)/density.json $(SWISS_DENSITY)
 	@echo "✓ $(SWISS_DENSITY)"
 
-swiss-all: dem swiss-store swiss-tiles swiss-copy
+# ---------------------------------------------------------------------------
+# The municipalities — pick an area by its official boundaries
+# ---------------------------------------------------------------------------
+#
+# swissBOUNDARIES3D from swisstopo. Any release works, and so does the shp of
+# an older one: pass SWISS_BOUNDARIES=... to use a copy you already have.
+# ---------------------------------------------------------------------------
+
+swiss-boundaries: $(SWISS_BOUNDARIES) ## Download swissBOUNDARIES3D
+
+$(SWISS_BOUNDARIES_DIR)/%.gpkg:
+	@mkdir -p $(SWISS_BOUNDARIES_DIR)
+	wget $(SWISS_BOUNDARIES_URL) -O $(SWISS_BOUNDARIES_DIR)/boundaries.gpkg.zip
+	unzip -o $(SWISS_BOUNDARIES_DIR)/boundaries.gpkg.zip -d $(SWISS_BOUNDARIES_DIR)
+	@rm $(SWISS_BOUNDARIES_DIR)/boundaries.gpkg.zip
+	@test -f $@ || (echo "The zip has no $@, look in $(SWISS_BOUNDARIES_DIR)" && exit 1)
+
+swiss-communes: ## The municipalities: backend parquet, picker index and outline tiles
+	@test -f $(SWISS_BOUNDARIES) || (echo "Missing $(SWISS_BOUNDARIES). Run 'make swiss-boundaries'." && exit 1)
+	@mkdir -p $(BACKEND_DATA) $(FRONTEND_GEODATA)
+	uv run python build_municipalities.py \
+		--boundaries $(SWISS_BOUNDARIES) \
+		--parquet $(SWISS_COMMUNES) \
+		--index $(SWISS_COMMUNES_INDEX) \
+		--pmtiles $(SWISS_COMMUNES_PMTILES)
+	@echo "✓ $(SWISS_COMMUNES)"
+	@echo "✓ $(SWISS_COMMUNES_INDEX)"
+	@echo "✓ $(SWISS_COMMUNES_PMTILES)"
+
+swiss-all: dem swiss-store swiss-tiles swiss-copy swiss-communes
 
 # ---------------------------------------------------------------------------
 # Full pipeline
