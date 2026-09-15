@@ -5,7 +5,7 @@ import { scaleSequential } from 'd3-scale'
 import { interpolateViridis } from 'd3-scale-chromatic'
 import type { FeatureCollection } from 'geojson'
 import { defineStore } from 'pinia'
-import { computed, markRaw, ref, shallowRef } from 'vue'
+import { computed, markRaw, ref, shallowRef, watch } from 'vue'
 
 // Okabe-Ito palette: colour-blind safe, and the data-viz palette of the
 // EPFL design system. 8 colours, reused past the 8th vehicle.
@@ -120,6 +120,17 @@ export const useCVRPStore = defineStore('cvrp', () => {
     centroids.value = markRaw(await fetchCVRPCentroids(wasteType.value))
     showCentroids.value = true
   }
+
+  // The points are fetched for one waste type. Another type means other bins,
+  // so drop them, and fetch the new ones when they are on the map.
+  watch(wasteType, () => {
+    centroids.value = null
+    if (!showCentroids.value) return
+    loadCentroids().catch((error) => {
+      showCentroids.value = false
+      console.error('Failed to load centroids:', error)
+    })
+  })
 
   function togglePanel() {
     isOpen.value = !isOpen.value

@@ -1,39 +1,56 @@
 /**
- * What the map shows, and which half of the dock is lit.
+ * What the map shows, which step of the dock is open, and whether the graph can
+ * be edited.
  *
- * The dock has two zones: the scenario (the modified edges) on top, the tool
- * (the tabs and their body) below. Exactly one is lit, and the map draws that
- * one: the ink scenario, or the active tab's result. The other zone is dimmed,
- * which is what tells the user it is not on the map right now.
+ * Each tool is a storyline of three steps: Model, Scenario, Results. Only one
+ * is open, and the map draws what that step is about: the base network, the
+ * ink scenario, or the tool's result.
  *
- * `scenarioStore.mapMode` holds which zone is lit. Everything else here is
- * derived, so there is one place to ask "what is on the map".
+ * Two pieces of state decide it. The phase (stores/storyline.ts): in `init`
+ * the user sets the model, the graph is read only and no result is drawn. In
+ * `simulation` the network opens for editing. Then `scenarioStore.mapMode`
+ * says whether the Scenario or the Results step is open. Everything else here
+ * is derived, so there is one place to ask "what is on the map".
  */
 import { useCVRPStore } from '@/stores/cvrp'
 import { useScenarioStore } from '@/stores/scenario'
+import { useStorylineStore, type StoryPhase } from '@/stores/storyline'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { computed, type ComputedRef } from 'vue'
 
 /** The tool whose result is drawn, or null when the map shows the ink scenario. */
 export type ShownResult = 'routing' | 'cvrp' | null
 
-/** The dock zone drawn at 40 %, or null when neither is. */
-export type DimmedZone = 'scenario' | 'tool' | null
+/** The open step of the tool's storyline. */
+export type StoryStepName = 'model' | 'scenario' | 'results'
 
 export interface MapView {
   activeHasResult: ComputedRef<boolean>
+  phase: ComputedRef<StoryPhase>
+  editable: ComputedRef<boolean>
   shown: ComputedRef<ShownResult>
-  dimmed: ComputedRef<DimmedZone>
+  step: ComputedRef<StoryStepName>
 }
 
 export function useMapView(): MapView {
   const scenarioStore = useScenarioStore()
   const trafficStore = useTrafficAnalysisStore()
   const cvrpStore = useCVRPStore()
+  const storyline = useStorylineStore()
 
   /** Only the tab you are on counts, the other tool never draws. */
   const activeHasResult = computed(() =>
     scenarioStore.activeTab === 'cvrp' ? cvrpStore.hasResult : trafficStore.hasCalculatedRoutes
+  )
+
+  /** The phase of the tab you are on. */
+  const phase = computed<StoryPhase>(() => storyline.phaseOf(scenarioStore.activeTab))
+
+  // The pointer edits the graph only once the model is validated. Before that
+  // the graph is a picture of the base network: no hover card, no popover, no
+  // lasso. Picking an area owns the pointer too.
+  const editable = computed(
+    () => scenarioStore.isOpen && !trafficStore.pickMode && phase.value === 'simulation'
   )
 
   // Closing the workbench takes the overlay off the map, so nothing is shown
@@ -42,18 +59,19 @@ export function useMapView(): MapView {
   const shown = computed<ShownResult>(() =>
     scenarioStore.isOpen &&
     !trafficStore.pickMode &&
+    phase.value === 'simulation' &&
     scenarioStore.mapMode === 'result' &&
     activeHasResult.value
       ? scenarioStore.activeTab
       : null
   )
 
-  // Nothing to compete with means nothing to dim: with no result the map can
-  // only show the scenario, so both zones stay full ink.
-  const dimmed = computed<DimmedZone>(() => {
-    if (!activeHasResult.value || trafficStore.pickMode) return null
-    return scenarioStore.mapMode === 'result' ? 'scenario' : 'tool'
+  // The Results step opens only when there is a result to read. Without one
+  // the user is on the Scenario step, whatever mapMode says.
+  const step = computed<StoryStepName>(() => {
+    if (phase.value !== 'simulation') return 'model'
+    return scenarioStore.mapMode === 'result' && activeHasResult.value ? 'results' : 'scenario'
   })
 
-  return { activeHasResult, shown, dimmed }
+  return { activeHasResult, phase, editable, shown, step }
 }
