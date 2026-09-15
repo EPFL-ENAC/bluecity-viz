@@ -5,9 +5,9 @@ import vuetify from 'vite-plugin-vuetify'
 import { configDefaults, defineConfig } from 'vitest/config'
 
 // https://vitejs.dev/config/
-// Git worktrees run one backend and one vite per branch. wt-setup.sh writes the
-// pair of ports in .env.worktree and tmux-dev.sh exports them, so this config
-// reads them from the environment. The main checkout keeps 5173 and 8000.
+// Git worktrees run one backend and one vite per branch. wtx writes the ports
+// in .env.worktree and every pane exports them, so this config reads them from
+// the environment. The main checkout keeps 5173 and 8000.
 const backendPort = process.env.BACKEND_PORT || '8000'
 
 // One vendor chunk per big library, so a change in app code does not

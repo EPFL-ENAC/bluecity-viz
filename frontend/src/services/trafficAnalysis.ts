@@ -5,7 +5,7 @@ import type { EdgeUsageStats } from '@/stores/trafficAnalysis'
 const isDev = import.meta.env.DEV
 
 // Relative in dev too: vite proxies /api to this checkout's own backend, whose
-// port changes per git worktree (see vite.config.ts and docs/worktree-env/).
+// port changes per git worktree (wtx writes the ports in .env.worktree).
 const API_BASE_URL = '/api/v1/routes'
 const AREAS_BASE_URL = '/api/v1/areas'
 

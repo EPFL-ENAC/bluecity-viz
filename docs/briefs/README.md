@@ -11,7 +11,7 @@ worktrees from `origin/dev` and fires the brief in each `claude` pane.
    and commit it as `chore(backend): ruff format` if it changes files. Two sessions add ruff to
    CI; if dev is not clean, both would reformat every file and conflict.
 3. `git status` in the main checkout must be clean (a dirty `frontend/package-lock.json`
-   blocks `wt-land`; `git checkout frontend/package-lock.json` drops the npm drift).
+   blocks `wtx land`; `git checkout frontend/package-lock.json` drops the npm drift).
 
 ## Sessions
 
@@ -29,7 +29,7 @@ worktrees from `origin/dev` and fires the brief in each `claude` pane.
 File ownership is written in each brief. Shared files have one owner; the other sessions
 keep the public names that owner depends on.
 
-## Landing order (from the main checkout, `make wt-land BRANCH=...`)
+## Landing order (from the main checkout, `wtx land <branch>`)
 
 1. S5 (mechanical: deps, tsconfig, CI, dead files). Everyone rebases across it early.
 2. S6 (backend, owns `uv.lock` first, gives the pytest harness).
@@ -42,7 +42,7 @@ keep the public names that owner depends on.
    anything still open.
 8. FINAL, in a fresh worktree from dev with S7 in.
 
-S1 to S6 landed on dev on 2026-09-07 with `make wt-land BRANCH=... MODE=--local`. Use
+S1 to S6 landed on dev on 2026-09-07 with `wtx land <branch> --local`. Use
 that mode: it merges with `--no-ff`, runs lint:check, type-check and ruff on the merged
 tree, and does not rebase, so a branch that merged `origin/dev` lands as it is.
 

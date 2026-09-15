@@ -15,8 +15,8 @@ pnpm run dev
 The dev server listens on 5173, or on `FRONTEND_PORT` when it is set. It
 proxies `/api` and `/data` to the backend on `BACKEND_PORT` (8000 by
 default), so the app always calls the backend on a relative path, in dev and
-in production alike. Git worktrees get their own pair of ports, see
-[docs/worktree-env/](../docs/worktree-env/).
+in production alike. Git worktrees get their own pair of ports, written by
+wtx in `.env.worktree` (see `wtx.toml` at the repo root).
 
 ## Scripts
 

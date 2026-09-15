@@ -96,9 +96,10 @@ CLAUDE.md.
 
 ## Working on several branches at once
 
-The repo has a git worktree setup: one checkout, one tmux session and one
-pair of ports per branch. `make go BRANCH=feat/x` creates it and attaches.
-The full guide is in [docs/worktree-env/](docs/worktree-env/).
+The repo uses [wtx](https://github.com/EPFL-ENAC/wtx): one checkout, one
+tmux session and one pair of ports per branch. `wtx go <branch>` creates it
+and attaches. Every setting is in `wtx.toml`, and the rules for working in a
+worktree are in the "Dev servers and worktrees" section of CLAUDE.md.
 
 ## Reporting issues
 
