@@ -9,11 +9,13 @@ import {
   fetchGraphInfo,
   type AreaInfo,
   type AreaLimits,
+  type AreaOutline,
   type AreaSelection,
   type ImpactStatistics,
   type NodeWeighting
 } from '@/services/trafficAnalysis'
 import { useCVRPStore } from '@/stores/cvrp'
+import type { CircleArea } from '@/stores/layers/types'
 import { useScenarioStore } from '@/stores/scenario'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleDivergingSymlog, scaleSequential } from 'd3-scale'
@@ -25,6 +27,11 @@ import { computed, markRaw, ref, shallowRef } from 'vue'
 // circle starts. The map centre wins when the caller knows it.
 const DEFAULT_CENTRE = { lon: 6.6323, lat: 46.5197 }
 const DEFAULT_RADIUS_M = 3000
+
+/** A copy the picker can change without touching the area behind it. */
+function copyArea(area: AreaSelection): AreaSelection {
+  return area.kind === 'municipalities' ? { ...area, ofsIds: [...area.ofsIds] } : { ...area }
+}
 
 type ColorScale = ((value: number) => string) | null
 type LegendMode =
@@ -127,6 +134,10 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const areaInfo = shallowRef<AreaInfo | null>(null)
   const isBuildingArea = ref(false)
   const areaError = shallowRef<{ code?: string; message: string } | null>(null)
+  // The outline of a set of communes, for the ring on the map. Never saved:
+  // the picker hands over the one it previewed, and the server gives it back
+  // when the area is built, so a shared link draws it too.
+  const areaOutline = shallowRef<AreaOutline | null>(null)
 
   /**
    * The name of the network the map has to show.
@@ -142,6 +153,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const pickMode = ref(false)
   const draftArea = ref<AreaSelection | null>(null)
   const areaLimits = shallowRef<AreaLimits | null>(null)
+  // The circle the user had before switching to communes, so switching back
+  // does not lose it. UI only.
+  let lastCircle: CircleArea | null = null
 
   // Filled once from /graph-info: the server default, the most it accepts, and
   // the count the "full" choice sends (the set really sampled at startup).
@@ -534,6 +548,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     area.value = selection
     areaId.value = null
     areaInfo.value = null
+    areaOutline.value = null
     areaError.value = null
     areaPromise = null
     clearResults()
@@ -572,6 +587,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         if (areaKey(area.value) !== wanted) return areaId.value
         areaId.value = info.id
         areaInfo.value = info
+        areaOutline.value = info.outline ?? null
         return info.id
       })
       .catch((error: unknown) => {
@@ -591,22 +607,78 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     return request
   }
 
-  /** Open the picker on the current circle, or on a fresh one. */
+  /** A circle to start from: the last one, or a fresh one where the map looks. */
+  function freshCircle(centre?: { lon: number; lat: number }): CircleArea {
+    return {
+      kind: 'circle',
+      lon: centre?.lon ?? DEFAULT_CENTRE.lon,
+      lat: centre?.lat ?? DEFAULT_CENTRE.lat,
+      radiusM: DEFAULT_RADIUS_M
+    }
+  }
+
+  /** Open the picker on the current area, or on a fresh circle. */
   function enterPickMode(fallback?: { lon: number; lat: number }) {
-    draftArea.value = area.value
-      ? { ...area.value }
-      : {
-          kind: 'circle',
-          lon: fallback?.lon ?? DEFAULT_CENTRE.lon,
-          lat: fallback?.lat ?? DEFAULT_CENTRE.lat,
-          radiusM: DEFAULT_RADIUS_M
-        }
+    const current = area.value
+    lastCircle = current?.kind === 'circle' ? { ...current } : null
+    draftArea.value = current ? copyArea(current) : freshCircle(fallback)
     pickMode.value = true
   }
 
-  /** Close the picker. Confirming makes the draft the area of the scenario. */
-  function exitPickMode(confirm: boolean) {
-    if (confirm && draftArea.value) setArea({ ...draftArea.value })
+  /**
+   * Switch the picker between the circle and the communes.
+   *
+   * Each mode keeps what it had: back to the circle gives the last circle, and
+   * the communes start from the area when it is already a set of communes.
+   */
+  function setDraftKind(kind: AreaSelection['kind'], centre?: { lon: number; lat: number }) {
+    const draft = draftArea.value
+    if (!draft || draft.kind === kind) return
+    if (kind === 'circle') {
+      draftArea.value = lastCircle ? { ...lastCircle } : freshCircle(centre)
+      return
+    }
+    if (draft.kind === 'circle') lastCircle = { ...draft }
+    const current = area.value
+    draftArea.value =
+      current?.kind === 'municipalities'
+        ? copyArea(current)
+        : { kind: 'municipalities', ofsIds: [] }
+  }
+
+  /** Add a commune to the draft, or take it out when it is already in. */
+  function toggleDraftMunicipality(id: number) {
+    const draft = draftArea.value
+    if (draft?.kind !== 'municipalities') return
+    const ofsIds = draft.ofsIds.includes(id)
+      ? draft.ofsIds.filter((other) => other !== id)
+      : [...draft.ofsIds, id]
+    // The name was for the old selection, the picker writes the new one.
+    draftArea.value = { kind: 'municipalities', ofsIds }
+  }
+
+  function removeDraftMunicipality(id: number) {
+    const draft = draftArea.value
+    if (draft?.kind !== 'municipalities' || !draft.ofsIds.includes(id)) return
+    draftArea.value = {
+      kind: 'municipalities',
+      ofsIds: draft.ofsIds.filter((other) => other !== id)
+    }
+  }
+
+  /**
+   * Close the picker. Confirming makes the draft the area of the scenario.
+   *
+   * `outline` is the one the picker previewed for a set of communes, so the
+   * ring is on the map before the server has built the area.
+   */
+  function exitPickMode(confirm: boolean, outline?: AreaOutline | null) {
+    const draft = draftArea.value
+    const empty = draft?.kind === 'municipalities' && draft.ofsIds.length === 0
+    if (confirm && draft && !empty) {
+      setArea(copyArea(draft))
+      if (draft.kind === 'municipalities' && outline) areaOutline.value = outline
+    }
     pickMode.value = false
     draftArea.value = null
   }
@@ -727,6 +799,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         area.value = next
         areaId.value = null
         areaInfo.value = null
+        areaOutline.value = null
         areaError.value = null
         areaPromise = null
       }
@@ -791,6 +864,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     area,
     areaId,
     areaInfo,
+    areaOutline,
     graphKey,
     isBuildingArea,
     areaError,
@@ -825,6 +899,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     forgetAreaId,
     enterPickMode,
     exitPickMode,
+    setDraftKind,
+    toggleDraftMunicipality,
+    removeDraftMunicipality,
     useDefaultArea,
     moveDraft,
     setDraftRadius,
