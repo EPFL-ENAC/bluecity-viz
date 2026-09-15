@@ -71,3 +71,104 @@ export function swissNetworkStyle(): StyleSpecification {
     layers: [swissNetworkLayer.layer]
   }
 }
+
+/**
+ * The Swiss communes, what the user clicks in the Municipalities mode.
+ *
+ * One vector source of polygons (build_municipalities.py), one layer
+ * `communes`. The feature id is the BFS number: tippecanoe moves it out of the
+ * properties into the id, so the picker reads `feature.id`, and the hover and
+ * the selection ride feature-state on that id. The tiles start at z7, under
+ * that the layer shows nothing.
+ */
+export const COMMUNES_SOURCE = 'tool-communes'
+export const COMMUNES_SOURCE_LAYER = 'communes'
+export const COMMUNES_MIN_ZOOM = 7
+export const COMMUNES_HIT_LAYER = 'tool-communes-hit'
+const COMMUNES_SEL_FILL_LAYER = 'tool-communes-sel-fill'
+const COMMUNES_LINE_LAYER = 'tool-communes-line'
+const COMMUNES_SEL_LINE_LAYER = 'tool-communes-sel-line'
+const COMMUNES_HOVER_LAYER = 'tool-communes-hover'
+
+export const swissCommunesSource: SourceSpecification = {
+  type: 'vector',
+  url: `pmtiles://${baseUrl}/swiss_communes.pmtiles`,
+  attribution: '© swisstopo'
+} as SourceSpecification
+
+export interface CommuneColors {
+  ink: string
+  grey: string
+  accent: string
+}
+
+export function communeLayerIds(): string[] {
+  return [
+    COMMUNES_HIT_LAYER,
+    COMMUNES_SEL_FILL_LAYER,
+    COMMUNES_LINE_LAYER,
+    COMMUNES_SEL_LINE_LAYER,
+    COMMUNES_HOVER_LAYER
+  ]
+}
+
+/**
+ * Hairline borders in faint ink, a picked commune in accent when the tool can
+ * run on the selection and grey when it cannot, the hovered one in accent.
+ * The accent is the pointer, like on the graph.
+ */
+export function communeLayers(colors: CommuneColors): LayerSpecification[] {
+  const selected = ['boolean', ['feature-state', 'selected'], false]
+  const hovered = ['boolean', ['feature-state', 'hover'], false]
+  const tint = ['case', ['boolean', ['feature-state', 'ok'], false], colors.accent, colors.grey]
+  const base = {
+    source: COMMUNES_SOURCE,
+    'source-layer': COMMUNES_SOURCE_LAYER,
+    minzoom: COMMUNES_MIN_ZOOM
+  }
+  return [
+    {
+      ...base,
+      id: COMMUNES_HIT_LAYER,
+      type: 'fill',
+      // Invisible: what the click and the hover point at. A hit test does not
+      // care about opacity.
+      paint: { 'fill-color': colors.ink, 'fill-opacity': 0 }
+    },
+    {
+      ...base,
+      id: COMMUNES_SEL_FILL_LAYER,
+      type: 'fill',
+      paint: {
+        'fill-color': tint,
+        'fill-opacity': ['case', selected, 0.1, 0]
+      }
+    },
+    {
+      ...base,
+      id: COMMUNES_LINE_LAYER,
+      type: 'line',
+      paint: { 'line-color': colors.ink, 'line-opacity': 0.25, 'line-width': 1 }
+    },
+    {
+      ...base,
+      id: COMMUNES_SEL_LINE_LAYER,
+      type: 'line',
+      paint: {
+        'line-color': tint,
+        'line-opacity': ['case', selected, 1, 0],
+        'line-width': 1.5
+      }
+    },
+    {
+      ...base,
+      id: COMMUNES_HOVER_LAYER,
+      type: 'line',
+      paint: {
+        'line-color': colors.accent,
+        'line-opacity': ['case', hovered, 1, 0],
+        'line-width': 1.5
+      }
+    }
+  ] as LayerSpecification[]
+}

@@ -7,6 +7,7 @@ import {
   areaLayers,
   areaRingLayer,
   clipPathOf,
+  clipPathOfRings,
   emptyArea
 } from '@/utils/areaCircle'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
@@ -91,7 +92,7 @@ describe('the clip that cuts the network canvas', () => {
         [30, 20],
         [30, 40]
       ])
-    ).toBe('path("M10 20L30 20L30 40Z")')
+    ).toBe('path(evenodd, "M10 20L30 20L30 40Z")')
   })
 
   it('keeps a tenth of a pixel, enough for the cut to sit on the ring', () => {
@@ -101,7 +102,7 @@ describe('the clip that cuts the network canvas', () => {
         [3, 4],
         [5, 6]
       ])
-    ).toBe('path("M1.3 2.3L3 4L5 6Z")')
+    ).toBe('path(evenodd, "M1.3 2.3L3 4L5 6Z")')
   })
 
   it('hides everything when there is no circle', () => {
@@ -113,6 +114,47 @@ describe('the clip that cuts the network canvas', () => {
         [2, 2]
       ])
     ).toBe(nothing)
+  })
+})
+
+describe('the clip of several rings', () => {
+  const square: [number, number][] = [
+    [0, 0],
+    [100, 0],
+    [100, 100],
+    [0, 100]
+  ]
+  const hole: [number, number][] = [
+    [40, 40],
+    [60, 40],
+    [60, 60]
+  ]
+
+  it('puts every ring in one even-odd path, so a hole is cut out', () => {
+    expect(clipPathOfRings([square, hole])).toBe(
+      'path(evenodd, "M0 0L100 0L100 100L0 100Z M40 40L60 40L60 60Z")'
+    )
+  })
+
+  it('skips a ring too small to be a shape', () => {
+    expect(
+      clipPathOfRings([
+        square,
+        [
+          [1, 1],
+          [2, 2]
+        ]
+      ])
+    ).toBe('path(evenodd, "M0 0L100 0L100 100L0 100Z")')
+  })
+
+  it('hides everything when no ring is left', () => {
+    expect(clipPathOfRings([])).toBe('path("M0 0Z")')
+    expect(clipPathOfRings([[[1, 1]]])).toBe('path("M0 0Z")')
+  })
+
+  it('is the same cut as the circle for one ring', () => {
+    expect(clipPathOfRings([square])).toBe(clipPathOf(square))
   })
 })
 
