@@ -154,10 +154,7 @@ export function useMunicipalityPick(options: {
     const current = attached
     if (!current) return
     const id = communeAt(current, event)
-    if (id === null) return
-    trafficStore.toggleDraftMunicipality(id)
-    invalidate()
-    checkNow()
+    if (id !== null) trafficStore.toggleDraftMunicipality(id)
   }
 
   function onSourceData(event: MapSourceDataEvent): void {
@@ -167,6 +164,16 @@ export function useMunicipalityPick(options: {
 
   // A click, a Remove in the dock, or a new answer: the map follows.
   watch([() => picked().join(','), canUse], paint)
+
+  // A click or a Remove in the dock: the old answer is stale, ask again.
+  watch(
+    () => picked().join(','),
+    (ids, previous) => {
+      if (!attached || ids === previous) return
+      invalidate()
+      checkNow()
+    }
+  )
 
   // The name of the selection, from the local index. Nothing without it: the
   // dock then counts the communes.

@@ -12,6 +12,7 @@ import {
   areaRingLayer,
   emptyArea
 } from '@/utils/areaCircle'
+import { outlineFeatures } from '@/utils/areaOutline'
 import {
   addGraphImages,
   applyCvrp,
@@ -204,8 +205,15 @@ export function useGraphOverlay(
             : undefined
         map.addLayer(areaRingLayer(colors.value), under)
       }
-      // The default city is not a circle the user drew, so it has no ring.
-      setData(map, AREA_SOURCE, area?.kind === 'circle' ? areaFeatures(area, true) : emptyArea())
+      // The default city is not an area the user drew, so it has no ring. The
+      // outline of a set of communes comes with the area, a moment after it.
+      const features =
+        area?.kind === 'circle'
+          ? areaFeatures(area, true)
+          : area?.kind === 'municipalities'
+            ? outlineFeatures(trafficStore.areaOutline, true)
+            : emptyArea()
+      setData(map, AREA_SOURCE, features)
     } catch {
       retryLater(map)
     }
@@ -957,7 +965,7 @@ export function useGraphOverlay(
     scenarioStore.hover(null)
   })
 
-  watch(() => trafficStore.area, drawArea)
+  watch([() => trafficStore.area, () => trafficStore.areaOutline], drawArea)
   watch(() => scenarioStore.edgeModifications, redraw)
   // Only a change of ink treatment needs the layers rebuilt, not every switch
   // of the lit zone.

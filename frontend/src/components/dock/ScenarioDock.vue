@@ -36,19 +36,21 @@ const areaFeedback = useAreaFeedback()
 const mapRef = inject<Ref<{ map?: MapLibre } | undefined>>('mapRef')
 
 // The area the workbench runs on.
+// The name the picker wrote, else the one the server gave once the area is
+// built (communes picked with no local index). Areas saved before names, and
+// the styles with no labels, still show the shape itself.
+const namedAs = computed(() => trafficStore.area?.name || trafficStore.areaInfo?.name || '')
+
 const areaName = computed(() => {
   const area = trafficStore.area
   if (!area) return 'Lausanne (default)'
-  // The name the picker wrote. Areas saved before that, and the styles with
-  // no labels, still show the shape itself.
-  if (area.name) return area.name
-  return areaShapeOf(area)
+  return namedAs.value || areaShapeOf(area)
 })
 
 // The shape behind the name, so the radius or the commune count stays readable.
 const areaShape = computed(() => {
   const area = trafficStore.area
-  if (!area?.name) return ''
+  if (!area || !namedAs.value) return ''
   return areaShapeOf(area)
 })
 
@@ -91,6 +93,8 @@ const toolName = computed(() =>
     :can-use="areaFeedback.canUse.value"
     :is-checking="areaFeedback.isChecking.value"
     :limits="areaFeedback.limits.value"
+    :communes="areaFeedback.communes.value"
+    :outline="areaFeedback.lastOutline.value"
   />
 
   <div v-else class="dock-panel">
