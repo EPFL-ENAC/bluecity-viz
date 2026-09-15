@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Feather icons (https://feathericons.com), 2px stroke, currentColor.
-// Inlined so we do not pull a whole icon package for 9 glyphs.
+// Inlined so we do not pull a whole icon package for 10 glyphs.
 withDefaults(
   defineProps<{
     name:
@@ -13,6 +13,7 @@ withDefaults(
       | 'trash-2'
       | 'info'
       | 'map-pin'
+      | 'check'
     size?: number
   }>(),
   { size: 12 }
@@ -33,6 +34,7 @@ withDefaults(
     aria-hidden="true"
   >
     <polyline v-if="name === 'chevron-down'" points="6 9 12 15 18 9" />
+    <polyline v-else-if="name === 'check'" points="20 6 9 17 4 12" />
     <polyline v-else-if="name === 'chevron-right'" points="9 18 15 12 9 6" />
     <template v-else-if="name === 'plus'">
       <line x1="12" y1="5" x2="12" y2="19" />
