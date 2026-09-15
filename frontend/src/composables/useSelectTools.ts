@@ -1,5 +1,5 @@
+import { useMapView } from '@/composables/useMapView'
 import { useScenarioStore } from '@/stores/scenario'
-import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { bbox, polylineIntersectsPolygon, polylineNearSegment, type Pt } from '@/utils/geometry'
 import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl'
 import { shallowRef, watch, type Ref } from 'vue'
@@ -37,7 +37,8 @@ export function useSelectTools(
   callbacks: { onDone?: (point: { x: number; y: number }) => void } = {}
 ) {
   const scenarioStore = useScenarioStore()
-  const trafficStore = useTrafficAnalysisStore()
+  // The tools edit the graph, so they follow the same gate as a click.
+  const { editable } = useMapView()
 
   /** null when no tool is drawing anything. */
   const shape = shallowRef<ToolShape | null>(null)
@@ -95,9 +96,9 @@ export function useSelectTools(
 
   function onMouseDown(event: MapMouseEvent): void {
     const map = mapRef.value
-    if (!map || !scenarioStore.isOpen || scenarioStore.tool === 'pointer') return
-    // Picking an area owns the drag then, and it moves its own circle.
-    if (trafficStore.pickMode) return
+    // Only once the initial model is validated. Picking an area owns the drag
+    // too, and it moves its own circle.
+    if (!map || !editable.value || scenarioStore.tool === 'pointer') return
     // Space is held: this drag belongs to the map.
     if (paused) return
 
@@ -243,7 +244,7 @@ export function useSelectTools(
    */
   function onKeyDown(event: KeyboardEvent): void {
     if (event.code !== 'Space' || paused || isTyping(event.target)) return
-    if (!scenarioStore.isOpen || scenarioStore.tool === 'pointer') return
+    if (!editable.value || scenarioStore.tool === 'pointer') return
     // Space on a focused button would press it.
     event.preventDefault()
     paused = true
@@ -265,11 +266,11 @@ export function useSelectTools(
     }
   )
 
-  // The workbench owns the tools. Closing it, going to pick an area, or
-  // running a tool (the result lights, the scenario steps back) puts the
+  // The workbench owns the tools. Closing it, going to pick an area, going back
+  // to the initial model, or running a tool (the result lights, the scenario steps back) puts the
   // pointer back, so a drag on the map pans it again.
   watch(
-    () => scenarioStore.isOpen && !trafficStore.pickMode && scenarioStore.mapMode === 'scenario',
+    () => editable.value && scenarioStore.mapMode === 'scenario',
     (live) => {
       if (!live) scenarioStore.tool = 'pointer'
     }
