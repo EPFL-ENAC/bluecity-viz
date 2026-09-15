@@ -184,7 +184,10 @@ runs `wtx go <branch>` to create or reach one, and `wtx done <branch>` to remove
   what they are doing, the sandbox cannot reach the tmux socket.
 - **Checking your work**: read-only `curl` to your own `localhost` /
   `127.0.0.1` ports is allowed (bare, `-s`, `-sS`, `-fsS`, `-i`, `-I`); write
-  forms prompt. Finish a frontend or backend change by printing its URL:
+  forms prompt. `wtx curl <backend|frontend> [path]` reaches a server without
+  its port, with any method and no prompt (for example
+  `wtx curl backend /api/v1/routes/recalculate -X POST ...`). Finish a frontend
+  or backend change by printing its URL:
   `http://localhost:$FRONTEND_PORT/` or `http://127.0.0.1:$BACKEND_PORT/docs`.
 - **Work on this branch only.** Never push `dev` or `main`, never force-push,
   never push a tag (a `v*` tag deploys). When the work is ready, say so and a
