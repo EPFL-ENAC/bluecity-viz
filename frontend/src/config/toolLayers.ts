@@ -120,7 +120,10 @@ export function communeLayerIds(): string[] {
 export function communeLayers(colors: CommuneColors): LayerSpecification[] {
   const selected = ['boolean', ['feature-state', 'selected'], false]
   const hovered = ['boolean', ['feature-state', 'hover'], false]
-  const tint = ['case', ['boolean', ['feature-state', 'ok'], false], colors.accent, colors.grey]
+  // A usable selection wears the accent. Any other state (checking, too large,
+  // not touching) stays in full ink, so the picked communes always stand out
+  // from the grey hairlines of the others, whatever the server says.
+  const tint = ['case', ['boolean', ['feature-state', 'ok'], false], colors.accent, colors.ink]
   const base = {
     source: COMMUNES_SOURCE,
     'source-layer': COMMUNES_SOURCE_LAYER,
@@ -141,7 +144,7 @@ export function communeLayers(colors: CommuneColors): LayerSpecification[] {
       type: 'fill',
       paint: {
         'fill-color': tint,
-        'fill-opacity': ['case', selected, 0.1, 0]
+        'fill-opacity': ['case', selected, 0.14, 0]
       }
     },
     {
@@ -157,7 +160,7 @@ export function communeLayers(colors: CommuneColors): LayerSpecification[] {
       paint: {
         'line-color': tint,
         'line-opacity': ['case', selected, 1, 0],
-        'line-width': 1.5
+        'line-width': 2
       }
     },
     {
@@ -167,7 +170,8 @@ export function communeLayers(colors: CommuneColors): LayerSpecification[] {
       paint: {
         'line-color': colors.accent,
         'line-opacity': ['case', hovered, 1, 0],
-        'line-width': 1.5
+        // wider than the selection, so a picked commune still shows the hover
+        'line-width': 3
       }
     }
   ] as LayerSpecification[]

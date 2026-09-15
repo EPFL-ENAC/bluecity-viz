@@ -151,6 +151,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // The picker. UI only, nothing here is saved: the circle being dragged, and
   // the rules the server applies to it.
   const pickMode = ref(false)
+  // How the pointer picks communes: one click at a time, or a brush that
+  // paints over many. Kept between two openings of the picker.
+  const pickTool = ref<'pointer' | 'brush'>('pointer')
   const draftArea = ref<AreaSelection | null>(null)
   const areaLimits = shallowRef<AreaLimits | null>(null)
   // The circle the user had before switching to communes, so switching back
@@ -658,12 +661,25 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   }
 
   function removeDraftMunicipality(id: number) {
+    removeDraftMunicipalities([id])
+  }
+
+  /** Add the communes a brush stroke went over. The ones already in stay where they are. */
+  function addDraftMunicipalities(ids: readonly number[]) {
     const draft = draftArea.value
-    if (draft?.kind !== 'municipalities' || !draft.ofsIds.includes(id)) return
-    draftArea.value = {
-      kind: 'municipalities',
-      ofsIds: draft.ofsIds.filter((other) => other !== id)
-    }
+    if (draft?.kind !== 'municipalities') return
+    const added = [...new Set(ids)].filter((id) => !draft.ofsIds.includes(id))
+    if (added.length === 0) return
+    draftArea.value = { kind: 'municipalities', ofsIds: [...draft.ofsIds, ...added] }
+  }
+
+  function removeDraftMunicipalities(ids: readonly number[]) {
+    const draft = draftArea.value
+    if (draft?.kind !== 'municipalities') return
+    const gone = new Set(ids)
+    const ofsIds = draft.ofsIds.filter((id) => !gone.has(id))
+    if (ofsIds.length === draft.ofsIds.length) return
+    draftArea.value = { kind: 'municipalities', ofsIds }
   }
 
   /**
@@ -869,6 +885,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     isBuildingArea,
     areaError,
     pickMode,
+    pickTool,
     draftArea,
     areaLimits,
 
@@ -902,6 +919,8 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     setDraftKind,
     toggleDraftMunicipality,
     removeDraftMunicipality,
+    addDraftMunicipalities,
+    removeDraftMunicipalities,
     useDefaultArea,
     moveDraft,
     setDraftRadius,

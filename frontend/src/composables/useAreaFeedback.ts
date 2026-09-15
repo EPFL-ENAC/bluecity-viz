@@ -23,6 +23,8 @@ export type AreaStatus =
   | 'unavailable'
   /** no commune picked yet */
   | 'empty'
+  /** more communes than one request may carry */
+  | 'too_many'
   /** communes picked, the server has not answered yet */
   | 'checking'
 
@@ -42,6 +44,9 @@ export interface AreaFeedback {
 }
 
 /** Fallbacks, used until GET /areas/limits answers. Same as config.py. */
+/** Same as max_municipalities in config.py, until GET /areas/limits answers. */
+const FALLBACK_MAX_MUNICIPALITIES = 100
+
 const FALLBACK_LIMITS = {
   min_junctions: 500,
   max_nodes: 10000,
@@ -138,6 +143,7 @@ export function useAreaFeedback() {
   function municipalityFeedback(ofsIds: number[]): AreaFeedback {
     if (noMunicipalities.value) return { status: 'unavailable', estimate: null, exact: null }
     if (ofsIds.length === 0) return { status: 'empty', estimate: null, exact: null }
+    if (tooMany(ofsIds)) return { status: 'too_many', estimate: null, exact: null }
     if (communes.value && !contiguous(ofsIds, communes.value)) {
       return { status: 'not_contiguous', estimate: null, exact: null }
     }
@@ -150,12 +156,24 @@ export function useAreaFeedback() {
     )
   }
 
+  // The server refuses the request past this count, so it is never sent.
+  function tooMany(ofsIds: number[]): boolean {
+    const max = trafficStore.areaLimits?.max_municipalities ?? FALLBACK_MAX_MUNICIPALITIES
+    return ofsIds.length > max
+  }
+
   const canUse = computed(() => feedback.value.status === 'ok')
 
-  /** The outline to cut the network to, while communes are picked. */
+  /**
+   * The outline to cut the network to, while communes are picked. None when
+   * the communes do not touch or are too many: the last outline would then
+   * draw a ring around another selection than the one on the map.
+   */
   const lastOutline = computed<AreaOutline | null>(() => {
     const draft = trafficStore.draftArea
     if (draft?.kind !== 'municipalities' || draft.ofsIds.length === 0) return null
+    const status = feedback.value.status
+    if (status === 'not_contiguous' || status === 'too_many') return null
     return outline.value
   })
 
@@ -164,11 +182,12 @@ export function useAreaFeedback() {
     const circle: AreaSelection | null = trafficStore.draftArea
     if (!circle) return
     if (circle.kind === 'municipalities') {
-      // Nothing to ask: no commune, or the index already knows they do not touch.
+      // Nothing to ask: no commune, too many, or the index knows they do not touch.
       if (circle.ofsIds.length === 0) {
         outline.value = null
         return
       }
+      if (tooMany(circle.ofsIds)) return
       if (communes.value && !contiguous(circle.ofsIds, communes.value)) return
     }
     const key = areaKey(circle)

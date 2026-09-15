@@ -610,6 +610,37 @@ describe('an area made of municipalities', () => {
     expect(store.draftArea).toEqual({ kind: 'municipalities', ofsIds: [] })
   })
 
+  it('adds a brush stroke once and removes it the same way', () => {
+    const store = useTrafficAnalysisStore()
+    store.enterPickMode()
+    store.setDraftKind('municipalities')
+    store.toggleDraftMunicipality(5590)
+    const before = store.draftArea
+
+    store.addDraftMunicipalities([5586, 5590, 5586, 5591])
+    expect(store.draftArea).toEqual({ kind: 'municipalities', ofsIds: [5590, 5586, 5591] })
+
+    store.removeDraftMunicipalities([5591, 9999])
+    expect(store.draftArea).toEqual({ kind: 'municipalities', ofsIds: [5590, 5586] })
+
+    // nothing new under the stroke: the draft is not replaced
+    const same = store.draftArea
+    store.addDraftMunicipalities([5586])
+    store.removeDraftMunicipalities([1234])
+    expect(store.draftArea).toBe(same)
+    expect(before).not.toBe(same)
+  })
+
+  it('never brushes communes into a circle', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    store.enterPickMode()
+
+    store.addDraftMunicipalities([5586])
+
+    expect(store.draftArea).toEqual(BERN)
+  })
+
   it('forgets the old name when the selection changes', () => {
     const store = useTrafficAnalysisStore()
     store.enterPickMode()

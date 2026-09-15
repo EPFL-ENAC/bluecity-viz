@@ -4,6 +4,7 @@ import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
 import type { AreaFeedback } from '@/composables/useAreaFeedback'
 import type { AreaOutline } from '@/services/trafficAnalysis'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { communeName, type CommuneIndex } from '@/utils/municipalities'
 import type { Map as MapLibreMap } from 'maplibre-gl'
@@ -19,12 +20,15 @@ const props = defineProps<{
     min_radius_m: number
     max_radius_m: number
     has_municipalities?: boolean
+    max_municipalities?: number
   }
   communes: CommuneIndex | null
   outline: AreaOutline | null
 }>()
 
 const trafficStore = useTrafficAnalysisStore()
+// The brush width is the one of the street brush, one size for both.
+const scenarioStore = useScenarioStore()
 
 const mapComponentRef = inject<Ref<{ map?: MapLibreMap } | undefined>>('mapRef')
 const map = computed(() => mapComponentRef?.value?.map)
@@ -45,6 +49,21 @@ function setKind(value: string): void {
   if (value !== 'circle' && value !== 'municipalities') return
   const centre = map.value?.getCenter()
   trafficStore.setDraftKind(value, centre ? { lon: centre.lng, lat: centre.lat } : undefined)
+}
+
+// Click one commune, or paint many with the brush.
+const TOOL_OPTIONS = [
+  { value: 'pointer', label: 'Point' },
+  { value: 'brush', label: 'Brush B' }
+]
+
+const TOOL_HINT: Record<'pointer' | 'brush', string> = {
+  pointer: 'Click a municipality on the map to add it. Click again to remove it.',
+  brush: 'Paint over municipalities to add them. Hold Alt to remove, Space to pan, [ and ] resize.'
+}
+
+function setTool(value: string): void {
+  if (value === 'pointer' || value === 'brush') trafficStore.pickTool = value
 }
 
 const picked = computed(() => {
@@ -95,7 +114,8 @@ const STATUS_LABEL: Record<string, string> = {
   not_contiguous: 'Not touching',
   unavailable: 'Not available here',
   empty: 'Nothing selected',
-  checking: 'Checking…'
+  checking: 'Checking…',
+  too_many: 'Too many'
 }
 
 const STATUS_HINT: Record<Kind, Record<string, string>> = {
@@ -121,7 +141,13 @@ const STATUS_HINT: Record<Kind, Record<string, string>> = {
 }
 
 const statusLabel = computed(() => STATUS_LABEL[props.feedback.status] ?? 'Unknown')
-const statusHint = computed(() => STATUS_HINT[kind.value][props.feedback.status] ?? '')
+const statusHint = computed(() => {
+  // The limit comes from the server, it may answer after the panel opened.
+  if (props.feedback.status === 'too_many') {
+    return `At most ${props.limits.max_municipalities ?? 100} municipalities. Remove some.`
+  }
+  return STATUS_HINT[kind.value][props.feedback.status] ?? ''
+})
 
 const counts = computed(() => props.feedback.estimate)
 const isExact = computed(() => props.feedback.exact !== null)
@@ -178,9 +204,23 @@ const sourceShape = computed(() => {
       </template>
 
       <template v-else>
-        <p class="bc-empty hint">
-          Click a municipality on the map to add it. Click again to remove it.
-        </p>
+        <BcSeg
+          class="kinds"
+          :model-value="trafficStore.pickTool"
+          :options="TOOL_OPTIONS"
+          equal
+          @update:model-value="setTool"
+        />
+        <BcSlider
+          v-if="trafficStore.pickTool === 'brush'"
+          v-model="scenarioStore.brushRadius"
+          :min="8"
+          :max="80"
+          :step="2"
+          label="Brush width"
+          :display="`${scenarioStore.brushRadius} px`"
+        />
+        <p class="bc-empty hint">{{ TOOL_HINT[trafficStore.pickTool] }}</p>
         <p v-if="zoom < PICK_ZOOM" class="bc-empty hint">Zoom in to pick a municipality.</p>
 
         <div class="picked">

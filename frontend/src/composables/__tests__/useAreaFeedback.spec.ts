@@ -151,6 +151,40 @@ describe('feedback on picked municipalities', () => {
     expect(lastOutline.value).toBeNull()
   })
 
+  it('drops the old outline when the next commune does not touch', async () => {
+    vi.mocked(previewArea).mockResolvedValue(preview())
+    const { store, checkNow, lastOutline } = await pick([5586])
+    checkNow()
+    await vi.runAllTimersAsync()
+    expect(lastOutline.value).toEqual(OUTLINE)
+
+    store.toggleDraftMunicipality(2196)
+    expect(lastOutline.value).toBeNull()
+  })
+
+  it('refuses more communes than the limit without asking the server', async () => {
+    const store = useTrafficAnalysisStore()
+    store.areaLimits = {
+      min_junctions: 500,
+      max_nodes: 10000,
+      max_edges: 20000,
+      min_scc_fraction: 0.8,
+      min_radius_m: 500,
+      max_radius_m: 10000,
+      coverage_bbox: null,
+      has_municipalities: true,
+      max_municipalities: 2
+    }
+    const { feedback, canUse, checkNow } = await pick([5586, 5590, 2196])
+
+    checkNow()
+    await vi.runAllTimersAsync()
+
+    expect(feedback.value.status).toBe('too_many')
+    expect(canUse.value).toBe(false)
+    expect(previewArea).not.toHaveBeenCalled()
+  })
+
   it('leaves the local check to the server when the index is missing', async () => {
     vi.mocked(loadMunicipalities).mockResolvedValue(null)
     vi.mocked(previewArea).mockResolvedValue(preview({ ok: false, code: 'not_contiguous' }))

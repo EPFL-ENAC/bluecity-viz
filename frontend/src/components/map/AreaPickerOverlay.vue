@@ -72,6 +72,11 @@ const municipalityPick = useMunicipalityPick({
   invalidate,
   checkNow
 })
+const brush = municipalityPick.brush
+const brushTrail = computed(() => {
+  const trail = brush.value?.trail ?? []
+  return trail.length > 1 ? trail.map(([x, y]) => `${x},${y}`).join(' ') : ''
+})
 // The mode attached to the map now, null when the picker is not on a map.
 let mode: PickMode | null = null
 
@@ -338,6 +343,10 @@ onUnmounted(() => {
 
 <template>
   <div ref="networkBox" class="area-network" />
+  <svg v-if="brush" class="brush" :data-erase="brush.erase">
+    <polyline v-if="brushTrail" :points="brushTrail" />
+    <circle :cx="brush.at[0]" :cy="brush.at[1]" :r="brush.radius" />
+  </svg>
 </template>
 
 <style scoped>
@@ -346,5 +355,39 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+/* The brush of the municipalities, drawn like the street brush of the workbench. */
+.brush {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.brush polyline {
+  fill: none;
+  stroke: var(--bc-accent);
+  stroke-opacity: 0.25;
+  stroke-width: 1;
+}
+
+.brush circle {
+  fill: var(--bc-accent);
+  fill-opacity: 0.08;
+  stroke: var(--bc-accent);
+  stroke-width: 1;
+}
+
+/* Alt held: the brush takes communes out, so it drops the accent. */
+.brush[data-erase='true'] polyline {
+  stroke: var(--bc-ink);
+}
+
+.brush[data-erase='true'] circle {
+  stroke: var(--bc-ink);
+  fill: var(--bc-ink);
 }
 </style>
