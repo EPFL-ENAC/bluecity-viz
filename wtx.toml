@@ -68,6 +68,13 @@ subagent_model = "sonnet"
 auto_compact_window = 250000
 explore_agent_model = "haiku"
 
+[agent.orchestration]
+enabled = true
+plan_model = "fable"    # default, and already your [agent].llm
+build_model = "opus"    # default
+small_effort = "medium"
+large_effort = "xhigh"
+
 # Added to the baseline wtx ships. A repo can tighten, never loosen.
 [permissions]
 allow = ["Bash(pnpm run lint)", "Bash(pnpm run lint:check)", "Bash(pnpm run format)", "Bash(pnpm run type-check)", "Bash(pnpm run type-check:test)", "Bash(pnpm run test:unit *)", "Bash(pnpm run build)", "Bash(make build)", "Bash(uv run ruff check *)", "Bash(uv run ruff format *)", "Bash(uv run pytest *)"]
