@@ -1,5 +1,5 @@
 .PHONY: help elevation network geojson tiles copy all clean clean-all pbf-download pbf-lausanne \
-        dem swiss-store swiss-tiles swiss-copy swiss-all
+        dem swiss-store swiss-tiles swiss-copy swiss-all bfs-download swiss-store-population
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -36,6 +36,11 @@ SWISS_BBOX         :=
 # More tiles means less memory per tile, and a bit more work at the seams.
 SWISS_TILES        :=
 
+# Residents and jobs per hectare, from the federal statistics (bfs_population.py)
+BFS_DIR            := .data/bfs
+STATPOP_CSV        := $(BFS_DIR)/statistik-bevoelkerung_haushalte_2025_ha_2056.csv
+STATENT_CSV        := $(BFS_DIR)/betriebszaehlungen_2024_ha_2056.csv
+
 # ---------------------------------------------------------------------------
 # Help
 # ---------------------------------------------------------------------------
@@ -57,10 +62,12 @@ help:
 	@echo ""
 	@echo "Whole country (pick any area):"
 	@echo "  make dem            Download the national elevation raster (~360 MB, 30 s)"
+	@echo "  make bfs-download   Download residents (STATPOP) and jobs (STATENT) per hectare (~420 MB)"
 	@echo "  make swiss-store    Build the country graph store (~20 min, tile by tile)"
 	@echo "  make swiss-tiles    Cut the country network into PMTiles"
 	@echo "  make swiss-copy     Copy density.json to the frontend"
 	@echo "  make swiss-all      The three above"
+	@echo "  make swiss-store-population  Add residents and jobs to the store, roads untouched"
 	@echo "  Try it small first:  make swiss-store SWISS_BBOX=6.4,46.4,6.9,46.7"
 	@echo "  Less memory:         make swiss-store SWISS_TILES=6x5"
 	@echo ""
@@ -179,14 +186,28 @@ dem: $(SWISS_DEM) ## Download the national elevation raster (swissALTIRegio at 4
 $(SWISS_DEM):
 	uv run python download_swiss_dem.py --output $(SWISS_DEM)
 
-swiss-store: ## Build the country graph store the backend reads
+bfs-download: $(STATPOP_CSV) $(STATENT_CSV) ## Residents and jobs per hectare
+
+$(STATPOP_CSV) $(STATENT_CSV):
+	uv run python bfs_population.py --dest $(BFS_DIR)
+
+swiss-store: $(STATPOP_CSV) $(STATENT_CSV) ## Build the country graph store the backend reads
 	@test -f $(OSM_PBF_SWISS) || (echo "Missing $(OSM_PBF_SWISS). Run 'make pbf-download'." && exit 1)
 	@mkdir -p $(BACKEND_DATA)
 	uv run python build_swiss_graph.py \
 		--pbf $(OSM_PBF_SWISS) \
 		--store $(SWISS_STORE) \
+		--statpop $(STATPOP_CSV) --statent $(STATENT_CSV) \
 		$(_SWISS_DEM_FLAG) $(_SWISS_BBOX_FLAG) $(_SWISS_TILES_FLAG)
 	@echo "✓ Store written to $(SWISS_STORE)"
+
+# The roads stay as they are, only nodes.parquet is written again. For a store
+# built before the residents and jobs columns existed.
+swiss-store-population: $(STATPOP_CSV) $(STATENT_CSV) ## Add residents and jobs to the store
+	@test -f $(SWISS_STORE)/index.json || (echo "Missing $(SWISS_STORE). Run 'make swiss-store'." && exit 1)
+	uv run python upgrade_store_population.py \
+		--store $(SWISS_STORE) \
+		--statpop $(STATPOP_CSV) --statent $(STATENT_CSV)
 
 swiss-tiles: ## Cut the country network into PMTiles for the picker backdrop
 	@test -d $(SWISS_STORE) || (echo "Missing $(SWISS_STORE). Run 'make swiss-store'." && exit 1)

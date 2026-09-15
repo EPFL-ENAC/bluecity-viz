@@ -100,6 +100,20 @@ the 40 m overview the file already carries and writes a 360 MB local raster in
 about 30 seconds. 40 m is the right scale for the slope of a street. DHM25 is
 retired and its old URL now serves the 200 m model, which is too coarse.
 
+Every node also carries `residents` and `jobs_fte`, the OD sampler's
+"Population + jobs" weights. They come from the federal hectare statistics,
+STATPOP 2025 (residents) and STATENT 2024 (full-time jobs), both plain CSVs on
+data.geo.admin.ch (`make bfs-download`, about 420 MB). Each hectare goes to
+its nearest node, centre of the square against any node. The counts stay raw:
+the BFS writes 1 to 3 as 3 and it stays 3. Rows with `NOLOC = 1` (people or
+jobs with no known building, piled on one hectare per commune) are dropped.
+To add the two columns to a store built before them, without rebuilding the
+roads:
+
+```bash
+make swiss-store-population
+```
+
 Lausanne keeps its own GraphML: it is the default area, it has the finer
 swissALTI3D elevation, and nothing about it changes.
 
