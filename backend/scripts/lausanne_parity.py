@@ -32,7 +32,7 @@ import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.area_builder import AreaSpec, select  # noqa: E402
+from app.services.area_builder import CircleSpec, select  # noqa: E402
 from app.services.graph_store import GraphStore, distance_m  # noqa: E402
 
 # Middle of Lausanne, a circle the tool would really be used on.
@@ -130,7 +130,7 @@ def main() -> int:
         raise SystemExit(f"{args.graphml} not found")
 
     store = GraphStore.open(args.store)
-    spec = AreaSpec.from_circle(args.lon, args.lat, args.radius)
+    spec = CircleSpec.from_circle(args.lon, args.lat, args.radius)
     selection = select(store, spec)
     store_edges = set(zip(selection.edges["u"].tolist(), selection.edges["v"].tolist()))
     store_highway = highway_of_store(args.store)

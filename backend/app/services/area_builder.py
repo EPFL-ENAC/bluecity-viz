@@ -2,8 +2,12 @@
 
 The rules an area has to pass, in this order:
 
-  outside_coverage  the shape is not where the store has data, or the radius
-                    is outside what the tool accepts
+  outside_coverage  the shape is not where the store has data, the radius is
+                    outside what the tool accepts, or a municipality number
+                    is unknown
+  not_contiguous    the municipalities do not share borders, so they are two
+                    separate places. Checked on the neighbour table, before
+                    any cell is read.
   too_sparse        not enough junctions: the OD sampler needs a pool of nodes
                     with three streets or more, and a handful of country roads
                     gives meaningless trips
@@ -20,15 +24,22 @@ import logging
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import igraph as ig
 import numpy as np
+import shapely
 
 from app.config import settings
 from app.services.area_graph import AreaGraph, AreaMeta
 from app.services.graph_mirror import GraphMirror
 from app.services.graph_store import GraphStore, distance_m
+from app.services.municipalities import (
+    Municipalities,
+    label,
+    normalise_ids,
+    outline_geojson,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +55,7 @@ class AreaRejected(ValueError):
 
 
 @dataclass(frozen=True)
-class AreaSpec:
+class CircleSpec:
     """A circle, and the id derived from it.
 
     The id comes from the rounded geometry, not from a counter: two users who
@@ -56,8 +67,10 @@ class AreaSpec:
     lat: float
     radius_m: float
 
+    kind = "circle"
+
     @classmethod
-    def from_circle(cls, lon: float, lat: float, radius_m: float) -> "AreaSpec":
+    def from_circle(cls, lon: float, lat: float, radius_m: float) -> "CircleSpec":
         # about 10 m of rounding, so a pixel of drag does not make a new area
         return cls(
             lon=round(float(lon), 4),
@@ -79,12 +92,105 @@ class AreaSpec:
         dlon = self.radius_m / max(111_320.0 * math.cos(math.radians(self.lat)), 1.0)
         return [self.lon - dlon, self.lat - dlat, self.lon + dlon, self.lat + dlat]
 
+    @property
+    def outline(self) -> Optional[dict]:
+        # the frontend draws a circle from its centre and radius
+        return None
+
     def contains(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Which points are inside the circle."""
         return distance_m(x, y, self.lon, self.lat) <= self.radius_m
 
     def cells(self, store: GraphStore) -> List[int]:
         return store.cells_for_circle(self.lon, self.lat, self.radius_m)
+
+    def validate(self) -> None:
+        """The rules the shape breaks on its own, before any cell is read."""
+        if not (settings.area_min_radius_m <= self.radius_m <= settings.area_max_radius_m):
+            raise AreaRejected(
+                "outside_coverage",
+                f"the radius must be between {settings.area_min_radius_m / 1000:.1f} km "
+                f"and {settings.area_max_radius_m / 1000:.0f} km",
+            )
+
+    def describe(self) -> dict:
+        return {"circle": {"lon": self.lon, "lat": self.lat, "radius_m": self.radius_m}}
+
+
+@dataclass(frozen=True)
+class MunicipalitySpec:
+    """A set of municipalities, by BFS number, and the id derived from it.
+
+    Only the ids are compared: the rest is read from the table once, when the
+    spec is made, so the rules and the build never go back to it. The ids are
+    sorted as numbers, so the same communes in another order are the same
+    area and share one registry entry and one link.
+    """
+
+    ids: Tuple[int, ...]
+    names: Tuple[str, ...] = field(default=(), compare=False, repr=False)
+    unknown: Tuple[int, ...] = field(default=(), compare=False, repr=False)
+    contiguous: bool = field(default=False, compare=False, repr=False)
+    geometry: Optional[shapely.Geometry] = field(default=None, compare=False, repr=False)
+
+    kind = "municipalities"
+
+    @classmethod
+    def from_ids(cls, ids, table: Municipalities) -> "MunicipalitySpec":
+        ids = normalise_ids(ids)
+        unknown = tuple(i for i in ids if i not in table)
+        contiguous = not unknown and table.contiguous(ids)
+        # Two towns apart are refused anyway, so their union is never needed.
+        geometry = table.union(ids) if (ids and contiguous) else None
+        return cls(
+            ids=ids,
+            names=tuple(table.names(ids)),
+            unknown=unknown,
+            contiguous=contiguous,
+            geometry=geometry,
+        )
+
+    @property
+    def id(self) -> str:
+        return "m_" + "_".join(str(i) for i in self.ids)
+
+    @property
+    def name(self) -> str:
+        return label(list(self.names))
+
+    @property
+    def bbox(self) -> Optional[List[float]]:
+        if self.geometry is None:
+            return None
+        return [round(float(v), 6) for v in shapely.bounds(self.geometry)]
+
+    @property
+    def outline(self) -> Optional[dict]:
+        return outline_geojson(self.geometry) if self.geometry is not None else None
+
+    def contains(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Which points are inside the union of the boundaries."""
+        return shapely.contains_xy(self.geometry, x, y)
+
+    def cells(self, store: GraphStore) -> List[int]:
+        return store.cells_for_bbox(*self.bbox)
+
+    def validate(self) -> None:
+        if not self.ids:
+            raise AreaRejected("outside_coverage", "no municipality selected")
+        if self.unknown:
+            numbers = ", ".join(str(i) for i in self.unknown)
+            raise AreaRejected("outside_coverage", f"no municipality with number {numbers}")
+        if not self.contiguous:
+            raise AreaRejected(
+                "not_contiguous", "the selected municipalities do not share a border"
+            )
+
+    def describe(self) -> dict:
+        return {"municipalities": {"ids": list(self.ids), "names": list(self.names)}}
+
+
+AreaSpec = Union[CircleSpec, MunicipalitySpec]
 
 
 @dataclass
@@ -214,14 +320,9 @@ def check(
     The mask is the expensive half, so build takes it from here instead of
     searching the components a second time.
     """
+    spec.validate()
     bbox = spec.bbox
     coverage = store.coverage_bbox
-    if not (settings.area_min_radius_m <= spec.radius_m <= settings.area_max_radius_m):
-        raise AreaRejected(
-            "outside_coverage",
-            f"the radius must be between {settings.area_min_radius_m / 1000:.1f} km "
-            f"and {settings.area_max_radius_m / 1000:.0f} km",
-        )
     if coverage and (
         bbox[2] < coverage[0]
         or bbox[0] > coverage[2]
@@ -276,6 +377,7 @@ def preview(store: GraphStore, spec: AreaSpec) -> dict:
             "code": rejected.code,
             "message": rejected.message,
             "bbox": spec.bbox,
+            "outline": spec.outline,
             **{
                 "node_count": 0,
                 "edge_count": 0,
@@ -284,7 +386,14 @@ def preview(store: GraphStore, spec: AreaSpec) -> dict:
                 **rejected.counts,
             },
         }
-    return {"ok": True, "code": None, "message": "", "bbox": spec.bbox, **counts}
+    return {
+        "ok": True,
+        "code": None,
+        "message": "",
+        "bbox": spec.bbox,
+        "outline": spec.outline,
+        **counts,
+    }
 
 
 def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> AreaGraph:
@@ -294,8 +403,9 @@ def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> Are
     config = config or SamplingConfig()
     started = time.perf_counter()
 
-    # The rules run on the hot columns first, so a circle over half the country
-    # is refused before its geometry is read.
+    # The shape rules first, then the rules on the hot columns, so a circle
+    # over half the country is refused before its geometry is read.
+    spec.validate()
     counts, mask = check(store, spec, select(store, spec))
     fraction = counts["scc_fraction"]
     selection = select(store, spec, with_geometry=True)
@@ -313,9 +423,11 @@ def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> Are
     meta = AreaMeta(
         id=spec.id,
         name=spec.name,
-        circle={"lon": spec.lon, "lat": spec.lat, "radius_m": spec.radius_m},
+        kind=spec.kind,
         bbox=spec.bbox,
+        outline=spec.outline,
         scc_fraction=fraction,
+        **spec.describe(),
     )
 
     edges = selection.edges
