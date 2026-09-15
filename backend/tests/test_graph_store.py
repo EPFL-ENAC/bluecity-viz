@@ -201,6 +201,42 @@ def test_the_density_file_is_finer_than_the_store_but_adds_up(tmp_path):
         assert folded(density["edges"], int(key)) == entry["n_edges"]
 
 
+def test_population_columns_round_trip(tmp_path):
+    index, nodes, edges = build_store(tmp_path)
+    # build_store gives no population: the writer fills zeros
+    store = GraphStore.open(tmp_path)
+    cells = [int(c) for c in index["cells"]]
+    read = store.read_nodes(cells)
+    assert read["residents"].dtype == np.int32
+    assert not read["residents"].any() and not read["jobs_fte"].any()
+
+    other = tmp_path / "with_population"
+    n = len(nodes["node_id"])
+    nodes = {
+        **nodes,
+        "residents": np.arange(n) * 3,
+        "jobs_fte": np.arange(n) * 0.5,
+    }
+    write_store(other, nodes, edges, grid=GRID)
+    read = GraphStore.open(other).read_nodes(cells)
+    order = np.argsort(read["node_id"])
+
+    assert np.array_equal(read["residents"][order], np.arange(n) * 3)
+    assert np.allclose(read["jobs_fte"][order], np.arange(n) * 0.5)
+
+
+def test_a_store_without_population_is_refused(tmp_path):
+    """A version 1 store has no residents column: it must not be read as zeros."""
+    build_store(tmp_path)
+    path = tmp_path / INDEX_FILE
+    index = json.loads(path.read_text())
+    index["format_version"] = 1
+    path.write_text(json.dumps(index))
+
+    with pytest.raises(ValueError, match="version 1"):
+        GraphStore.open(tmp_path)
+
+
 def test_an_old_store_is_refused(tmp_path):
     build_store(tmp_path)
     path = tmp_path / INDEX_FILE

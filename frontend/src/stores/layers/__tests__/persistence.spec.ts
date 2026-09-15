@@ -1,4 +1,4 @@
-import { pickArea } from '@/stores/layers/persistence'
+import { pickArea, pickTrafficInputs } from '@/stores/layers/persistence'
 import { describe, expect, it } from 'vitest'
 
 const LAUSANNE = { kind: 'circle', lon: 6.632, lat: 46.52, radiusM: 3000 }
@@ -24,5 +24,16 @@ describe('reading a saved area', () => {
 
   it('still refuses a circle outside the country', () => {
     expect(pickArea({ ...LAUSANNE, lon: 2.35, name: 'Paris' })).toBeNull()
+  })
+})
+
+describe('reading the node weighting', () => {
+  it('keeps population', () => {
+    expect(pickTrafficInputs({ nodeWeighting: 'population' }).nodeWeighting).toBe('population')
+  })
+
+  it('reads an old save or an unknown value as uniform', () => {
+    expect(pickTrafficInputs({}).nodeWeighting).toBe('uniform')
+    expect(pickTrafficInputs({ nodeWeighting: 'cats' }).nodeWeighting).toBe('uniform')
   })
 })

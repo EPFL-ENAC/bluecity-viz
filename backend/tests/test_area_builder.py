@@ -6,6 +6,7 @@ import pytest
 from app.config import settings
 from app.services import area_builder
 from app.services.area_builder import AreaRejected, AreaSpec, giant_component, select
+from app.services.area_graph import NoPopulationData
 from app.services.graph_store import distance_m
 from app.services.sampling.config import SamplingConfig
 
@@ -168,6 +169,55 @@ def test_a_built_area_can_be_recalculated(swiss_store, small_area_limits):
     assert result["od_pairs"] > 0
     assert result["new_edge_usage"]
     assert result["impact_statistics"]["total_routes"] > 0
+
+
+def dense_share(area, pairs):
+    """Share of the pair ends that fall in the dense block of the lattice."""
+    from tests.conftest import DENSE_COLS, DENSE_ROWS, STORE_COLS
+
+    ends = np.concatenate([pairs.origins, pairs.destinations]) - 2000
+    rows, cols = np.divmod(ends, STORE_COLS)
+    dense = np.isin(rows, list(DENSE_ROWS)) & np.isin(cols, list(DENSE_COLS))
+    return dense.mean()
+
+
+def test_a_population_sample_leans_to_where_people_live(swiss_store, small_area_limits):
+    area = area_builder.build(swiss_store, circle(2000), SamplingConfig(n_nodes_preprocess=100))
+
+    population = area.od_set("population")
+
+    assert len(population.pairs) == len(area.pairs)
+    assert not np.array_equal(population.pairs.origins, area.pairs.origins)
+    assert dense_share(area, population.pairs) > dense_share(area, area.pairs) + 0.1
+    # the betweenness does not depend on the pairs, it is shared
+    assert population.baseline.bc is area.baseline.bc
+    assert population.baseline.routes.n_found > 0
+    # asking again gives the same set, no second sampling
+    assert area.od_set("population") is population
+
+
+def test_a_population_recalculate_uses_its_own_pairs(swiss_store, small_area_limits):
+    area = area_builder.build(swiss_store, circle(2000), SamplingConfig(n_nodes_preprocess=100))
+
+    uniform = area.recalculate_with_modifications(edge_modifications=[], od_pairs=100)
+    population = area.recalculate_with_modifications(
+        edge_modifications=[], od_pairs=100, node_weighting="population"
+    )
+
+    def counts(result):
+        return {(r["u"], r["v"]): r["count"] for r in result["new_edge_usage"]}
+
+    assert counts(uniform) != counts(population)
+
+
+def test_an_area_without_population_says_so(make_store, small_area_limits):
+    store = make_store(population=False)
+    area = area_builder.build(store, circle(2000), SamplingConfig(n_nodes_preprocess=100))
+
+    with pytest.raises(NoPopulationData):
+        area.od_set("population")
+    # the uniform workbench still runs
+    assert area.od_set("uniform").baseline is not None
 
 
 def test_the_edge_payload_is_ready_right_after_the_build(swiss_store, small_area_limits):

@@ -222,11 +222,18 @@ class GraphService:
 
     # ── Delegating to an area ─────────────────────────────────────────────────
 
-    def baseline_for(self, n_pairs: int, area_id: Optional[str] = None):
-        return self.area(area_id).baseline_for(n_pairs)
+    def baseline_for(
+        self, n_pairs: int, area_id: Optional[str] = None, node_weighting: str = "uniform"
+    ):
+        return self.area(area_id).baseline_for(n_pairs, node_weighting)
 
-    def baseline_payload(self, od_pairs: Optional[int] = None, area_id: Optional[str] = None):
-        return self.area(area_id).baseline_payload(od_pairs)
+    def baseline_payload(
+        self,
+        od_pairs: Optional[int] = None,
+        area_id: Optional[str] = None,
+        node_weighting: str = "uniform",
+    ):
+        return self.area(area_id).baseline_payload(od_pairs, node_weighting)
 
     def calculate_routes(
         self,

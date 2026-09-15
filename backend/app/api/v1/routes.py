@@ -2,7 +2,7 @@
 
 import logging
 import traceback
-from typing import Callable, List, Optional
+from typing import Callable, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import ORJSONResponse
@@ -19,6 +19,7 @@ from app.models.route import (
     RouteRequest,
     RouteResponse,
 )
+from app.services.area_graph import NoPopulationData
 from app.services.area_registry import AreaNotLoaded
 from app.services.graph_helpers import habitat_geojson
 from app.services.graph_service import GraphService
@@ -58,6 +59,20 @@ def _area(area_id: Optional[str]):
                 ),
             },
         ) from exc
+
+
+def _no_population(exc: NoPopulationData) -> HTTPException:
+    """An area without residents or jobs cannot be weighted by them."""
+    return HTTPException(
+        status_code=422,
+        detail={
+            "code": exc.code,
+            "message": (
+                f"{exc}. The population weighting needs the graph store residents "
+                "and jobs; use node_weighting=uniform here."
+            ),
+        },
+    )
 
 
 def _json_or_304(request: Request, data: bytes, etag: str, cache_control: str) -> Response:
@@ -154,6 +169,7 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
             resample_destinations=request.resample_destinations,
             include_baseline=request.include_baseline,
             od_pairs=request.od_pairs,
+            node_weighting=request.node_weighting,
         )
         phases = result.pop("_timing_raw", {})
         # Server-Timing shows the phases in the browser network panel, so the
@@ -164,6 +180,8 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
         return ORJSONResponse(result, headers=headers)
     except HTTPException:
         raise
+    except NoPopulationData as e:
+        raise _no_population(e) from e
     except Exception as e:
         logger.error("Recalculate error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
@@ -183,6 +201,10 @@ def get_baseline(
     ),
     area_id: Optional[str] = Query(
         None, description="Which area to read. None means the default one."
+    ),
+    node_weighting: Literal["uniform", "population"] = Query(
+        "uniform",
+        description="Which OD sample: uniform, or weighted by residents and jobs.",
     ),
 ):
     """
@@ -205,10 +227,15 @@ def get_baseline(
         n = min(od_pairs or settings.od_pairs, settings.od_pairs_max)
         # The cache lives on the area, so two areas never share an ETag and
         # evicting an area frees its payloads.
-        data, etag = area.payloads.get_or_build(f"baseline:{n}", lambda: area.baseline_payload(n))
+        data, etag = area.payloads.get_or_build(
+            f"baseline:{node_weighting}:{n}",
+            lambda: area.baseline_payload(n, node_weighting),
+        )
         return _json_or_304(request, data, etag, "no-cache")
     except HTTPException:
         raise
+    except NoPopulationData as e:
+        raise _no_population(e) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

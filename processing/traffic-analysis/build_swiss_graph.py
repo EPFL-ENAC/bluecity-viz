@@ -33,7 +33,9 @@ Steps:
   2. per tile: osmium cuts the rectangle, osmnx builds and simplifies it,
      speeds, travel times and street counts are added, node elevations are
      read from the DEM, and the arrays of the core are kept.
-  3. the pieces are stacked and the store is written once.
+  3. the pieces are stacked, the residents and jobs of the federal hectare
+     statistics are snapped to their nearest node, and the store is written
+     once.
 
 Each tile is cached in the work directory, so a run that dies picks up where
 it stopped instead of starting over.
@@ -60,7 +62,12 @@ BACKEND = Path(__file__).resolve().parents[2] / "backend"
 sys.path.insert(0, str(BACKEND))
 
 from app.services.graph_store import Grid  # noqa: E402
-from app.services.graph_store_writer import arrays_from_graph, write_store  # noqa: E402
+from app.services.graph_store_writer import (  # noqa: E402
+    arrays_from_graph,
+    snap_hectares,
+    write_store,
+)
+from bfs_population import load_hectares  # noqa: E402
 
 # What a car can drive on. This is osmnx's "drive" filter written the other way
 # round: it excludes types with a regex, osmium can only keep a list, so the
@@ -344,7 +351,20 @@ def main() -> int:
     parser.add_argument(
         "--fresh", action="store_true", help="ignore the cached tiles and build them again"
     )
+    parser.add_argument(
+        "--statpop",
+        default=".data/bfs/statistik-bevoelkerung_haushalte_2025_ha_2056.csv",
+        help="STATPOP hectare CSV (residents), see bfs_population.py",
+    )
+    parser.add_argument(
+        "--statent",
+        default=".data/bfs/betriebszaehlungen_2024_ha_2056.csv",
+        help="STATENT hectare CSV (jobs), see bfs_population.py",
+    )
     args = parser.parse_args()
+    for csv in (args.statpop, args.statent):
+        if not Path(csv).exists():
+            raise SystemExit(f"missing {csv}, run 'make bfs-download'")
 
     started = time.perf_counter()
     bbox = tuple(float(v) for v in args.bbox.split(",")) if args.bbox else SWITZERLAND
@@ -403,6 +423,18 @@ def main() -> int:
     nodes, edges, geometry = stack(pieces)
     del pieces
     gc.collect()
+
+    print("Snapping residents and jobs to the nodes ...")
+    hectares = load_hectares(Path(args.statpop), Path(args.statent))
+    nodes["residents"], nodes["jobs_fte"] = snap_hectares(
+        nodes["x"],
+        nodes["y"],
+        hectares["e"].to_numpy(),
+        hectares["n"].to_numpy(),
+        hectares["residents"].to_numpy(),
+        hectares["jobs_fte"].to_numpy(),
+    )
+    del hectares
 
     print(f"Writing the store to {args.store} ...")
     index = write_store(args.store, nodes, edges, grid=Grid(), geometry=geometry)

@@ -108,6 +108,7 @@ export const useLayersStore = defineStore('layers', () => {
       useCongestionModel: trafficStore.useCongestionModel,
       congestionIterations: trafficStore.congestionIterations,
       elasticDemand: trafficStore.elasticDemand,
+      nodeWeighting: trafficStore.nodeWeighting,
       filterBusRoutes: trafficStore.filterBusRoutes,
       odPairs: trafficStore.odPairs,
       area: trafficStore.area ? { ...trafficStore.area } : null
@@ -145,6 +146,7 @@ export const useLayersStore = defineStore('layers', () => {
     trafficStore.useCongestionModel = inputs.useCongestionModel ?? false
     trafficStore.congestionIterations = inputs.congestionIterations ?? 1
     trafficStore.elasticDemand = inputs.elasticDemand ?? false
+    trafficStore.nodeWeighting = inputs.nodeWeighting ?? 'uniform'
     trafficStore.filterBusRoutes = inputs.filterBusRoutes ?? false
   }
 
@@ -275,6 +277,7 @@ export const useLayersStore = defineStore('layers', () => {
       () => trafficStore.useCongestionModel,
       () => trafficStore.congestionIterations,
       () => trafficStore.elasticDemand,
+      () => trafficStore.nodeWeighting,
       () => trafficStore.filterBusRoutes,
       () => trafficStore.odPairs,
       () => trafficStore.area,

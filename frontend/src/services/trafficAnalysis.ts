@@ -206,15 +206,28 @@ export async function fetchGraphInfo(areaId?: string | null): Promise<GraphInfo>
  */
 export async function fetchBaseline(
   odPairs?: number,
-  areaId?: string | null
+  areaId?: string | null,
+  nodeWeighting: NodeWeighting = 'uniform'
 ): Promise<BaselineResponse> {
-  const pairs = odPairs === undefined || odPairs === null ? '' : `?od_pairs=${odPairs}`
-  const url = `${API_BASE_URL}/baseline${pairs}${areaQuery(areaId, pairs ? '&' : '?')}`
+  const params = new URLSearchParams()
+  if (odPairs !== undefined && odPairs !== null) params.set('od_pairs', String(odPairs))
+  if (areaId) params.set('area_id', areaId)
+  // uniform is the server default, left out so the URL stays the one the
+  // browser cache already knows
+  if (nodeWeighting !== 'uniform') params.set('node_weighting', nodeWeighting)
+  const query = params.toString()
+  const url = `${API_BASE_URL}/baseline${query ? `?${query}` : ''}`
 
   const response = await fetch(url)
   if (!response.ok) await throwHttpError(response, 'Failed to fetch baseline')
   return response.json()
 }
+
+/**
+ * How the OD sampler weighs the nodes: every junction the same, or by the
+ * residents and jobs around it (federal statistics, per area percentiles).
+ */
+export type NodeWeighting = 'uniform' | 'population'
 
 export async function recalculateRoutes(
   edgeModifications: EdgeModification[],
@@ -222,6 +235,7 @@ export async function recalculateRoutes(
     useCongestionModel?: boolean
     congestionIterations?: number
     elasticDemand?: boolean
+    nodeWeighting?: NodeWeighting
     /** how many OD pairs, null for the server default */
     odPairs?: number | null
     /** which area to run on, null for the default one */
@@ -241,6 +255,7 @@ export async function recalculateRoutes(
       use_congestion: options?.useCongestionModel ?? false,
       congestion_iterations: options?.congestionIterations ?? 1,
       resample_destinations: options?.elasticDemand ?? false,
+      node_weighting: options?.nodeWeighting ?? 'uniform',
       od_pairs: options?.odPairs ?? null,
       // the baseline is the same for every run, we fetch it once from
       // GET /baseline instead of carrying it in every answer

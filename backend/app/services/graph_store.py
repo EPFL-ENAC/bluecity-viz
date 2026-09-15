@@ -8,12 +8,18 @@ only the cells its circle touches. That is a few milliseconds.
 
 Layout of the store directory:
 
-    nodes.parquet   cell, node_id, x, y, street_count, elevation
+    nodes.parquet   cell, node_id, x, y, street_count, elevation,
+                    residents, jobs_fte
     edges.parquet   cell (of u), u, v, key, length, travel_time, speed_kph,
                     lanes, elev_gain, highway, name, geom_xy
     index.json      the grid, and per cell its row groups and its counts
     density.json    counts per cell for the frontend, so the picker can tell
                     "usable here" without asking the backend
+
+residents and jobs_fte are raw counts from the federal statistics (STATPOP
+residents, STATENT full-time jobs), summed over the hectares whose centre is
+nearest to the node. They stay raw counts on purpose: the OD sampler turns
+them into a score per area, and other tools read the same columns.
 
 An edge belongs to the cell of its start node. An area keeps the edges whose
 two ends are both inside the shape, and those always start in a cell the
@@ -37,7 +43,8 @@ import pyarrow.parquet as pq
 logger = logging.getLogger(__name__)
 
 # Bump when the columns change, so an old store is refused instead of read wrong.
-FORMAT_VERSION = 1
+# 2: nodes gained residents and jobs_fte.
+FORMAT_VERSION = 2
 
 NODES_FILE = "nodes.parquet"
 EDGES_FILE = "edges.parquet"
@@ -127,6 +134,8 @@ NODE_COLUMNS = {
     "y": pa.float32(),
     "street_count": pa.int16(),
     "elevation": pa.float32(),
+    "residents": pa.int32(),
+    "jobs_fte": pa.float32(),
 }
 
 EDGE_COLUMNS = {

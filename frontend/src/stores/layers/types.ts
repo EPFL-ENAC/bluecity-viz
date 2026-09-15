@@ -48,6 +48,8 @@ export interface TrafficAnalysisInputs {
   useCongestionModel: boolean
   congestionIterations: number
   elasticDemand: boolean
+  /** how the OD sampler weighs the nodes, see NodeWeighting */
+  nodeWeighting: 'uniform' | 'population'
   filterBusRoutes: boolean
   /** how many OD pairs to route, null for the server default */
   odPairs: number | null

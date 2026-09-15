@@ -44,7 +44,10 @@ class SamplingConfig(BaseModel):
     )
     node_weight_col: str = Field(
         default="dummy",
-        description="Node attribute for static weights ('dummy' = uniform)",
+        description=(
+            "Node attribute for static weights ('dummy' = uniform, "
+            "'population' = residents and jobs score on the graph mirror)"
+        ),
     )
     lognorm_mu: float = Field(
         default=6.85, description="Lognormal mu parameter (fitted to travel survey)"
