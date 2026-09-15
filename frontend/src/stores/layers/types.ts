@@ -6,7 +6,10 @@ export interface EdgeUsageRow {
   frequency: number
   delta_count?: number
   delta_frequency?: number
-  co2_per_km?: number
+  /** CO2 of the traffic on the edge, g/km: one vehicle over it, times count, per km */
+  co2_g_per_km?: number
+  /** change of co2_g_per_km after the modification, g/km */
+  delta_co2_g_per_km?: number
   betweenness_centrality?: number
   delta_betweenness?: number
 }

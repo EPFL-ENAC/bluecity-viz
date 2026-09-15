@@ -92,7 +92,7 @@ function usageFor(key: string) {
     vehicles: row.count,
     delta: row.delta_count,
     deltaRelative: row.delta_relative || undefined,
-    co2Delta: row.co2_delta || undefined
+    co2Delta: row.delta_co2_g_per_km || undefined
   }
 }
 

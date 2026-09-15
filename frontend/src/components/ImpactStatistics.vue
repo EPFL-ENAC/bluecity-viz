@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatCo2, formatCount, formatDistance, formatTime } from '@/utils/impactFormat'
 import { computed } from 'vue'
 
 export interface ImpactStats {
@@ -26,29 +27,14 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), { elasticDemand: false })
 
-function formatWithSign(value: number, decimals = 1): string {
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${value.toFixed(decimals)}`
-}
-
-function formatCo2(grams?: number): string {
-  if (grams == null) return '—'
-  // grams get big fast on the total column
-  if (Math.abs(grams) >= 1000) return `${formatWithSign(grams / 1000, 1)} kg`
-  return `${formatWithSign(grams, 0)} g`
-}
-
-const affectedPercent = computed(() => {
-  const s = props.statistics
-  if (!s || s.total_routes === 0) return '0.0'
-  return ((s.affected_routes / s.total_routes) * 100).toFixed(1)
-})
-
 const header = computed(() => {
   const s = props.statistics
   if (!s) return 'Impact'
-  if (props.elasticDemand) return 'Impact · system-level total'
-  return `Impact · ${s.total_routes} routes, ${s.affected_routes} affected (${affectedPercent.value}%)`
+  // with elastic demand every trip is drawn again, so only the totals make sense
+  if (props.elasticDemand) return `Impact · ${formatCount(s.total_routes)} trips`
+  const share = s.total_routes > 0 ? (s.affected_routes / s.total_routes) * 100 : 0
+  const percent = share >= 10 ? share.toFixed(0) : share.toFixed(1)
+  return `Impact · ${formatCount(s.affected_routes)} of ${formatCount(s.total_routes)} affected (${percent}%)`
 })
 
 // One row per measure, with the three columns of the design.
@@ -58,15 +44,15 @@ const rows = computed(() => {
   return [
     {
       key: 'Distance',
-      total: `${formatWithSign(s.total_distance_increase_km, 1)} km`,
-      avg: `${formatWithSign(s.avg_distance_increase_km, 2)} km`,
-      max: `${formatWithSign(s.max_distance_increase_km, 2)} km`
+      total: formatDistance(s.total_distance_increase_km),
+      avg: formatDistance(s.avg_distance_increase_km),
+      max: formatDistance(s.max_distance_increase_km)
     },
     {
       key: 'Time',
-      total: `${formatWithSign(s.total_time_increase_minutes, 0)} min`,
-      avg: `${formatWithSign(s.avg_time_increase_minutes, 1)} min`,
-      max: `${formatWithSign(s.max_time_increase_minutes, 1)} min`
+      total: formatTime(s.total_time_increase_minutes),
+      avg: formatTime(s.avg_time_increase_minutes),
+      max: formatTime(s.max_time_increase_minutes)
     },
     {
       key: 'CO₂',

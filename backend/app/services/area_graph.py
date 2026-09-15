@@ -86,8 +86,7 @@ class Baseline:
     counts_group: np.ndarray  # per (u, v) group
     bc: np.ndarray  # per igraph edge, veh/day
     bc_group: np.ndarray
-    co2_per_km: np.ndarray  # per igraph edge, congested
-    co2_group: np.ndarray
+    co2_per_km_group: np.ndarray  # per (u, v) group, g/km of the traffic on it
     usage_rows: list = field(default_factory=list)
 
 
@@ -103,12 +102,14 @@ class AreaGraph:
         self.mirror = mirror
         self.dynamic = dynamic
 
+        # Grams of CO2 for one vehicle over each edge. The routes sum it, and
+        # times the edge counts it is the CO2 of the traffic on each edge.
         self.base_co2_g = CO2Calculator.edge_co2_array(
             mirror.length, mirror.speed_co2, mirror.elev_gain
         )
-        length_km = mirror.length / 1000.0
-        self.base_co2_per_km = np.where(
-            length_km > 0, self.base_co2_g / np.where(length_km > 0, length_km, 1.0), 0.0
+        # 1 / km per edge, 0 for an edge with no length
+        self._inv_km = np.divide(
+            1000.0, mirror.length, out=np.zeros(len(mirror.length)), where=mirror.length > 0
         )
 
         self.pairs: Optional[PairArrays] = None
@@ -182,7 +183,6 @@ class AreaGraph:
             mirror.node_y,
             mirror.street_count,
             self.base_co2_g,
-            self.base_co2_per_km,
         )
         # igraph topology and the python side maps, measured at about 100 B
         # per edge and per node on Lausanne.
@@ -208,12 +208,12 @@ class AreaGraph:
         if self.baseline is not None:
             b = self.baseline
             total += route_set_bytes(b.routes)
-            total += _nbytes(b.counts, b.counts_group, b.bc, b.bc_group, b.co2_per_km, b.co2_group)
+            total += _nbytes(b.counts, b.counts_group, b.bc, b.bc_group, b.co2_per_km_group)
             total += USAGE_ROW_BYTES * len(b.usage_rows)
 
         for small in self._baseline_by_n.values():
             # the route set is a view on the baseline one, only the rows are new
-            total += _nbytes(small.counts, small.counts_group)
+            total += _nbytes(small.counts, small.counts_group, small.co2_per_km_group)
             total += USAGE_ROW_BYTES * len(small.usage_rows)
         for rs in self.route_cache.values():
             total += route_set_bytes(rs)
@@ -251,6 +251,14 @@ class AreaGraph:
 
     # ── Baseline ──────────────────────────────────────────────────────────────
 
+    def _traffic_co2_per_km(self, co2_g: np.ndarray, counts: np.ndarray) -> np.ndarray:
+        """CO2 of the traffic per km, per (u, v) group.
+
+        One vehicle over the edge times the number of routes on it, divided by
+        the length. Parallel edges add up, like two lanes of one street.
+        """
+        return self.mirror.group_sum(co2_g * counts * self._inv_km)
+
     def baseline_for(self, n_pairs: int) -> Baseline:
         """Baseline restricted to the first n_pairs OD pairs.
 
@@ -272,6 +280,8 @@ class AreaGraph:
         routes = self.baseline.routes.prefix(n)
         counts = routes.edge_counts(mirror.n_edges)
         counts_group = mirror.group_sum(counts)
+        # the CO2 follows the traffic, so a smaller set has its own values
+        co2_per_km_group = self._traffic_co2_per_km(self.base_co2_g, counts)
         small = Baseline(
             pairs=self.baseline.pairs.prefix(n),
             routes=routes,
@@ -279,14 +289,13 @@ class AreaGraph:
             counts_group=counts_group,
             bc=self.baseline.bc,  # betweenness is a property of the graph, not of the OD set
             bc_group=self.baseline.bc_group,
-            co2_per_km=self.baseline.co2_per_km,
-            co2_group=self.baseline.co2_group,
+            co2_per_km_group=co2_per_km_group,
         )
         small.usage_rows = build_edge_usage_rows(
             mirror,
             counts_group,
             routes.n_found,
-            self.baseline.co2_group,
+            co2_per_km_group,
             betweenness=self.baseline.bc_group,
         )
         self._baseline_by_n[n] = small
@@ -296,7 +305,7 @@ class AreaGraph:
         return small
 
     def build_baseline(self, config, seed: int) -> None:
-        """Route the default pairs, compute betweenness and congested CO2."""
+        """Route the default pairs, compute betweenness and the CO2 per edge."""
         mirror = self.mirror
         t0 = time.perf_counter()
 
@@ -314,15 +323,12 @@ class AreaGraph:
         bc = bpr.compute_betweenness(mirror, mirror.travel_time, self._bc_sample_vertices, config)
         logger.info("[AREA %s] betweenness in %.1f s", self.meta.id, time.perf_counter() - t0)
 
-        # CO2 per km at the baseline congested speeds, not at free flow.
-        speed_cong = bpr.congested_speed(mirror, bc, mirror.speed_free, config)
-        co2_per_km = bpr.co2_per_km(mirror, speed_cong)
-        self.base_co2_per_km = co2_per_km
-
         counts = routes.edge_counts(mirror.n_edges)
         counts_group = mirror.group_sum(counts)
         bc_group = mirror.group_sum(bc)
-        co2_group = mirror.group_max(co2_per_km)
+        # Same grams as the routes, so times the length the edges add up to
+        # the route totals.
+        co2_per_km_group = self._traffic_co2_per_km(self.base_co2_g, counts)
 
         self.baseline = Baseline(
             pairs=self.pairs,
@@ -331,14 +337,13 @@ class AreaGraph:
             counts_group=counts_group,
             bc=bc,
             bc_group=bc_group,
-            co2_per_km=co2_per_km,
-            co2_group=co2_group,
+            co2_per_km_group=co2_per_km_group,
         )
         self.baseline.usage_rows = build_edge_usage_rows(
             mirror,
             counts_group,
             routes.n_found,
-            co2_group,
+            co2_per_km_group,
             betweenness=bc_group,
         )
         # Freezing lives in main.py now: it is only right for the objects that
@@ -481,7 +486,9 @@ class AreaGraph:
                 n_pairs = len(pairs)
                 original = self._route_set_for(pairs)
                 base = None
-                original_counts_group = mirror.group_sum(original.edge_counts(mirror.n_edges))
+                original_counts = original.edge_counts(mirror.n_edges)
+                original_counts_group = mirror.group_sum(original_counts)
+                original_co2_per_km = self._traffic_co2_per_km(self.base_co2_g, original_counts)
             else:
                 if self.pairs is None:
                     raise RuntimeError("No pairs available")
@@ -490,13 +497,13 @@ class AreaGraph:
                 pairs = base.pairs
                 original = base.routes
                 original_counts_group = base.counts_group
+                original_co2_per_km = base.co2_per_km_group
 
         with timed("apply_modifications", timing):
             (
                 applied,
                 travel_time,
                 speed,
-                co2_per_km,
                 co2_g,
                 blocked,
                 changed_ids,
@@ -504,7 +511,6 @@ class AreaGraph:
                 mirror,
                 mirror.travel_time,
                 mirror.speed_free,
-                self.base_co2_per_km,
                 self.base_co2_g,
                 edge_modifications,
             )
@@ -550,7 +556,9 @@ class AreaGraph:
         with timed("edge_usage", timing):
             new_counts = self._new_counts(original, new_routes, affected_idx, base)
             new_counts_group = mirror.group_sum(new_counts)
-            co2_group = mirror.group_max(co2_per_km)
+            # co2_g is this request's array: a speed limit changes the grams of
+            # its edges, the same way it changed the routes' totals.
+            new_co2_per_km = self._traffic_co2_per_km(co2_g, new_counts)
             total_routes = original.n_found
 
             if not include_baseline:
@@ -564,15 +572,16 @@ class AreaGraph:
                     mirror,
                     original_counts_group,
                     total_routes,
-                    co2_group,
+                    original_co2_per_km,
                     betweenness=self.baseline.bc_group,
                 )
             new_rows = build_edge_usage_rows(
                 mirror,
                 new_counts_group,
                 total_routes,
-                co2_group,
+                new_co2_per_km,
                 original_counts=original_counts_group,
+                original_co2_per_km=original_co2_per_km,
                 betweenness=self.baseline.bc_group,
                 delta_betweenness=delta_bc_group,
             )

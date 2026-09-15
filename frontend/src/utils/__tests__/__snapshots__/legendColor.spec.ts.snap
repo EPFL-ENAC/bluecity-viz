@@ -2958,112 +2958,283 @@ exports[`traffic legend > builds the co2 legend 1`] = `
       "label": "120 g/km",
     },
     {
-      "color": "rgb(116, 0, 0)",
-      "label": "116 g/km",
+      "color": "rgb(117, 0, 0)",
+      "label": "117 g/km",
+    },
+    {
+      "color": "rgb(114, 0, 0)",
+      "label": "114 g/km",
     },
     {
       "color": "rgb(111, 0, 0)",
       "label": "111 g/km",
     },
     {
-      "color": "rgb(107, 0, 0)",
-      "label": "107 g/km",
+      "color": "rgb(108, 0, 0)",
+      "label": "108 g/km",
     },
     {
-      "color": "rgb(103, 0, 0)",
-      "label": "103 g/km",
+      "color": "rgb(105, 0, 0)",
+      "label": "105 g/km",
+    },
+    {
+      "color": "rgb(102, 0, 0)",
+      "label": "102 g/km",
     },
     {
       "color": "rgb(98, 0, 0)",
       "label": "98 g/km",
     },
     {
-      "color": "rgb(94, 0, 0)",
-      "label": "94 g/km",
+      "color": "rgb(95, 0, 0)",
+      "label": "95 g/km",
+    },
+    {
+      "color": "rgb(92, 0, 0)",
+      "label": "92 g/km",
     },
     {
       "color": "rgb(89, 0, 0)",
       "label": "89 g/km",
     },
     {
-      "color": "rgb(85, 0, 0)",
-      "label": "85 g/km",
+      "color": "rgb(86, 0, 0)",
+      "label": "86 g/km",
     },
     {
-      "color": "rgb(81, 0, 0)",
-      "label": "81 g/km",
+      "color": "rgb(83, 0, 0)",
+      "label": "83 g/km",
     },
     {
-      "color": "rgb(76, 0, 0)",
-      "label": "76 g/km",
+      "color": "rgb(80, 0, 0)",
+      "label": "80 g/km",
     },
     {
-      "color": "rgb(72, 0, 0)",
-      "label": "72 g/km",
+      "color": "rgb(77, 0, 0)",
+      "label": "77 g/km",
+    },
+    {
+      "color": "rgb(74, 0, 0)",
+      "label": "74 g/km",
+    },
+    {
+      "color": "rgb(71, 0, 0)",
+      "label": "71 g/km",
     },
     {
       "color": "rgb(68, 0, 0)",
       "label": "68 g/km",
     },
     {
-      "color": "rgb(63, 0, 0)",
-      "label": "63 g/km",
+      "color": "rgb(65, 0, 0)",
+      "label": "65 g/km",
     },
     {
-      "color": "rgb(59, 0, 0)",
-      "label": "59 g/km",
+      "color": "rgb(62, 0, 0)",
+      "label": "62 g/km",
+    },
+    {
+      "color": "rgb(58, 0, 0)",
+      "label": "58 g/km",
     },
     {
       "color": "rgb(55, 0, 0)",
       "label": "55 g/km",
     },
     {
-      "color": "rgb(50, 0, 0)",
-      "label": "50 g/km",
+      "color": "rgb(52, 0, 0)",
+      "label": "52 g/km",
+    },
+    {
+      "color": "rgb(49, 0, 0)",
+      "label": "49 g/km",
     },
     {
       "color": "rgb(46, 0, 0)",
       "label": "46 g/km",
     },
     {
-      "color": "rgb(42, 0, 0)",
-      "label": "42 g/km",
+      "color": "rgb(43, 0, 0)",
+      "label": "43 g/km",
+    },
+    {
+      "color": "rgb(40, 0, 0)",
+      "label": "40 g/km",
     },
     {
       "color": "rgb(37, 0, 0)",
       "label": "37 g/km",
     },
     {
-      "color": "rgb(33, 0, 0)",
-      "label": "33 g/km",
+      "color": "rgb(34, 0, 0)",
+      "label": "34 g/km",
+    },
+    {
+      "color": "rgb(31, 0, 0)",
+      "label": "31 g/km",
     },
     {
       "color": "rgb(28, 0, 0)",
       "label": "28 g/km",
     },
     {
-      "color": "rgb(24, 0, 0)",
-      "label": "24 g/km",
+      "color": "rgb(25, 0, 0)",
+      "label": "25 g/km",
     },
     {
-      "color": "rgb(20, 0, 0)",
-      "label": "20 g/km",
+      "color": "rgb(22, 0, 0)",
+      "label": "22 g/km",
+    },
+    {
+      "color": "rgb(18, 0, 0)",
+      "label": "18 g/km",
     },
     {
       "color": "rgb(15, 0, 0)",
       "label": "15 g/km",
     },
     {
+      "color": "rgb(12, 0, 0)",
+      "label": "12 g/km",
+    },
+    {
+      "color": "rgb(9, 0, 0)",
+      "label": "9 g/km",
+    },
+    {
+      "color": "rgb(6, 0, 0)",
+      "label": "6 g/km",
+    },
+    {
+      "color": "rgb(3, 0, 0)",
+      "label": "3 g/km",
+    },
+    {
+      "color": "rgb(0, 0, 0)",
+      "label": "0 g/km",
+    },
+  ],
+  "gradient": "linear-gradient(to left, rgb(120, 0, 0), rgb(117, 0, 0), rgb(114, 0, 0), rgb(111, 0, 0), rgb(108, 0, 0), rgb(105, 0, 0), rgb(102, 0, 0), rgb(98, 0, 0), rgb(95, 0, 0), rgb(92, 0, 0), rgb(89, 0, 0), rgb(86, 0, 0), rgb(83, 0, 0), rgb(80, 0, 0), rgb(77, 0, 0), rgb(74, 0, 0), rgb(71, 0, 0), rgb(68, 0, 0), rgb(65, 0, 0), rgb(62, 0, 0), rgb(58, 0, 0), rgb(55, 0, 0), rgb(52, 0, 0), rgb(49, 0, 0), rgb(46, 0, 0), rgb(43, 0, 0), rgb(40, 0, 0), rgb(37, 0, 0), rgb(34, 0, 0), rgb(31, 0, 0), rgb(28, 0, 0), rgb(25, 0, 0), rgb(22, 0, 0), rgb(18, 0, 0), rgb(15, 0, 0), rgb(12, 0, 0), rgb(9, 0, 0), rgb(6, 0, 0), rgb(3, 0, 0), rgb(0, 0, 0))",
+  "isCategorical": false,
+  "label": "CO₂ Emissions",
+  "unit": "g CO₂ per km, all routes",
+}
+`;
+
+exports[`traffic legend > builds the co2_delta legend 1`] = `
+{
+  "colors": [
+    {
+      "color": "rgb(120, 0, 0)",
+      "label": "+120 g/km",
+    },
+    {
+      "color": "rgb(116, 0, 0)",
+      "label": "+116 g/km",
+    },
+    {
+      "color": "rgb(111, 0, 0)",
+      "label": "+111 g/km",
+    },
+    {
+      "color": "rgb(107, 0, 0)",
+      "label": "+107 g/km",
+    },
+    {
+      "color": "rgb(103, 0, 0)",
+      "label": "+103 g/km",
+    },
+    {
+      "color": "rgb(98, 0, 0)",
+      "label": "+98 g/km",
+    },
+    {
+      "color": "rgb(94, 0, 0)",
+      "label": "+94 g/km",
+    },
+    {
+      "color": "rgb(89, 0, 0)",
+      "label": "+89 g/km",
+    },
+    {
+      "color": "rgb(85, 0, 0)",
+      "label": "+85 g/km",
+    },
+    {
+      "color": "rgb(81, 0, 0)",
+      "label": "+81 g/km",
+    },
+    {
+      "color": "rgb(76, 0, 0)",
+      "label": "+76 g/km",
+    },
+    {
+      "color": "rgb(72, 0, 0)",
+      "label": "+72 g/km",
+    },
+    {
+      "color": "rgb(68, 0, 0)",
+      "label": "+68 g/km",
+    },
+    {
+      "color": "rgb(63, 0, 0)",
+      "label": "+63 g/km",
+    },
+    {
+      "color": "rgb(59, 0, 0)",
+      "label": "+59 g/km",
+    },
+    {
+      "color": "rgb(55, 0, 0)",
+      "label": "+55 g/km",
+    },
+    {
+      "color": "rgb(50, 0, 0)",
+      "label": "+50 g/km",
+    },
+    {
+      "color": "rgb(46, 0, 0)",
+      "label": "+46 g/km",
+    },
+    {
+      "color": "rgb(42, 0, 0)",
+      "label": "+42 g/km",
+    },
+    {
+      "color": "rgb(37, 0, 0)",
+      "label": "+37 g/km",
+    },
+    {
+      "color": "rgb(33, 0, 0)",
+      "label": "+33 g/km",
+    },
+    {
+      "color": "rgb(28, 0, 0)",
+      "label": "+28 g/km",
+    },
+    {
+      "color": "rgb(24, 0, 0)",
+      "label": "+24 g/km",
+    },
+    {
+      "color": "rgb(20, 0, 0)",
+      "label": "+20 g/km",
+    },
+    {
+      "color": "rgb(15, 0, 0)",
+      "label": "+15 g/km",
+    },
+    {
       "color": "rgb(11, 0, 0)",
-      "label": "11 g/km",
+      "label": "+11 g/km",
     },
     {
       "color": "rgb(7, 0, 0)",
-      "label": "7 g/km",
+      "label": "+7 g/km",
     },
     {
       "color": "rgb(2, 0, 0)",
-      "label": "2 g/km",
+      "label": "+2 g/km",
     },
     {
       "color": "rgb(2, 0, 0)",
@@ -3116,180 +3287,9 @@ exports[`traffic legend > builds the co2 legend 1`] = `
   ],
   "gradient": "linear-gradient(to left, rgb(120, 0, 0), rgb(116, 0, 0), rgb(111, 0, 0), rgb(107, 0, 0), rgb(103, 0, 0), rgb(98, 0, 0), rgb(94, 0, 0), rgb(89, 0, 0), rgb(85, 0, 0), rgb(81, 0, 0), rgb(76, 0, 0), rgb(72, 0, 0), rgb(68, 0, 0), rgb(63, 0, 0), rgb(59, 0, 0), rgb(55, 0, 0), rgb(50, 0, 0), rgb(46, 0, 0), rgb(42, 0, 0), rgb(37, 0, 0), rgb(33, 0, 0), rgb(28, 0, 0), rgb(24, 0, 0), rgb(20, 0, 0), rgb(15, 0, 0), rgb(11, 0, 0), rgb(7, 0, 0), rgb(2, 0, 0), rgb(2, 0, 0), rgb(6, 0, 0), rgb(11, 0, 0), rgb(15, 0, 0), rgb(19, 0, 0), rgb(24, 0, 0), rgb(28, 0, 0), rgb(33, 0, 0), rgb(37, 0, 0), rgb(41, 0, 0), rgb(46, 0, 0), rgb(50, 0, 0))",
   "isCategorical": false,
-  "label": "CO₂ Emissions",
-  "unit": "g CO₂/km per use",
-}
-`;
-
-exports[`traffic legend > builds the co2_delta legend 1`] = `
-{
-  "colors": [
-    {
-      "color": "rgb(120, 0, 0)",
-      "label": "+120.00 g/km",
-    },
-    {
-      "color": "rgb(116, 0, 0)",
-      "label": "+115.64 g/km",
-    },
-    {
-      "color": "rgb(111, 0, 0)",
-      "label": "+111.28 g/km",
-    },
-    {
-      "color": "rgb(107, 0, 0)",
-      "label": "+106.92 g/km",
-    },
-    {
-      "color": "rgb(103, 0, 0)",
-      "label": "+102.56 g/km",
-    },
-    {
-      "color": "rgb(98, 0, 0)",
-      "label": "+98.21 g/km",
-    },
-    {
-      "color": "rgb(94, 0, 0)",
-      "label": "+93.85 g/km",
-    },
-    {
-      "color": "rgb(89, 0, 0)",
-      "label": "+89.49 g/km",
-    },
-    {
-      "color": "rgb(85, 0, 0)",
-      "label": "+85.13 g/km",
-    },
-    {
-      "color": "rgb(81, 0, 0)",
-      "label": "+80.77 g/km",
-    },
-    {
-      "color": "rgb(76, 0, 0)",
-      "label": "+76.41 g/km",
-    },
-    {
-      "color": "rgb(72, 0, 0)",
-      "label": "+72.05 g/km",
-    },
-    {
-      "color": "rgb(68, 0, 0)",
-      "label": "+67.69 g/km",
-    },
-    {
-      "color": "rgb(63, 0, 0)",
-      "label": "+63.33 g/km",
-    },
-    {
-      "color": "rgb(59, 0, 0)",
-      "label": "+58.97 g/km",
-    },
-    {
-      "color": "rgb(55, 0, 0)",
-      "label": "+54.62 g/km",
-    },
-    {
-      "color": "rgb(50, 0, 0)",
-      "label": "+50.26 g/km",
-    },
-    {
-      "color": "rgb(46, 0, 0)",
-      "label": "+45.90 g/km",
-    },
-    {
-      "color": "rgb(42, 0, 0)",
-      "label": "+41.54 g/km",
-    },
-    {
-      "color": "rgb(37, 0, 0)",
-      "label": "+37.18 g/km",
-    },
-    {
-      "color": "rgb(33, 0, 0)",
-      "label": "+32.82 g/km",
-    },
-    {
-      "color": "rgb(28, 0, 0)",
-      "label": "+28.46 g/km",
-    },
-    {
-      "color": "rgb(24, 0, 0)",
-      "label": "+24.10 g/km",
-    },
-    {
-      "color": "rgb(20, 0, 0)",
-      "label": "+19.74 g/km",
-    },
-    {
-      "color": "rgb(15, 0, 0)",
-      "label": "+15.38 g/km",
-    },
-    {
-      "color": "rgb(11, 0, 0)",
-      "label": "+11.03 g/km",
-    },
-    {
-      "color": "rgb(7, 0, 0)",
-      "label": "+6.67 g/km",
-    },
-    {
-      "color": "rgb(2, 0, 0)",
-      "label": "+2.31 g/km",
-    },
-    {
-      "color": "rgb(2, 0, 0)",
-      "label": "-2.05 g/km",
-    },
-    {
-      "color": "rgb(6, 0, 0)",
-      "label": "-6.41 g/km",
-    },
-    {
-      "color": "rgb(11, 0, 0)",
-      "label": "-10.77 g/km",
-    },
-    {
-      "color": "rgb(15, 0, 0)",
-      "label": "-15.13 g/km",
-    },
-    {
-      "color": "rgb(19, 0, 0)",
-      "label": "-19.49 g/km",
-    },
-    {
-      "color": "rgb(24, 0, 0)",
-      "label": "-23.85 g/km",
-    },
-    {
-      "color": "rgb(28, 0, 0)",
-      "label": "-28.21 g/km",
-    },
-    {
-      "color": "rgb(33, 0, 0)",
-      "label": "-32.56 g/km",
-    },
-    {
-      "color": "rgb(37, 0, 0)",
-      "label": "-36.92 g/km",
-    },
-    {
-      "color": "rgb(41, 0, 0)",
-      "label": "-41.28 g/km",
-    },
-    {
-      "color": "rgb(46, 0, 0)",
-      "label": "-45.64 g/km",
-    },
-    {
-      "color": "rgb(50, 0, 0)",
-      "label": "-50.00 g/km",
-    },
-  ],
-  "gradient": "linear-gradient(to left, rgb(120, 0, 0), rgb(116, 0, 0), rgb(111, 0, 0), rgb(107, 0, 0), rgb(103, 0, 0), rgb(98, 0, 0), rgb(94, 0, 0), rgb(89, 0, 0), rgb(85, 0, 0), rgb(81, 0, 0), rgb(76, 0, 0), rgb(72, 0, 0), rgb(68, 0, 0), rgb(63, 0, 0), rgb(59, 0, 0), rgb(55, 0, 0), rgb(50, 0, 0), rgb(46, 0, 0), rgb(42, 0, 0), rgb(37, 0, 0), rgb(33, 0, 0), rgb(28, 0, 0), rgb(24, 0, 0), rgb(20, 0, 0), rgb(15, 0, 0), rgb(11, 0, 0), rgb(7, 0, 0), rgb(2, 0, 0), rgb(2, 0, 0), rgb(6, 0, 0), rgb(11, 0, 0), rgb(15, 0, 0), rgb(19, 0, 0), rgb(24, 0, 0), rgb(28, 0, 0), rgb(33, 0, 0), rgb(37, 0, 0), rgb(41, 0, 0), rgb(46, 0, 0), rgb(50, 0, 0))",
-  "isCategorical": false,
   "label": "CO₂ Emissions Change",
   "showZero": true,
-  "unit": "Δ g CO₂/km (freq-weighted)",
+  "unit": "Δ g CO₂ per km, all routes",
 }
 `;
 

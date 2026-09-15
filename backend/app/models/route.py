@@ -194,7 +194,13 @@ class EdgeUsageStats(BaseModel):
     delta_frequency: Optional[float] = Field(
         None, description="Change in frequency (new - original)"
     )
-    co2_per_km: Optional[float] = Field(None, description="CO2 in g/km per use")
+    co2_g_per_km: Optional[float] = Field(
+        None,
+        description="CO2 of the traffic on this edge, g/km: one vehicle times count / length",
+    )
+    delta_co2_g_per_km: Optional[float] = Field(
+        None, description="Change in co2_g_per_km after the modification (new - original), g/km"
+    )
     betweenness_centrality: Optional[float] = Field(None, description="Edge betweenness centrality")
     delta_betweenness: Optional[float] = Field(None, description="Change in BC after modification")
 
