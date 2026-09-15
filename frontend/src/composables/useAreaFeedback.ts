@@ -72,7 +72,7 @@ export function useAreaFeedback() {
 
   const estimate = computed<AreaCounts | null>(() => {
     const circle = trafficStore.draftArea
-    if (!circle || !density.value) return null
+    if (circle?.kind !== 'circle' || !density.value) return null
     return estimateCircle(density.value, circle.lon, circle.lat, circle.radiusM)
   })
 
@@ -83,7 +83,10 @@ export function useAreaFeedback() {
     if (unavailable.value) return { status: 'unavailable', estimate: null, exact: null }
 
     const coverageBbox = trafficStore.areaLimits?.coverage_bbox ?? null
-    if (!insideCoverage(coverageBbox, circle.lon, circle.lat, circle.radiusM)) {
+    if (
+      circle.kind === 'circle' &&
+      !insideCoverage(coverageBbox, circle.lon, circle.lat, circle.radiusM)
+    ) {
       return { status: 'outside_coverage', estimate: estimate.value, exact: null }
     }
 

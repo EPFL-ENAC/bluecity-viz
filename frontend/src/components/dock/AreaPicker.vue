@@ -17,7 +17,11 @@ const props = defineProps<{
 const trafficStore = useTrafficAnalysisStore()
 
 const radiusKm = computed({
-  get: () => Math.round(((trafficStore.draftArea?.radiusM ?? 3000) / 1000) * 10) / 10,
+  get: () => {
+    const draft = trafficStore.draftArea
+    const radiusM = draft?.kind === 'circle' ? draft.radiusM : 3000
+    return Math.round((radiusM / 1000) * 10) / 10
+  },
   set: (km: number) => trafficStore.setDraftRadius(Math.round(km * 1000))
 })
 
@@ -54,7 +58,7 @@ function formatCount(value: number): string {
 
 const centre = computed(() => {
   const circle = trafficStore.draftArea
-  if (!circle) return ''
+  if (circle?.kind !== 'circle') return ''
   return `${circle.lat.toFixed(3)}, ${circle.lon.toFixed(3)}`
 })
 

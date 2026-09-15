@@ -618,12 +618,13 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     draftArea.value = null
   }
 
+  // Only a circle moves or grows, a set of communes has no centre to drag.
   function moveDraft(lon: number, lat: number) {
-    if (draftArea.value) draftArea.value = { ...draftArea.value, lon, lat }
+    if (draftArea.value?.kind === 'circle') draftArea.value = { ...draftArea.value, lon, lat }
   }
 
   function setDraftRadius(radiusM: number) {
-    if (draftArea.value) draftArea.value = { ...draftArea.value, radiusM }
+    if (draftArea.value?.kind === 'circle') draftArea.value = { ...draftArea.value, radiusM }
   }
 
   /** The place the draft circle sits on, read from the basemap by the picker. */

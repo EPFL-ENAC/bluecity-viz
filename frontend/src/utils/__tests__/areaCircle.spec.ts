@@ -1,4 +1,4 @@
-import type { TrafficAreaSelection } from '@/stores/layers/types'
+import type { CircleArea } from '@/stores/layers/types'
 import {
   AREA_RING_LAYER,
   AREA_SOURCE,
@@ -13,7 +13,7 @@ import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import { GRAPH_COLORS } from '@/utils/epflBasemap'
 import { describe, expect, it } from 'vitest'
 
-const BERN: TrafficAreaSelection = { kind: 'circle', lon: 7.44, lat: 46.95, radiusM: 3000 }
+const BERN: CircleArea = { kind: 'circle', lon: 7.44, lat: 46.95, radiusM: 3000 }
 
 function ring(circle = BERN, ok = true) {
   const feature = areaFeatures(circle, ok).features[0]

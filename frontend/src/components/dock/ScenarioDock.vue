@@ -6,6 +6,7 @@ import BcIcon from '@/components/ui/BcIcon.vue'
 import { useAreaFeedback } from '@/composables/useAreaFeedback'
 import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useLayersStore } from '@/stores/layers'
+import type { TrafficAreaSelection } from '@/stores/layers/types'
 import { useScenarioStore, type StreetRef } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import type { Map as MapLibre } from 'maplibre-gl'
@@ -36,22 +37,29 @@ const mapRef = inject<Ref<{ map?: MapLibre } | undefined>>('mapRef')
 
 // The area the workbench runs on.
 const areaName = computed(() => {
-  const circle = trafficStore.area
-  if (!circle) return 'Lausanne (default)'
-  // The name the picker read on the basemap. Areas saved before that, and the
-  // styles with no labels, still show the circle itself.
-  if (circle.name) return circle.name
-  const km = (circle.radiusM / 1000).toFixed(1)
-  return `${km} km around ${circle.lat.toFixed(3)}, ${circle.lon.toFixed(3)}`
+  const area = trafficStore.area
+  if (!area) return 'Lausanne (default)'
+  // The name the picker wrote. Areas saved before that, and the styles with
+  // no labels, still show the shape itself.
+  if (area.name) return area.name
+  return areaShapeOf(area)
 })
 
-// The circle behind the name, so the radius stays readable.
+// The shape behind the name, so the radius or the commune count stays readable.
 const areaShape = computed(() => {
-  const circle = trafficStore.area
-  if (!circle?.name) return ''
-  const km = (circle.radiusM / 1000).toFixed(1)
-  return `${km} km around ${circle.lat.toFixed(3)}, ${circle.lon.toFixed(3)}`
+  const area = trafficStore.area
+  if (!area?.name) return ''
+  return areaShapeOf(area)
 })
+
+function areaShapeOf(area: TrafficAreaSelection): string {
+  if (area.kind === 'municipalities') {
+    const n = area.ofsIds.length
+    return n === 1 ? '1 municipality' : `${n} municipalities`
+  }
+  const km = (area.radiusM / 1000).toFixed(1)
+  return `${km} km around ${area.lat.toFixed(3)}, ${area.lon.toFixed(3)}`
+}
 
 // The streets of this area are not on the map yet. The ring is already
 // there, so the dock says why it is empty instead of looking broken.

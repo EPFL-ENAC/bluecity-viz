@@ -10,7 +10,7 @@
  * `collectPlaces` talks to the map, `areaLabel` is pure and unit tested.
  */
 
-import type { TrafficAreaSelection } from '@/stores/layers/types'
+import type { CircleArea } from '@/stores/layers/types'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 
@@ -121,7 +121,7 @@ function distanceM(a: { lon: number; lat: number }, b: { lon: number; lat: numbe
 }
 
 /** Where the circle sits compared to the place: "East", "South-west"… */
-function directionOf(place: PlacePoint, circle: TrafficAreaSelection): string {
+function directionOf(place: PlacePoint, circle: CircleArea): string {
   const dx = (circle.lon - place.lon) * mPerDegLon(circle.lat)
   const dy = (circle.lat - place.lat) * mPerDegLat
   // Bearing from north, clockwise, cut in eight.
@@ -134,7 +134,7 @@ function directionOf(place: PlacePoint, circle: TrafficAreaSelection): string {
  * The name of a circle, or null when no place is close enough. The caller then
  * keeps the coordinates.
  */
-export function areaLabel(circle: TrafficAreaSelection, places: PlacePoint[]): string | null {
+export function areaLabel(circle: CircleArea, places: PlacePoint[]): string | null {
   if (!places.length || circle.radiusM <= 0) return null
 
   const scored = places

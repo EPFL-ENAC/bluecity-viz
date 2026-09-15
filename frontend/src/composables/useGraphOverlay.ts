@@ -205,7 +205,7 @@ export function useGraphOverlay(
         map.addLayer(areaRingLayer(colors.value), under)
       }
       // The default city is not a circle the user drew, so it has no ring.
-      setData(map, AREA_SOURCE, area ? areaFeatures(area, true) : emptyArea())
+      setData(map, AREA_SOURCE, area?.kind === 'circle' ? areaFeatures(area, true) : emptyArea())
     } catch {
       retryLater(map)
     }

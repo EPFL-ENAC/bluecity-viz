@@ -5,7 +5,7 @@
  * every mouse move, so it must never sit on the graph source. Pure functions
  * here, the map calls live in components/map/AreaPickerOverlay.vue.
  */
-import type { TrafficAreaSelection } from '@/stores/layers/types'
+import type { CircleArea } from '@/stores/layers/types'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import type { GraphColors } from '@/utils/epflBasemap'
 import type { LayerSpecification } from 'maplibre-gl'
@@ -38,7 +38,7 @@ export function emptyArea(): AreaFeatureCollection {
  * circle is under a metre, and the backend cuts the area with the same flat
  * approximation.
  */
-export function ringOf(circle: TrafficAreaSelection): [number, number][] {
+export function ringOf(circle: CircleArea): [number, number][] {
   const dLat = circle.radiusM / mPerDegLat
   const dLon = circle.radiusM / Math.max(mPerDegLon(circle.lat), 1)
 
@@ -51,7 +51,7 @@ export function ringOf(circle: TrafficAreaSelection): [number, number][] {
 }
 
 /** The ring and its centre handle, what the map draws. */
-export function areaFeatures(circle: TrafficAreaSelection, ok: boolean): AreaFeatureCollection {
+export function areaFeatures(circle: CircleArea, ok: boolean): AreaFeatureCollection {
   const ring = ringOf(circle)
   const flag = ok ? 1 : 0
   return {

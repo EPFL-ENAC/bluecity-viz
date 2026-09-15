@@ -76,13 +76,13 @@ function readPlaces(): void {
 /** Put the name of the place under the circle in the draft. */
 function nameDraft(): void {
   const circle = trafficStore.draftArea
-  if (circle) trafficStore.setDraftName(areaLabel(circle, places))
+  if (circle?.kind === 'circle') trafficStore.setDraftName(areaLabel(circle, places))
 }
 
 function draw(): void {
   const current = map.value
   const circle = trafficStore.draftArea
-  if (!current || !circle) return
+  if (!current || circle?.kind !== 'circle') return
   if (mountedOn === current) setData(current, AREA_SOURCE, areaFeatures(circle, canUse.value))
   clip()
   paintNetwork()
@@ -94,12 +94,13 @@ function clip(): void {
   const box = networkBox.value
   if (!current || !box) return
   const circle = trafficStore.draftArea
-  const points = circle
-    ? ringOf(circle).map((point): [number, number] => {
-        const pixel = current.project(point)
-        return [pixel.x, pixel.y]
-      })
-    : []
+  const points =
+    circle?.kind === 'circle'
+      ? ringOf(circle).map((point): [number, number] => {
+          const pixel = current.project(point)
+          return [pixel.x, pixel.y]
+        })
+      : []
   box.style.clipPath = clipPathOf(points)
 }
 
@@ -280,14 +281,14 @@ function onClick(event: MapMouseEvent): void {
 watch([() => trafficStore.draftArea, canUse], draw, { deep: true })
 
 // The circle moved or grew: same towns, new answer.
-watch(
-  () => [trafficStore.draftArea?.lon, trafficStore.draftArea?.lat, trafficStore.draftArea?.radiusM],
-  nameDraft
-)
+watch(() => {
+  const draft = trafficStore.draftArea
+  return draft?.kind === 'circle' ? [draft.lon, draft.lat, draft.radiusM] : null
+}, nameDraft)
 
 // The radius slider moves the circle without a drag, check that one too.
 watch(
-  () => trafficStore.draftArea?.radiusM,
+  () => (trafficStore.draftArea?.kind === 'circle' ? trafficStore.draftArea.radiusM : undefined),
   (radius, previous) => {
     if (radius === undefined || previous === undefined) return
     invalidate()
@@ -322,7 +323,7 @@ function attach(current: MapLibreMap): void {
   // loaded yet, so it opens on a white map; here the tiles are already there,
   // and the circle only needs room around it to be dragged.
   const draft = trafficStore.draftArea
-  if (draft) fitCircle(current, draft, PICK_ROOM)
+  if (draft?.kind === 'circle') fitCircle(current, draft, PICK_ROOM)
   readPlaces()
   checkNow()
 }
@@ -347,8 +348,9 @@ function detach(current: MapLibreMap): void {
   // cancelled: back where we were. Going back to the default city moves
   // nothing here, the overlay takes the camera there when it lands.
   const area = trafficStore.area
-  if (area && areaKey(area) !== savedKey) fitCircle(current, area)
-  else if (savedCamera) {
+  if (area && areaKey(area) !== savedKey) {
+    if (area.kind === 'circle') fitCircle(current, area)
+  } else if (savedCamera) {
     current.easeTo({ center: savedCamera.center, zoom: savedCamera.zoom, duration: 600 })
   }
   savedCamera = null
