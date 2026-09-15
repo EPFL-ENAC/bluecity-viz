@@ -53,7 +53,10 @@ export interface EdgeUsageStats {
   frequency: number
   delta_count?: number
   delta_frequency?: number
-  co2_per_km?: number
+  /** CO2 of the traffic on the edge, g/km: one vehicle over it, times count, per km */
+  co2_g_per_km?: number
+  /** change of co2_g_per_km after the modification, g/km */
+  delta_co2_g_per_km?: number
   betweenness_centrality?: number
   delta_betweenness?: number
 }
@@ -85,15 +88,8 @@ function emptyScales(): ModeScales {
   }
 }
 
-// Fixed CO₂/km scale — matches the grade-relative model range (g CO₂/km).
-// Fallback upper bound used only when all CO2 values are zero.
-const CO2_KM_MAX = 350
-
-// CO2 delta: fixed ±6 domain prevents sub-g/km changes from saturating the scale
-const CO2_DELTA_CLAMP = 6
-
-/** 98th-percentile max — prevents a few outlier edges (zero-length stubs, roundabout loops)
- *  with astronomical CO2/km from blowing up the color scale. */
+/** 98th percentile max, so a few very busy edges (the ring road, a bridge) do
+ *  not push every other street to the bottom of the colour scale. */
 function robustMax(values: number[], percentile = 0.98, fallback = 1): number {
   const pos = values.filter((v) => v > 0)
   if (pos.length === 0) return fallback
@@ -215,7 +211,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       modes.push({ value: 'frequency', label: 'Edge Usage Frequency' })
     }
     const hasCO2 = newEdgeUsage.value.some(
-      (stat) => stat.co2_per_km !== undefined && stat.co2_per_km > 0
+      (stat) => stat.co2_g_per_km !== undefined && stat.co2_g_per_km > 0
     )
     if (hasCO2 && hasCalculatedRoutes.value) {
       modes.push({ value: 'co2', label: 'CO₂ Emissions' })
@@ -278,8 +274,8 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     let absRelMax = 0.01
     let maxBC = 0.01
     let absBCDeltaMax = 0.01
-    let co2Min = Infinity
     const co2Values: number[] = []
+    const co2DeltaValues: number[] = []
     let hasCO2 = false
     let hasDeltaValues = false
     let hasBetweenness = false
@@ -289,12 +285,10 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       const frequency = stat.frequency
       if (frequency > maxFreq) maxFreq = frequency
 
-      const co2 = stat.co2_per_km ?? 0
+      const co2 = stat.co2_g_per_km ?? 0
       co2Values.push(co2)
-      if (stat.co2_per_km !== undefined && stat.co2_per_km > 0) {
-        hasCO2 = true
-        if (co2 < co2Min) co2Min = co2
-      }
+      if (co2 > 0) hasCO2 = true
+      co2DeltaValues.push(Math.abs(stat.delta_co2_g_per_km ?? 0))
 
       const deltaCount = stat.delta_count ?? 0
       if (stat.delta_count !== undefined && Math.abs(stat.delta_count) > 0.001) {
@@ -331,10 +325,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     }
 
     if (hasCO2) {
-      const co2Max = robustMax(co2Values, 0.98, CO2_KM_MAX)
+      // g/km of traffic: 0 is a street no route uses
+      const co2Max = robustMax(co2Values, 0.98, 1)
       built.co2 = {
-        scale: scaleSequential(interpolateViridis).domain([co2Min, co2Max]),
-        min: co2Min,
+        scale: scaleSequential(interpolateViridis).domain([0, co2Max]),
+        min: 0,
         max: co2Max
       }
     }
@@ -348,10 +343,13 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       }
 
       if (hasCO2) {
+        // symmetrical like delta, on the 98th percentile so the few streets
+        // next to a closure do not wash out the rest
+        const absCo2DeltaMax = robustMax(co2DeltaValues, 0.98, 1)
         built.co2_delta = {
-          scale: scaleDiverging(interpolateSpectral).domain([CO2_DELTA_CLAMP, 0, -CO2_DELTA_CLAMP]),
-          min: -CO2_DELTA_CLAMP,
-          max: CO2_DELTA_CLAMP
+          scale: scaleDiverging(interpolateSpectral).domain([absCo2DeltaMax, 0, -absCo2DeltaMax]),
+          min: -absCo2DeltaMax,
+          max: absCo2DeltaMax
         }
       }
 

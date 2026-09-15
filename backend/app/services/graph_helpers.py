@@ -141,18 +141,32 @@ def build_edge_usage_rows(
     total_routes: int,
     co2_per_km: np.ndarray,
     original_counts: Optional[np.ndarray] = None,
+    original_co2_per_km: Optional[np.ndarray] = None,
     betweenness: Optional[np.ndarray] = None,
     delta_betweenness: Optional[np.ndarray] = None,
 ) -> List[dict]:
     """Build the per-(u, v) usage rows of a recalculate response.
 
     Every array is indexed by (u, v) group, see GraphMirror.uv_group. Only
-    groups actually used by a route produce a row. Values are rounded here:
+    groups used by a route produce a row. With `original_counts`, a group used
+    before the change also gets one, with a count of 0: a closed street has to
+    show what it lost, or the deltas do not add up to the real change.
+
+    `co2_per_km` is the CO2 of the traffic on each group, in g/km: the grams of
+    one vehicle over the edge times the number of routes on it, divided by the
+    length. Times the length and summed over every group, it is the sum of the
+    CO2 of all the routes. `original_co2_per_km` is the same before the
+    modification, and gives `delta_co2_g_per_km`.
+
+    Values are rounded here:
     the payload holds about 6,400 rows twice, and full float precision adds
     around 30 % of bytes that no one reads.
     """
     t0 = time.perf_counter()
-    used = np.flatnonzero(counts > 0)
+    in_use = counts > 0
+    if original_counts is not None:
+        in_use |= original_counts > 0
+    used = np.flatnonzero(in_use)
     if len(used) == 0:
         return []
 
@@ -164,7 +178,7 @@ def build_edge_usage_rows(
     us = mirror.uv_u[used]
     vs = mirror.uv_v[used]
     cnt = counts[used].astype(np.int64)
-    co2 = np.round(co2_per_km[used], 2)
+    co2 = np.round(co2_per_km[used], 1)
     freq_r = np.round(freq, 6)
 
     delta_cnt = delta_freq = None
@@ -173,6 +187,11 @@ def build_edge_usage_rows(
         orig_freq = original_counts[used] / total_routes if total_routes > 0 else 0.0
         delta_freq = np.round(freq - orig_freq, 6)
 
+    d_co2 = (
+        np.round(co2_per_km[used] - original_co2_per_km[used], 1)
+        if original_co2_per_km is not None
+        else None
+    )
     bc = np.round(betweenness[used], 2) if betweenness is not None else None
     d_bc = np.round(delta_betweenness[used], 2) if delta_betweenness is not None else None
 
@@ -185,11 +204,13 @@ def build_edge_usage_rows(
             "v": int(vs[i]),
             "count": int(cnt[i]),
             "frequency": float(freq_r[i]),
-            "co2_per_km": float(co2[i]),
+            "co2_g_per_km": float(co2[i]),
         }
         if delta_cnt is not None:
             row["delta_count"] = int(delta_cnt[i])
             row["delta_frequency"] = float(delta_freq[i])
+        if d_co2 is not None:
+            row["delta_co2_g_per_km"] = float(d_co2[i])
         if bc is not None:
             row["betweenness_centrality"] = float(bc[i])
         if d_bc is not None:
@@ -209,10 +230,9 @@ def modifications_to_arrays(
     mirror,
     base_travel_time: np.ndarray,
     base_speed: np.ndarray,
-    base_co2_per_km: np.ndarray,
     base_co2_g: np.ndarray,
     modifications: List[EdgeModification],
-) -> Tuple[list, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[list, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Turn edge modifications into per-request weight arrays.
 
     Nothing is written to the shared graph. A removed edge gets a travel time
@@ -220,11 +240,10 @@ def modifications_to_arrays(
     two requests cannot see each other's changes.
 
     Returns:
-        (applied, travel_time, speed, co2_per_km, co2_g, blocked, changed_edge_ids)
+        (applied, travel_time, speed, co2_g, blocked, changed_edge_ids)
     """
     travel_time = base_travel_time.copy()
     speed = base_speed.copy()
-    co2_per_km = base_co2_per_km.copy()
     co2_g = base_co2_g.copy()
     blocked = np.zeros(mirror.n_edges, dtype=bool)
 
@@ -247,15 +266,10 @@ def modifications_to_arrays(
             if len(keep) > 0:
                 speed[keep] = mod.speed_kph
                 travel_time[keep] = mirror.length[keep] / (mod.speed_kph / 3.6)
-                grams = CO2Calculator.edge_co2_array(
+                co2_g[keep] = CO2Calculator.edge_co2_array(
                     mirror.length[keep],
                     np.full(len(keep), float(mod.speed_kph)),
                     mirror.elev_gain[keep],
-                )
-                co2_g[keep] = grams
-                length_km = mirror.length[keep] / 1000.0
-                co2_per_km[keep] = np.where(
-                    length_km > 0, grams / np.where(length_km > 0, length_km, 1.0), 0.0
                 )
                 changed.extend(int(i) for i in keep)
             applied.append(mod)
@@ -264,7 +278,6 @@ def modifications_to_arrays(
         applied,
         travel_time,
         speed,
-        co2_per_km,
         co2_g,
         blocked,
         np.asarray(sorted(set(changed)), dtype=np.int64),

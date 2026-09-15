@@ -183,6 +183,11 @@ const withSign = (value: number, text: string) => `${value >= 0 ? '+' : ''}${tex
 /** Thousands as "1.2k", so the labels stay short. */
 const short = (value: number) =>
   value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0)
+/** Grams per km as "850 g/km" or "12.4 kg/km", the sign is left to the caller. */
+const gramsPerKm = (value: number) => {
+  const abs = Math.abs(value)
+  return abs >= 1000 ? `${(abs / 1000).toFixed(1)} kg/km` : `${Math.round(abs)} g/km`
+}
 /** Same, for a value that can be negative. */
 const shortSigned = (value: number) =>
   Math.abs(value) >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(0)
@@ -238,17 +243,17 @@ const TRAFFIC_LEGENDS: Record<TrafficLegendMode, TrafficLegendSpec> = {
 
   co2: {
     label: 'CO₂ Emissions',
-    unit: 'g CO₂/km per use',
-    valueAt: fromRange,
-    format: (value) => `${Math.round(value)} g/km`
+    unit: 'g CO₂ per km, all routes',
+    valueAt: fromMax,
+    format: gramsPerKm
   },
 
   co2_delta: {
     label: 'CO₂ Emissions Change',
-    unit: 'Δ g CO₂/km (freq-weighted)',
+    unit: 'Δ g CO₂ per km, all routes',
     showZero: true,
     valueAt: fromRange,
-    format: (value) => withSign(value, `${value.toFixed(2)} g/km`)
+    format: (value) => `${value > 0 ? '+' : value < 0 ? '-' : ''}${gramsPerKm(value)}`
   },
 
   betweenness: {

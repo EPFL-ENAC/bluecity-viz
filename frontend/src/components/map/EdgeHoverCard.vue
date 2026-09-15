@@ -11,6 +11,7 @@ export interface HoverCardData {
   vehicles?: number
   delta?: number
   deltaRelative?: number
+  /** change of the traffic CO2, g/km, both directions summed */
   co2Delta?: number
   /** the ramp colour of the change, so the number matches the map */
   deltaColor?: string
@@ -74,8 +75,8 @@ const co2 = computed(() => {
   const value = props.data?.co2Delta
   if (value === undefined) return null
   const sign = value > 0 ? '+' : ''
-  if (Math.abs(value) < 1000) return `${sign}${value.toFixed(0)} g`
-  return `${sign}${(value / 1000).toFixed(1)} kg`
+  if (Math.abs(value) < 1000) return `${sign}${value.toFixed(0)} g/km`
+  return `${sign}${(value / 1000).toFixed(1)} kg/km`
 })
 </script>
 

@@ -18,7 +18,6 @@ from typing import List, Optional
 
 import numpy as np
 
-from app.services.co2_calculator import CO2Calculator
 from app.services.routing_engine import RouteSet, route_pairs
 
 logger = logging.getLogger(__name__)
@@ -100,13 +99,6 @@ def compute_betweenness(
         (time.perf_counter() - t0) * 1000,
     )
     return raw * factor
-
-
-def co2_per_km(mirror, speed_kph: np.ndarray) -> np.ndarray:
-    """CO2 in g/km per edge at the given speeds (grade aware)."""
-    co2_g = CO2Calculator.edge_co2_array(mirror.length, speed_kph, mirror.elev_gain)
-    length_km = mirror.length / 1000.0
-    return np.where(length_km > 0, co2_g / np.where(length_km > 0, length_km, 1.0), 0.0)
 
 
 def congested_speed(mirror, flow: np.ndarray, speed_kph: np.ndarray, config) -> np.ndarray:

@@ -100,10 +100,6 @@ class GraphService:
         return self.default_area.base_co2_g
 
     @property
-    def base_co2_per_km(self):
-        return self.default_area.base_co2_per_km
-
-    @property
     def route_cache(self):
         return self.default_area.route_cache
 

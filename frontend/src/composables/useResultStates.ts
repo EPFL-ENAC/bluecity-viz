@@ -25,8 +25,9 @@ export interface StreetTotals {
   frequency: number
   delta_count: number
   delta_relative: number
-  co2_per_km: number
-  co2_delta: number
+  /** CO2 of the traffic in g/km, both directions summed */
+  co2_g_per_km: number
+  delta_co2_g_per_km: number
   betweenness_centrality: number
   delta_betweenness: number
   /** kept to work out delta_relative, not shown on its own */
@@ -41,9 +42,9 @@ export function valueOf(row: StreetTotals, mode: TrafficLegendMode): number {
     case 'delta_relative':
       return row.delta_relative
     case 'co2':
-      return row.co2_per_km
+      return row.co2_g_per_km
     case 'co2_delta':
-      return row.co2_delta
+      return row.delta_co2_g_per_km
     case 'betweenness':
       return row.betweenness_centrality
     case 'betweenness_delta':
@@ -85,8 +86,8 @@ export function streetTotals(
         frequency: 0,
         delta_count: 0,
         delta_relative: 0,
-        co2_per_km: 0,
-        co2_delta: 0,
+        co2_g_per_km: 0,
+        delta_co2_g_per_km: 0,
         betweenness_centrality: 0,
         delta_betweenness: 0,
         delta_frequency: 0
@@ -95,14 +96,13 @@ export function streetTotals(
     }
 
     const deltaFrequency = stat.delta_frequency ?? 0
-    const co2PerKm = stat.co2_per_km ?? 0
 
     row.count += stat.count ?? 0
     row.frequency += stat.frequency
     row.delta_frequency += deltaFrequency
     row.delta_count += stat.delta_count ?? 0
-    row.co2_per_km += co2PerKm
-    row.co2_delta += co2PerKm * deltaFrequency
+    row.co2_g_per_km += stat.co2_g_per_km ?? 0
+    row.delta_co2_g_per_km += stat.delta_co2_g_per_km ?? 0
     row.betweenness_centrality += stat.betweenness_centrality ?? 0
     row.delta_betweenness += stat.delta_betweenness ?? 0
   }
