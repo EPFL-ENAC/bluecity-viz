@@ -52,6 +52,7 @@ export function defaultTrafficInputs(): TrafficAnalysisInputs {
     useCongestionModel: false,
     congestionIterations: 1,
     elasticDemand: false,
+    nodeWeighting: 'uniform',
     filterBusRoutes: false,
     odPairs: null,
     area: null
@@ -133,6 +134,8 @@ export function pickTrafficInputs(raw: any): TrafficAnalysisInputs {
     useCongestionModel: !!raw.useCongestionModel,
     congestionIterations: Number(raw.congestionIterations) || 1,
     elasticDemand: !!raw.elasticDemand,
+    // missing (older saves) or unknown reads back as uniform
+    nodeWeighting: raw.nodeWeighting === 'population' ? 'population' : 'uniform',
     filterBusRoutes: !!raw.filterBusRoutes,
     // missing (v2 and older) or broken reads back as null, the server default
     odPairs: Number.isInteger(raw.odPairs) && raw.odPairs > 0 ? raw.odPairs : null,

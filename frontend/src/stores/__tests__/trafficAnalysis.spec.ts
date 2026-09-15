@@ -243,6 +243,28 @@ describe('traffic analysis store', () => {
     expect(fetchBaseline).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps one baseline per node weighting', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockImplementation(async (odPairs?: number) => ({
+      total_routes: odPairs ?? 20000,
+      od_pairs: odPairs ?? 20000,
+      edge_usage: baselineRows(3)
+    }))
+
+    await store.getBaseline(20000)
+    store.nodeWeighting = 'population'
+    await store.getBaseline(20000)
+
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(fetchBaseline).mock.calls[0][2]).toBe('uniform')
+    expect(vi.mocked(fetchBaseline).mock.calls[1][2]).toBe('population')
+
+    // back to uniform, still cached
+    store.nodeWeighting = 'uniform'
+    await store.getBaseline(20000)
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+  })
+
   it('asks once when two calls overlap, and retries after a failure', async () => {
     const store = useTrafficAnalysisStore()
     vi.mocked(fetchBaseline).mockResolvedValue({

@@ -50,6 +50,7 @@ describe('traffic analysis service', () => {
       useCongestionModel: true,
       congestionIterations: 3,
       elasticDemand: true,
+      nodeWeighting: 'population',
       odPairs: 20000
     })
 
@@ -62,6 +63,7 @@ describe('traffic analysis service', () => {
       use_congestion: true,
       congestion_iterations: 3,
       resample_destinations: true,
+      node_weighting: 'population',
       od_pairs: 20000,
       include_baseline: false
     })
@@ -76,6 +78,7 @@ describe('traffic analysis service', () => {
     expect(body.od_pairs).toBeNull()
     expect(body.include_baseline).toBe(false)
     expect(body.resample_destinations).toBe(false)
+    expect(body.node_weighting).toBe('uniform')
   })
 
   it('puts the pair count in the baseline query, and omits it when there is none', async () => {
@@ -134,6 +137,21 @@ describe('traffic analysis service', () => {
     fetchMock().mockResolvedValue(okResponse({ area_id: 'lausanne' }))
     await fetchGraphInfo('c_7.4400_46.9500_3000')
     expect(calledUrl(2)).toBe('/api/v1/routes/graph-info?area_id=c_7.4400_46.9500_3000')
+  })
+
+  it('names the node weighting only when it is not the default', async () => {
+    fetchMock().mockResolvedValue(okResponse({ od_pairs: 100, edge_usage: [] }))
+
+    await fetchBaseline(100, 'c_7.4400_46.9500_3000', 'population')
+    expect(calledUrl()).toBe(
+      '/api/v1/routes/baseline?od_pairs=100&area_id=c_7.4400_46.9500_3000&node_weighting=population'
+    )
+
+    await fetchBaseline(undefined, null, 'population')
+    expect(calledUrl(1)).toBe('/api/v1/routes/baseline?node_weighting=population')
+
+    await fetchBaseline(100, null, 'uniform')
+    expect(calledUrl(2)).toBe('/api/v1/routes/baseline?od_pairs=100')
   })
 
   it('sends the area in the recalculate body', async () => {

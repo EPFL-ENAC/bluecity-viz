@@ -10,7 +10,8 @@ import {
   type AreaInfo,
   type AreaLimits,
   type AreaSelection,
-  type ImpactStatistics
+  type ImpactStatistics,
+  type NodeWeighting
 } from '@/services/trafficAnalysis'
 import { useCVRPStore } from '@/stores/cvrp'
 import { useScenarioStore } from '@/stores/scenario'
@@ -113,6 +114,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const useCongestionModel = ref<boolean>(false)
   const congestionIterations = ref<number>(1)
   const elasticDemand = ref<boolean>(false)
+  const nodeWeighting = ref<NodeWeighting>('uniform')
   const filterBusRoutes = ref<boolean>(false)
   // How many OD pairs to route. null means the server default.
   const odPairs = ref<number | null>(null)
@@ -472,19 +474,21 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   function getBaseline(count?: number): Promise<BaselineResult> {
     // Every key carries the area: two areas have different numbers for the
     // same pair count.
+    // The weighting too: another OD sample, other numbers.
     const scope = areaId.value ?? DEFAULT_AREA_ID
+    const weighting = nodeWeighting.value
     if (count !== undefined) {
-      const cached = baselineCache.get(`${scope}:${count}`)
+      const cached = baselineCache.get(`${scope}:${weighting}:${count}`)
       if (cached) return Promise.resolve({ odPairs: count, rows: cached })
     }
 
-    const key = `${scope}:${count ?? 'default'}`
+    const key = `${scope}:${weighting}:${count ?? 'default'}`
     const inFlight = baselinePending.get(key)
     if (inFlight) return inFlight
 
-    const request = fetchBaseline(count, areaId.value)
+    const request = fetchBaseline(count, areaId.value, weighting)
       .then((response) => {
-        baselineCache.set(`${scope}:${response.od_pairs}`, response.edge_usage)
+        baselineCache.set(`${scope}:${weighting}:${response.od_pairs}`, response.edge_usage)
         baselinePending.delete(key)
         return { odPairs: response.od_pairs, rows: response.edge_usage }
       })
@@ -702,6 +706,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     useCongestionModel?: boolean
     congestionIterations?: number
     elasticDemand?: boolean
+    nodeWeighting?: NodeWeighting
     filterBusRoutes?: boolean
     odPairs?: number | null
     resultOdPairs?: number | null
@@ -734,6 +739,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     if (state.congestionIterations !== undefined)
       congestionIterations.value = state.congestionIterations
     if (state.elasticDemand !== undefined) elasticDemand.value = state.elasticDemand
+    if (state.nodeWeighting !== undefined) nodeWeighting.value = state.nodeWeighting
     if (state.filterBusRoutes !== undefined) filterBusRoutes.value = state.filterBusRoutes
     // assigned, not setOdPairs: the results below belong to this state and
     // setOdPairs would clear them.
@@ -774,6 +780,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     useCongestionModel,
     congestionIterations,
     elasticDemand,
+    nodeWeighting,
     filterBusRoutes,
     odPairs,
     odPairsDefault,

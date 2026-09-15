@@ -4,7 +4,7 @@ import BcIcon from '@/components/ui/BcIcon.vue'
 import BcRow from '@/components/ui/BcRow.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
-import { ApiError, recalculateRoutes } from '@/services/trafficAnalysis'
+import { ApiError, recalculateRoutes, type NodeWeighting } from '@/services/trafficAnalysis'
 import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -32,6 +32,16 @@ function formatTrips(count: number): string {
 }
 
 // The two choices, hidden until we know the numbers.
+const nodeWeightingOptions = [
+  { value: 'uniform', label: 'Uniform' },
+  { value: 'population', label: 'Population + jobs' }
+]
+// BcSeg speaks plain strings
+const nodeWeighting = computed({
+  get: () => trafficStore.nodeWeighting,
+  set: (value: string) => (trafficStore.nodeWeighting = value as NodeWeighting)
+})
+
 const tripsOptions = computed(() => {
   const base = trafficStore.odPairsDefault
   const full = trafficStore.odPairsFull
@@ -85,6 +95,7 @@ function runOnce(odPairs: number | undefined) {
       useCongestionModel: trafficStore.useCongestionModel,
       congestionIterations: trafficStore.congestionIterations,
       elasticDemand: trafficStore.elasticDemand,
+      nodeWeighting: trafficStore.nodeWeighting,
       odPairs,
       areaId: trafficStore.areaId
     })
@@ -213,6 +224,11 @@ async function calculateRoutes() {
           </v-tooltip>
         </template>
       </BcRow>
+
+      <div class="trips">
+        <div class="bc-micro trips__label">Node weights</div>
+        <BcSeg v-model="nodeWeighting" :options="nodeWeightingOptions" equal />
+      </div>
 
       <div v-if="tripsOptions.length > 0" class="trips">
         <div class="bc-micro trips__label">Trips</div>
