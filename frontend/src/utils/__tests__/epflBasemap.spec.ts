@@ -48,8 +48,10 @@ describe('buildStyle: substrat', () => {
 
   it('names the big cities, which are their own place class', () => {
     // Without this layer Genève and Zürich have no name while St-Sulpice does.
-    expect(byId('substrat', 'place-city').filter).toEqual(['==', 'class', 'city'])
-    expect(byId('substrat', 'place-label').filter).not.toContain('city')
+    expect(byId('substrat', 'place-city').filter).toEqual(['==', ['get', 'class'], 'city'])
+    // the other place layer lists its classes in a literal, city is not one
+    const placeClasses = byId('substrat', 'place-label').filter[2][1]
+    expect(placeClasses).not.toContain('city')
   })
 
   it('swaps ink and paper in dark', () => {

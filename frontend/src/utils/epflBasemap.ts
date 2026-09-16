@@ -291,7 +291,7 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const L: any[] = [{ id: 'bg', type: 'background', paint: { 'background-color': PAPER } }]
 
-  const woodF = ['in', 'class', 'wood', 'grass', 'scrub']
+  const woodF = ['in', ['get', 'class'], ['literal', ['wood', 'grass', 'scrub']]]
   if (v.wood === 'tint')
     L.push({
       id: 'wood',
@@ -322,12 +322,8 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
 
   const landF = [
     'in',
-    'class',
-    'residential',
-    'commercial',
-    'retail',
-    'industrial',
-    'neighbourhood'
+    ['get', 'class'],
+    ['literal', ['residential', 'commercial', 'retail', 'industrial', 'neighbourhood']]
   ]
   if (v.land === 'tint')
     L.push({
@@ -434,7 +430,7 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
       type: 'line',
       source: 'openmaptiles',
       'source-layer': 'transportation',
-      filter: ['in', 'class', 'minor', 'service'],
+      filter: ['in', ['get', 'class'], ['literal', ['minor', 'service']]],
       layout: { 'line-cap': 'round' },
       paint: { 'line-color': INK, 'line-width': W }
     })
@@ -443,7 +439,7 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
       type: 'line',
       source: 'openmaptiles',
       'source-layer': 'transportation',
-      filter: ['in', 'class', 'secondary', 'tertiary'],
+      filter: ['in', ['get', 'class'], ['literal', ['secondary', 'tertiary']]],
       layout: { 'line-cap': 'round' },
       paint: { 'line-color': INK, 'line-width': W }
     })
@@ -452,7 +448,7 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
       type: 'line',
       source: 'openmaptiles',
       'source-layer': 'transportation',
-      filter: ['in', 'class', 'path', 'track', 'pedestrian'],
+      filter: ['in', ['get', 'class'], ['literal', ['path', 'track', 'pedestrian']]],
       minzoom: 14,
       paint: { 'line-color': INK, 'line-width': W, 'line-dasharray': [2, 2] }
     })
@@ -461,7 +457,7 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
       type: 'line',
       source: 'openmaptiles',
       'source-layer': 'transportation',
-      filter: ['in', 'class', 'motorway', 'trunk', 'primary'],
+      filter: ['in', ['get', 'class'], ['literal', ['motorway', 'trunk', 'primary']]],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': INK, 'line-width': W }
     })
@@ -473,7 +469,7 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
     type: 'line',
     source: 'openmaptiles',
     'source-layer': 'transportation',
-    filter: ['==', 'class', 'rail'],
+    filter: ['==', ['get', 'class'], 'rail'],
     minzoom: 13,
     paint: { 'line-color': OUT, 'line-width': W, 'line-dasharray': [3, 2] }
   })
@@ -524,7 +520,11 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
     type: 'symbol',
     source: 'openmaptiles',
     'source-layer': 'place',
-    filter: ['in', 'class', 'suburb', 'neighbourhood', 'quarter', 'town', 'village'],
+    filter: [
+      'in',
+      ['get', 'class'],
+      ['literal', ['suburb', 'neighbourhood', 'quarter', 'town', 'village']]
+    ],
     layout: {
       'text-field': ['get', 'name'],
       'text-font': ['Noto Sans Bold'],
@@ -543,7 +543,7 @@ export function buildStyle(key: string, t?: Partial<BasemapTheme>): StyleSpecifi
     type: 'symbol',
     source: 'openmaptiles',
     'source-layer': 'place',
-    filter: ['==', 'class', 'city'],
+    filter: ['==', ['get', 'class'], 'city'],
     layout: {
       'text-field': ['get', 'name'],
       'text-font': ['Noto Sans Bold'],
