@@ -12,12 +12,23 @@ interface EventListeners {
   }
 }
 
+// The values come from a vector tile, so they can hold anything. Escape them
+// before they go into setHTML. The maplibre sanitizer is the second line.
+function escapeHtml(value: unknown): string {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 // Helper function to format popup content
 function formatPopupContent(properties: Record<string, any> | null, label: string): string {
   if (!properties) return 'No data available'
 
   // Create HTML table to display all properties
-  let content = `<div class="popup-content"><h3>${label}</h3><table class="popup-table">`
+  let content = `<div class="popup-content"><h3>${escapeHtml(label)}</h3><table class="popup-table">`
 
   // Filter out null/undefined values and internal properties
   Object.entries(properties)
@@ -44,8 +55,8 @@ function formatPopupContent(properties: Record<string, any> | null, label: strin
 
       content += `
         <tr>
-          <td class="property-name">${formattedKey}</td>
-          <td class="property-value">${formattedValue}</td>
+          <td class="property-name">${escapeHtml(formattedKey)}</td>
+          <td class="property-value">${escapeHtml(formattedValue)}</td>
         </tr>
       `
     })
@@ -97,8 +108,7 @@ export function useMapEvents(
   function handleLayerClick(_layerId: string, layerLabel: string, e: MapLayerMouseEvent): void {
     if (!e.features || e.features.length === 0 || !mapRef.value) return
     // A street under the cursor owns the click while the workbench is open.
-    if (scenarioStore.isOpen && (scenarioStore.hovered || scenarioStore.tool !== 'pointer'))
-      return
+    if (scenarioStore.isOpen && (scenarioStore.hovered || scenarioStore.tool !== 'pointer')) return
 
     const feature = e.features[0]
 
@@ -148,8 +158,7 @@ export function useMapEvents(
   function handleLayerMouseMove(_layerId: string, layerLabel: string, e: MapLayerMouseEvent): void {
     if (!e.features || e.features.length === 0 || !mapRef.value) return
     // Same rule as the click: the graph takes the pointer when it is under it.
-    if (scenarioStore.isOpen && (scenarioStore.hovered || scenarioStore.tool !== 'pointer'))
-      return
+    if (scenarioStore.isOpen && (scenarioStore.hovered || scenarioStore.tool !== 'pointer')) return
 
     const feature = e.features[0]
     mapRef.value.getCanvas().style.cursor = 'pointer'
