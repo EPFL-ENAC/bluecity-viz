@@ -84,7 +84,12 @@ class AreaMeta:
 
     id: str
     name: str = ""
+    kind: str = "circle"
     circle: Optional[dict] = None
+    # {"ids": [...], "names": [...]} for an area made of municipalities
+    municipalities: Optional[dict] = None
+    # the GeoJSON geometry of a municipality area, for the map
+    outline: Optional[dict] = None
     bbox: Optional[list] = None
     scc_fraction: float = 1.0
     build_ms: float = 0.0

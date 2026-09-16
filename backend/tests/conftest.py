@@ -6,7 +6,7 @@ import osmnx as ox
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
-from shapely.geometry import LineString
+from shapely.geometry import LineString, box
 
 from app.config import settings
 from app.services.cvrp_service import DEPOT_LAT, DEPOT_LON, CVRPService
@@ -14,6 +14,8 @@ from app.services.graph_service import GraphService
 from app.services.graph_store import GraphStore, Grid
 from app.services.graph_store import distance_m as store_distance
 from app.services.graph_store_writer import write_store
+from app.services.municipalities import Municipalities
+from app.services.municipalities_writer import neighbours_of, write_municipalities
 from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
 
 # Grid size: 4 columns x 5 rows = 20 nodes.
@@ -286,3 +288,37 @@ def make_store(tmp_path):
         return GraphStore.open(directory)
 
     return _make
+
+
+# ── Three communes over the lattice, for the municipality areas ───────────────
+
+# The lattice columns sit at 7.05 + k * 0.002, so a border at 7.089 falls
+# between two columns and no node is on it. A keeps the 20 left columns.
+COMMUNE_A = box(7.04, 46.04, 7.089, 46.14)
+COMMUNE_B = box(7.089, 46.04, 7.14, 46.14)  # shares a border with A
+COMMUNE_C = box(7.20, 46.20, 7.25, 46.25)  # far away, no streets
+
+
+def build_communes_table(path):
+    geometries = [COMMUNE_B, COMMUNE_A, COMMUNE_C]  # not sorted, on purpose
+    ids = [2, 1, 3]
+    write_municipalities(
+        path,
+        bfs=ids,
+        name=["B", "A", "C"],
+        canton=[22, 22, 22],
+        neighbours=neighbours_of(geometries, ids),
+        geometry=geometries,
+        source="test",
+    )
+    return path
+
+
+@pytest.fixture(scope="session")
+def communes_path(tmp_path_factory):
+    return build_communes_table(tmp_path_factory.mktemp("communes") / "communes.parquet")
+
+
+@pytest.fixture
+def communes(communes_path):
+    return Municipalities.open(communes_path)

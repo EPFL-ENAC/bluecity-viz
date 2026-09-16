@@ -1,5 +1,8 @@
+import { normaliseIds } from '@/services/trafficAnalysis'
 import type {
+  CircleArea,
   Investigation,
+  MunicipalityArea,
   PersistedState,
   Project,
   ScenarioInputs,
@@ -18,18 +21,37 @@ const STORAGE_KEY = 'bluecity-layers-store'
 // edge modifications out of the traffic tool into a scenario both tools share,
 // keyed by street instead of by directed edge, and adds the area the scenario
 // runs on, missing in older entries and read back as null, the default city.
+// A set of communes is a second kind of area. It needs no new version: an
+// older client reads the kind it does not know as null, the default city.
 export const SCHEMA_VERSION = 5
 
 // The area must sit inside the country and stay in the range the backend
 // accepts, else the first Calculate would fail on a saved circle.
 const SWISS_BOUNDS = { minLon: 5.8, minLat: 45.7, maxLon: 10.6, maxLat: 47.9 }
 const RADIUS_M = { min: 500, max: 10_000 }
+// Same cap as the backend (MAX_MUNICIPALITIES).
+const MAX_MUNICIPALITIES = 100
 // The dock is 340 px wide, a longer name would only be cut on screen.
 const MAX_AREA_NAME = 60
 
-/** A saved circle, or null when it is missing or out of range. */
+/** A saved area, or null when it is missing or out of range. */
 export function pickArea(raw: any): TrafficAreaSelection | null {
-  if (!raw || typeof raw !== 'object' || raw.kind !== 'circle') return null
+  if (!raw || typeof raw !== 'object') return null
+  const area =
+    raw.kind === 'circle'
+      ? pickCircle(raw)
+      : raw.kind === 'municipalities'
+        ? pickMunicipalities(raw)
+        : null
+  if (!area) return null
+  // The name is a label written by the picker. An area saved before v5.1 has
+  // none, and the dock falls back to the shape.
+  const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, MAX_AREA_NAME) : ''
+  if (name) area.name = name
+  return area
+}
+
+function pickCircle(raw: any): CircleArea | null {
   const lon = Number(raw.lon)
   const lat = Number(raw.lat)
   const radiusM = Number(raw.radiusM)
@@ -37,12 +59,17 @@ export function pickArea(raw: any): TrafficAreaSelection | null {
   if (lon < SWISS_BOUNDS.minLon || lon > SWISS_BOUNDS.maxLon) return null
   if (lat < SWISS_BOUNDS.minLat || lat > SWISS_BOUNDS.maxLat) return null
   if (radiusM < RADIUS_M.min || radiusM > RADIUS_M.max) return null
-  const area: TrafficAreaSelection = { kind: 'circle', lon, lat, radiusM }
-  // The name is a label written by the picker. An area saved before v5.1 has
-  // none, and the dock falls back to the coordinates.
-  const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, MAX_AREA_NAME) : ''
-  if (name) area.name = name
-  return area
+  return { kind: 'circle', lon, lat, radiusM }
+}
+
+// A set of communes is only checked for its shape here. Whether they exist and
+// touch is the server's answer, a stale link gets it on the first Calculate.
+function pickMunicipalities(raw: any): MunicipalityArea | null {
+  if (!Array.isArray(raw.ofsIds)) return null
+  if (!raw.ofsIds.every((id: unknown) => Number.isInteger(id) && (id as number) > 0)) return null
+  const ofsIds = normaliseIds(raw.ofsIds)
+  if (ofsIds.length === 0 || ofsIds.length > MAX_MUNICIPALITIES) return null
+  return { kind: 'municipalities', ofsIds }
 }
 
 export function defaultTrafficInputs(): TrafficAnalysisInputs {

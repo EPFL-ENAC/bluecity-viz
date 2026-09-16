@@ -37,3 +37,47 @@ describe('reading the node weighting', () => {
     expect(pickTrafficInputs({ nodeWeighting: 'cats' }).nodeWeighting).toBe('uniform')
   })
 })
+
+describe('reading a saved set of municipalities', () => {
+  const LAUSANNE_PULLY = { kind: 'municipalities', ofsIds: [5586, 5590] }
+
+  it('keeps the ids and the name', () => {
+    expect(pickArea({ ...LAUSANNE_PULLY, name: 'Lausanne + Pully' })).toEqual({
+      kind: 'municipalities',
+      ofsIds: [5586, 5590],
+      name: 'Lausanne + Pully'
+    })
+  })
+
+  it('sorts the ids as numbers and drops repeats', () => {
+    expect(pickArea({ kind: 'municipalities', ofsIds: [5590, 10, 5586, 10] })).toEqual({
+      kind: 'municipalities',
+      ofsIds: [10, 5586, 5590]
+    })
+  })
+
+  it('refuses an empty list, or ids that are not positive integers', () => {
+    expect(pickArea({ kind: 'municipalities', ofsIds: [] })).toBeNull()
+    expect(pickArea({ kind: 'municipalities' })).toBeNull()
+    expect(pickArea({ kind: 'municipalities', ofsIds: '5586' })).toBeNull()
+    expect(pickArea({ kind: 'municipalities', ofsIds: [5586, '5590'] })).toBeNull()
+    expect(pickArea({ kind: 'municipalities', ofsIds: [5586.5] })).toBeNull()
+    expect(pickArea({ kind: 'municipalities', ofsIds: [0] })).toBeNull()
+    expect(pickArea({ kind: 'municipalities', ofsIds: [-1] })).toBeNull()
+  })
+
+  it('refuses more municipalities than the server takes', () => {
+    const many = Array.from({ length: 101 }, (_, i) => i + 1)
+    expect(pickArea({ kind: 'municipalities', ofsIds: many })).toBeNull()
+    expect(pickArea({ kind: 'municipalities', ofsIds: many.slice(0, 100) })).not.toBeNull()
+  })
+
+  it('cuts a long name the same way as a circle', () => {
+    expect(pickArea({ ...LAUSANNE_PULLY, name: 'x'.repeat(200) })?.name).toHaveLength(60)
+    expect(pickArea({ ...LAUSANNE_PULLY, name: '  ' })?.name).toBeUndefined()
+  })
+
+  it('reads a kind it does not know as the default city', () => {
+    expect(pickArea({ kind: 'polygon', ofsIds: [5586] })).toBeNull()
+  })
+})

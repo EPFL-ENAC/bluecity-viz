@@ -1,4 +1,4 @@
-import type { TrafficAreaSelection } from '@/stores/layers/types'
+import type { CircleArea } from '@/stores/layers/types'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import { areaLabel, collectPlaces, type PlacePoint } from '@/utils/areaName'
 import { describe, expect, it } from 'vitest'
@@ -15,7 +15,7 @@ function place(name: string, kind: string, eastM = 0, northM = 0): PlacePoint {
   }
 }
 
-function circle(eastM = 0, northM = 0, radiusM = 3000): TrafficAreaSelection {
+function circle(eastM = 0, northM = 0, radiusM = 3000): CircleArea {
   const centre = place('', '', eastM, northM)
   return { kind: 'circle', lon: centre.lon, lat: centre.lat, radiusM }
 }

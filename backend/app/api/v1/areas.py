@@ -7,9 +7,15 @@ import anyio.to_thread
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.config import settings
-from app.models.area import AreaCreateRequest, AreaInfo, AreaLimits, AreaPreview
+from app.models.area import (
+    MAX_MUNICIPALITIES,
+    AreaCreateRequest,
+    AreaInfo,
+    AreaLimits,
+    AreaPreview,
+)
 from app.services import area_builder
-from app.services.area_builder import AreaRejected, AreaSpec
+from app.services.area_builder import AreaRejected, AreaSpec, CircleSpec, MunicipalitySpec
 from app.services.area_graph import DEFAULT_AREA_ID, AreaGraph
 from app.services.area_registry import AreaNotLoaded
 from app.services.sampling.config import SamplingConfig
@@ -21,6 +27,9 @@ router = APIRouter(prefix="/areas", tags=["areas"])
 # Set by main.py when the Swiss store is on disk. None means the app runs on
 # the default city only, and every endpoint here answers 503.
 graph_store = None
+# Set by main.py when the municipalities file is on disk. None means only the
+# circle works.
+municipalities = None
 
 
 def _store():
@@ -38,6 +47,18 @@ def _store():
     return graph_store
 
 
+def _municipalities():
+    if municipalities is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "no_municipalities",
+                "message": "this server has no municipal boundaries, pick a circle instead",
+            },
+        )
+    return municipalities
+
+
 def _service():
     from app.api.v1.routes import graph_service
 
@@ -45,14 +66,21 @@ def _service():
 
 
 def _spec(request: AreaCreateRequest) -> AreaSpec:
-    return AreaSpec.from_circle(request.circle.lon, request.circle.lat, request.circle.radius_m)
+    if request.circle is not None:
+        circle = request.circle
+        return CircleSpec.from_circle(circle.lon, circle.lat, circle.radius_m)
+    return MunicipalitySpec.from_ids(request.municipalities, _municipalities())
 
 
 def _info(area: AreaGraph) -> dict:
     meta = area.meta
     return {
         "id": meta.id,
+        "kind": meta.kind,
+        "name": meta.name,
         "circle": meta.circle,
+        "municipalities": meta.municipalities,
+        "outline": meta.outline,
         "bbox": meta.bbox,
         "node_count": area.mirror.n_nodes,
         "edge_count": area.mirror.n_edges,
@@ -75,6 +103,8 @@ def get_limits():
         "min_radius_m": settings.area_min_radius_m,
         "max_radius_m": settings.area_max_radius_m,
         "coverage_bbox": store.coverage_bbox if store else None,
+        "has_municipalities": store is not None and municipalities is not None,
+        "max_municipalities": MAX_MUNICIPALITIES,
     }
 
 
@@ -86,10 +116,11 @@ def preview_area(request: AreaCreateRequest):
 
 @router.post("", response_model=AreaInfo, status_code=status.HTTP_201_CREATED)
 async def create_area(request: AreaCreateRequest):
-    """Build the routing graph of a circle, or return it if it is already loaded.
+    """Build the routing graph of a shape, or return it if it is already loaded.
 
-    The id comes from the geometry, so asking twice for the same spot gives
-    the same area and the second call is free.
+    The id comes from the geometry (or the sorted municipality numbers), so
+    asking twice for the same spot gives the same area and the second call is
+    free.
     """
     store = _store()
     spec = _spec(request)
@@ -112,6 +143,7 @@ async def create_area(request: AreaCreateRequest):
                 "code": rejected.code,
                 "message": rejected.message,
                 "bbox": spec.bbox,
+                "outline": spec.outline,
                 **rejected.counts,
             },
         ) from rejected
@@ -151,3 +183,9 @@ def set_store(store: Optional[object]) -> None:
     """Called by the lifespan once it knows whether the store is on disk."""
     global graph_store
     graph_store = store
+
+
+def set_municipalities(table: Optional[object]) -> None:
+    """Called by the lifespan once it knows whether the boundaries are on disk."""
+    global municipalities
+    municipalities = table

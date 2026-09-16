@@ -82,6 +82,25 @@ def _open_swiss_store() -> None:
     )
 
 
+def _open_municipalities() -> None:
+    """Open the municipal boundaries, when this deployment ships them."""
+    from app.services.municipalities import Municipalities
+
+    path = _resolve(settings.municipalities_path)
+    if not path.exists():
+        logger.info("No municipalities file at %s, areas are circles only", path)
+        areas_router.set_municipalities(None)
+        return
+    try:
+        table = Municipalities.open(path)
+    except Exception:
+        logger.exception("Could not open the municipalities file at %s", path)
+        areas_router.set_municipalities(None)
+        return
+    areas_router.set_municipalities(table)
+    logger.info("Municipalities: %d communes (%s)", len(table), table.source)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
@@ -91,6 +110,7 @@ async def lifespan(app: FastAPI):
     # The country store stands on its own: a deployment can ship it without the
     # GraphML of the default city.
     _open_swiss_store()
+    _open_municipalities()
 
     if full_path.exists():
         logger.info("Loading graph from: %s", full_path)
