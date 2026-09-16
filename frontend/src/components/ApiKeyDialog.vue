@@ -88,7 +88,7 @@ function forceValidate() {
 <template>
   <v-dialog v-model="dialogOpen" persistent max-width="500px">
     <v-card>
-      <v-card-title class="text-h5">API Key Required</v-card-title>
+      <v-card-title class="text-headline-small">API Key Required</v-card-title>
       <v-card-text>
         <p v-if="errorMessage" class="mb-4">
           <v-alert type="warning" density="compact">{{ errorMessage }}</v-alert>

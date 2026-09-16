@@ -93,6 +93,24 @@
   background: #1b1b1b;
 }
 
+/* vuetify 4 trimmed its reset: `* { margin: 0; padding: 0 }` and the bare
+   look of form elements are gone. The design counts on both (every <p> in the
+   dock, every raw <button>), so we put them back. In vuetify's own reset layer,
+   so any component style still wins. */
+@layer vuetify-core.reset {
+  * {
+    margin: 0;
+    padding: 0;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    background-color: transparent;
+    border-style: none;
+  }
+}
+
 /* element defaults */
 html,
 body {

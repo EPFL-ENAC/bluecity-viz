@@ -28,6 +28,11 @@ updates:
       # we bump them by hand when we move node, not before.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # typescript 7 (the Go port) ships no compiler API. vue-tsc (Volar) and
+      # typescript-eslint both need one, so a Vue project stays on 6.x.
+      # Drop this entry once 7.1 ships the new API and vue-tsc follows.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       # one PR for all the small stuff, majors stay on their own
       frontend-minor:
