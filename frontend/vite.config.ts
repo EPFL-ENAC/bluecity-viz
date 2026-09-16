@@ -37,6 +37,13 @@ export default defineConfig({
     }
   },
   plugins: [vue(), vuetify()],
+  optimizeDeps: {
+    // maplibre 6 loads its worker from a second entry, maplibre-gl-worker.mjs.
+    // The dep optimizer bundles the main entry and never emits that file, so
+    // in dev the worker request hangs and no tile is ever decoded. The map
+    // stays blank with no error. Excluding it serves maplibre as plain ESM.
+    exclude: ['maplibre-gl']
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
