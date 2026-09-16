@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/EPFL-ENAC/bluecity-viz/compare/v0.5.1...v0.5.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **frontend:** bundle the maplibre worker so prod finds it ([e2d9084](https://github.com/EPFL-ENAC/bluecity-viz/commit/e2d90847aca07265a7c918644c95f017fce1b0b6))
+
 ## [0.5.1](https://github.com/EPFL-ENAC/bluecity-viz/compare/v0.5.0...v0.5.1) (2026-09-16)
 
 
