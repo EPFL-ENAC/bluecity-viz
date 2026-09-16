@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/EPFL-ENAC/bluecity-viz/compare/v0.5.0...v0.5.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **frontend:** escape feature values in the dataset popup ([f06fb8b](https://github.com/EPFL-ENAC/bluecity-viz/commit/f06fb8b5d9e4b973c128b0ddd8ea9153cfc04b07))
+* **frontend:** keep maplibre out of the dep optimizer ([e83668a](https://github.com/EPFL-ENAC/bluecity-viz/commit/e83668a5b5f9b376e041e6ea7dc5a97fc3f12340))
+
 ## [0.5.0](https://github.com/EPFL-ENAC/bluecity-viz/compare/v0.4.0...v0.5.0) (2026-09-16)
 
 
