@@ -5,7 +5,7 @@
  * every mouse move, so it must never sit on the graph source. Pure functions
  * here, the map calls live in components/map/AreaPickerOverlay.vue.
  */
-import type { TrafficAreaSelection } from '@/stores/layers/types'
+import type { CircleArea } from '@/stores/layers/types'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import type { GraphColors } from '@/utils/epflBasemap'
 import type { LayerSpecification } from 'maplibre-gl'
@@ -21,6 +21,7 @@ export interface AreaFeatureCollection {
     type: 'Feature'
     geometry:
       | { type: 'Polygon'; coordinates: [number, number][][] }
+      | { type: 'MultiPolygon'; coordinates: [number, number][][][] }
       | { type: 'Point'; coordinates: [number, number] }
     properties: { role: 'ring' | 'handle'; ok: number }
   }>
@@ -38,7 +39,7 @@ export function emptyArea(): AreaFeatureCollection {
  * circle is under a metre, and the backend cuts the area with the same flat
  * approximation.
  */
-export function ringOf(circle: TrafficAreaSelection): [number, number][] {
+export function ringOf(circle: CircleArea): [number, number][] {
   const dLat = circle.radiusM / mPerDegLat
   const dLon = circle.radiusM / Math.max(mPerDegLon(circle.lat), 1)
 
@@ -51,7 +52,7 @@ export function ringOf(circle: TrafficAreaSelection): [number, number][] {
 }
 
 /** The ring and its centre handle, what the map draws. */
-export function areaFeatures(circle: TrafficAreaSelection, ok: boolean): AreaFeatureCollection {
+export function areaFeatures(circle: CircleArea, ok: boolean): AreaFeatureCollection {
   const ring = ringOf(circle)
   const flag = ok ? 1 : 0
   return {
@@ -81,10 +82,23 @@ export function areaFeatures(circle: TrafficAreaSelection, ok: boolean): AreaFea
  * circle, and the path then hides the whole canvas.
  */
 export function clipPathOf(points: [number, number][]): string {
-  if (points.length < 3) return 'path("M0 0Z")'
+  return clipPathOfRings([points])
+}
+
+/**
+ * The same clip for any number of rings: the pieces of a set of communes and
+ * their holes. The even-odd rule cuts a hole out whatever way its ring turns.
+ * Rings of fewer than three points are skipped, and no ring left hides all.
+ */
+export function clipPathOfRings(rings: [number, number][][]): string {
   const px = (value: number) => Math.round(value * 10) / 10
-  const parts = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${px(x)} ${px(y)}`)
-  return `path("${parts.join('')}Z")`
+  const parts = rings
+    .filter((ring) => ring.length >= 3)
+    .map(
+      (ring) => ring.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${px(x)} ${px(y)}`).join('') + 'Z'
+    )
+  if (parts.length === 0) return 'path("M0 0Z")'
+  return `path(evenodd, "${parts.join(' ')}")`
 }
 
 export const AREA_FILL_LAYER = 'bc-area-fill'

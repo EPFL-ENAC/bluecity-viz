@@ -15,10 +15,11 @@ ones, so two requests on the same area cannot corrupt each other.
 
 import logging
 import random
+import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Literal, Optional
 
 import numpy as np
 
@@ -62,6 +63,19 @@ DYNAMIC_BC_CACHE_SIZE = 8
 # Rough cost of one usage row (a small dict of 9 numbers) in CPython.
 USAGE_ROW_BYTES = 300
 
+# How the OD sampler weighs the nodes. "uniform" is every junction alike,
+# "population" follows the residents and jobs of the graph store.
+NodeWeighting = Literal["uniform", "population"]
+NODE_WEIGHTINGS = ("uniform", "population")
+# The SamplingConfig.node_weight_col each weighting runs with.
+NODE_WEIGHT_COL = {"uniform": "dummy", "population": "population"}
+
+
+class NoPopulationData(ValueError):
+    """The area has no residents and no jobs, so there is nothing to weigh by."""
+
+    code = "no_population_data"
+
 
 @dataclass
 class AreaMeta:
@@ -70,7 +84,12 @@ class AreaMeta:
 
     id: str
     name: str = ""
+    kind: str = "circle"
     circle: Optional[dict] = None
+    # {"ids": [...], "names": [...]} for an area made of municipalities
+    municipalities: Optional[dict] = None
+    # the GeoJSON geometry of a municipality area, for the map
+    outline: Optional[dict] = None
     bbox: Optional[list] = None
     scc_fraction: float = 1.0
     build_ms: float = 0.0
@@ -86,9 +105,23 @@ class Baseline:
     counts_group: np.ndarray  # per (u, v) group
     bc: np.ndarray  # per igraph edge, veh/day
     bc_group: np.ndarray
-    co2_per_km: np.ndarray  # per igraph edge, congested
-    co2_group: np.ndarray
+    co2_per_km_group: np.ndarray  # per (u, v) group, g/km of the traffic on it
     usage_rows: list = field(default_factory=list)
+
+
+@dataclass
+class OdSet:
+    """One OD sample of an area and the baselines routed on it.
+
+    An area has one per node weighting. They share the graph, the betweenness
+    and the CO2 per km (none of those depend on the pairs), and differ in the
+    pairs, the candidate pool and the edge counts.
+    """
+
+    pairs: Optional[PairArrays] = None
+    nodes: object = None  # pd.Series {node id: weight}, pool for resampling
+    baseline: Optional[Baseline] = None
+    by_n: "OrderedDict[int, Baseline]" = field(default_factory=OrderedDict)
 
 
 def _nbytes(*arrays) -> int:
@@ -103,24 +136,28 @@ class AreaGraph:
         self.mirror = mirror
         self.dynamic = dynamic
 
+        # Grams of CO2 for one vehicle over each edge. The routes sum it, and
+        # times the edge counts it is the CO2 of the traffic on each edge.
         self.base_co2_g = CO2Calculator.edge_co2_array(
             mirror.length, mirror.speed_co2, mirror.elev_gain
         )
-        length_km = mirror.length / 1000.0
-        self.base_co2_per_km = np.where(
-            length_km > 0, self.base_co2_g / np.where(length_km > 0, length_km, 1.0), 0.0
+        # 1 / km per edge, 0 for an edge with no length
+        self._inv_km = np.divide(
+            1000.0, mirror.length, out=np.zeros(len(mirror.length)), where=mirror.length > 0
         )
 
-        self.pairs: Optional[PairArrays] = None
-        self.od_nodes = None  # pd.Series {node id: weight}, pool for resampling
+        # One OD sample per node weighting. The uniform one is built with the
+        # area, the population one on the first request that asks for it.
+        self.od: Dict[str, OdSet] = {"uniform": OdSet()}
+        self._od_lock = threading.Lock()
+        self._seed = 42
         self.sampling_config = None
-        self.baseline: Optional[Baseline] = None
         self._bc_sample_vertices: List[int] = []
 
         # Bounded caches. All three are pure memoisation: dropping an entry
-        # only costs time, never correctness.
+        # only costs time, never correctness. The route cache is keyed by the
+        # content of the pairs, so two OD samples never share an entry.
         self.route_cache: "OrderedDict[bytes, RouteSet]" = OrderedDict()
-        self._baseline_by_n: "OrderedDict[int, Baseline]" = OrderedDict()
         self._bc_cache: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
         self.payloads = PayloadCache(label=meta.id)
 
@@ -130,6 +167,33 @@ class AreaGraph:
     def from_networkx(cls, graph, area_id: str = DEFAULT_AREA_ID, name: str = "") -> "AreaGraph":
         """The area of a whole NetworkX graph, which is how Lausanne is loaded."""
         return cls(AreaMeta(id=area_id, name=name or area_id), GraphMirror(graph))
+
+    # The uniform sample under its old names: the startup code, the areas API
+    # and the tests read and write these.
+
+    @property
+    def pairs(self) -> Optional[PairArrays]:
+        return self.od["uniform"].pairs
+
+    @pairs.setter
+    def pairs(self, value: Optional[PairArrays]) -> None:
+        self.od["uniform"].pairs = value
+
+    @property
+    def od_nodes(self):
+        return self.od["uniform"].nodes
+
+    @od_nodes.setter
+    def od_nodes(self, value) -> None:
+        self.od["uniform"].nodes = value
+
+    @property
+    def baseline(self) -> Optional[Baseline]:
+        return self.od["uniform"].baseline
+
+    @baseline.setter
+    def baseline(self, value: Optional[Baseline]) -> None:
+        self.od["uniform"].baseline = value
 
     @property
     def route_cache_size(self) -> int:
@@ -145,14 +209,69 @@ class AreaGraph:
 
     # ── OD pairs and startup ──────────────────────────────────────────────────
 
-    def sample_research_pairs(self, n_pairs: int, config, seed: int) -> None:
+    def sample_research_pairs(
+        self, n_pairs: int, config, seed: int, node_weighting: NodeWeighting = "uniform"
+    ) -> None:
         """Draw the OD pairs of this area with the research-based sampler."""
         from app.services.sampling.od_sampler import generate_research_based_pairs_mirror
 
-        self.sampling_config = config
-        self.pairs, self.od_nodes = generate_research_based_pairs_mirror(
-            self.mirror, n_pairs=n_pairs, config=config, seed=seed, return_nodes=True
+        if node_weighting not in NODE_WEIGHTINGS:
+            raise ValueError(f"node_weighting must be one of {NODE_WEIGHTINGS}")
+        if node_weighting == "population" and not self.mirror.has_population:
+            raise NoPopulationData(f"area {self.meta.id} has no residents and no jobs")
+
+        if node_weighting == "uniform":
+            self.sampling_config = config
+            self._seed = seed
+        run_config = config.model_copy(update={"node_weight_col": NODE_WEIGHT_COL[node_weighting]})
+        od = self.od.setdefault(node_weighting, OdSet())
+        od.pairs, od.nodes = generate_research_based_pairs_mirror(
+            self.mirror, n_pairs=n_pairs, config=run_config, seed=seed, return_nodes=True
         )
+
+    def od_set(self, node_weighting: NodeWeighting = "uniform") -> OdSet:
+        """The OD sample of this weighting, drawn and routed on first use.
+
+        The population sample costs one sampling run and one routing of the
+        pairs, a few seconds on a large area. Its betweenness is the uniform
+        baseline's: it depends on the graph, not on the pairs.
+        """
+        if node_weighting not in NODE_WEIGHTINGS:
+            raise ValueError(f"node_weighting must be one of {NODE_WEIGHTINGS}")
+        od = self.od.get(node_weighting)
+        if od is not None and od.baseline is not None:
+            return od
+        if node_weighting == "uniform":
+            raise RuntimeError("Baseline not computed")
+        if self.mirror is None or not self.mirror.has_population:
+            raise NoPopulationData(f"area {self.meta.id} has no residents and no jobs")
+
+        with self._od_lock:
+            od = self.od.get(node_weighting)
+            if od is not None and od.baseline is not None:
+                return od
+            uniform = self.od["uniform"]
+            if uniform.baseline is None or self.sampling_config is None:
+                raise RuntimeError("Baseline not computed")
+
+            t0 = time.perf_counter()
+            self.sample_research_pairs(
+                len(uniform.pairs), self.sampling_config, self._seed, node_weighting
+            )
+            od = self.od[node_weighting]
+            ref = uniform.baseline
+            od.baseline = self._route_baseline(
+                od.pairs,
+                bc=ref.bc,
+                bc_group=ref.bc_group,
+            )
+            logger.info(
+                "[AREA %s] %s OD sample ready in %.1f s",
+                self.meta.id,
+                node_weighting,
+                time.perf_counter() - t0,
+            )
+            return od
 
     def memory_bytes(self) -> int:
         """Roughly what this area holds, for the registry budget.
@@ -181,15 +300,13 @@ class AreaGraph:
             mirror.node_x,
             mirror.node_y,
             mirror.street_count,
+            mirror.residents,
+            mirror.jobs_fte,
             self.base_co2_g,
-            self.base_co2_per_km,
         )
         # igraph topology and the python side maps, measured at about 100 B
         # per edge and per node on Lausanne.
         total += 100 * (mirror.n_edges + mirror.n_nodes)
-
-        if self.pairs is not None:
-            total += _nbytes(self.pairs.origins, self.pairs.destinations)
 
         def route_set_bytes(rs):
             return _nbytes(
@@ -205,16 +322,21 @@ class AreaGraph:
                 rs._route_of_position,
             )
 
-        if self.baseline is not None:
-            b = self.baseline
-            total += route_set_bytes(b.routes)
-            total += _nbytes(b.counts, b.counts_group, b.bc, b.bc_group, b.co2_per_km, b.co2_group)
-            total += USAGE_ROW_BYTES * len(b.usage_rows)
-
-        for small in self._baseline_by_n.values():
-            # the route set is a view on the baseline one, only the rows are new
-            total += _nbytes(small.counts, small.counts_group)
-            total += USAGE_ROW_BYTES * len(small.usage_rows)
+        for weighting, od in self.od.items():
+            if od.pairs is not None:
+                total += _nbytes(od.pairs.origins, od.pairs.destinations)
+            if od.baseline is not None:
+                b = od.baseline
+                total += route_set_bytes(b.routes)
+                total += _nbytes(b.counts, b.counts_group, b.co2_per_km_group)
+                if weighting == "uniform":
+                    # the other samples point at these same arrays
+                    total += _nbytes(b.bc, b.bc_group)
+                total += USAGE_ROW_BYTES * len(b.usage_rows)
+            for small in od.by_n.values():
+                # the route set is a view on the baseline one, only the rows are new
+                total += _nbytes(small.counts, small.counts_group, small.co2_per_km_group)
+                total += USAGE_ROW_BYTES * len(small.usage_rows)
         for rs in self.route_cache.values():
             total += route_set_bytes(rs)
         for bc in self._bc_cache.values():
@@ -251,60 +373,65 @@ class AreaGraph:
 
     # ── Baseline ──────────────────────────────────────────────────────────────
 
-    def baseline_for(self, n_pairs: int) -> Baseline:
-        """Baseline restricted to the first n_pairs OD pairs.
+    def _traffic_co2_per_km(self, co2_g: np.ndarray, counts: np.ndarray) -> np.ndarray:
+        """CO2 of the traffic per km, per (u, v) group.
+
+        One vehicle over the edge times the number of routes on it, divided by
+        the length. Parallel edges add up, like two lanes of one street.
+        """
+        return self.mirror.group_sum(co2_g * counts * self._inv_km)
+
+    def baseline_for(self, n_pairs: int, node_weighting: NodeWeighting = "uniform") -> Baseline:
+        """Baseline restricted to the first n_pairs OD pairs of one OD sample.
 
         The pair sets are nested, so this is a prefix of the full route set:
-        no rerouting, only counting again. Cached per N.
+        no rerouting, only counting again. Cached per N, per sample.
         """
-        if self.baseline is None:
-            raise RuntimeError("Baseline not computed")
-        n = min(n_pairs, len(self.baseline.pairs))
-        if n >= len(self.baseline.pairs):
-            return self.baseline
+        od = self.od_set(node_weighting)
+        full = od.baseline
+        n = min(n_pairs, len(full.pairs))
+        if n >= len(full.pairs):
+            return full
 
-        cached = self._baseline_by_n.get(n)
+        cached = od.by_n.get(n)
         if cached is not None:
-            self._baseline_by_n.move_to_end(n)
+            od.by_n.move_to_end(n)
             return cached
 
         mirror = self.mirror
-        routes = self.baseline.routes.prefix(n)
+        routes = full.routes.prefix(n)
         counts = routes.edge_counts(mirror.n_edges)
         counts_group = mirror.group_sum(counts)
+        # the CO2 follows the traffic, so a smaller set has its own values
+        co2_per_km_group = self._traffic_co2_per_km(self.base_co2_g, counts)
         small = Baseline(
-            pairs=self.baseline.pairs.prefix(n),
+            pairs=full.pairs.prefix(n),
             routes=routes,
             counts=counts,
             counts_group=counts_group,
-            bc=self.baseline.bc,  # betweenness is a property of the graph, not of the OD set
-            bc_group=self.baseline.bc_group,
-            co2_per_km=self.baseline.co2_per_km,
-            co2_group=self.baseline.co2_group,
+            bc=full.bc,  # betweenness is a property of the graph, not of the OD set
+            bc_group=full.bc_group,
+            co2_per_km_group=co2_per_km_group,
         )
         small.usage_rows = build_edge_usage_rows(
             mirror,
             counts_group,
             routes.n_found,
-            self.baseline.co2_group,
-            betweenness=self.baseline.bc_group,
+            co2_per_km_group,
+            betweenness=full.bc_group,
         )
-        self._baseline_by_n[n] = small
-        while len(self._baseline_by_n) > self.baseline_cache_size:
-            self._baseline_by_n.popitem(last=False)
-        logger.info("[BASELINE] built for %d pairs, %d rows", n, len(small.usage_rows))
+        od.by_n[n] = small
+        while len(od.by_n) > self.baseline_cache_size:
+            od.by_n.popitem(last=False)
+        logger.info(
+            "[BASELINE] %s built for %d pairs, %d rows", node_weighting, n, len(small.usage_rows)
+        )
         return small
 
     def build_baseline(self, config, seed: int) -> None:
-        """Route the default pairs, compute betweenness and congested CO2."""
+        """Route the default pairs, compute betweenness and the CO2 per edge."""
         mirror = self.mirror
-        t0 = time.perf_counter()
-
-        routes = route_pairs(mirror, self.pairs, mirror.travel_time)
-        routes.compute_metrics(mirror, mirror.travel_time, self.base_co2_g)
-        logger.info(
-            "[AREA %s] %d routes in %.1f s", self.meta.id, routes.n_found, time.perf_counter() - t0
-        )
+        self._seed = seed
 
         rng = random.Random(seed)
         n = min(config.n_nodes_preprocess, mirror.n_nodes)
@@ -314,38 +441,60 @@ class AreaGraph:
         bc = bpr.compute_betweenness(mirror, mirror.travel_time, self._bc_sample_vertices, config)
         logger.info("[AREA %s] betweenness in %.1f s", self.meta.id, time.perf_counter() - t0)
 
-        # CO2 per km at the baseline congested speeds, not at free flow.
-        speed_cong = bpr.congested_speed(mirror, bc, mirror.speed_free, config)
-        co2_per_km = bpr.co2_per_km(mirror, speed_cong)
-        self.base_co2_per_km = co2_per_km
-
-        counts = routes.edge_counts(mirror.n_edges)
-        counts_group = mirror.group_sum(counts)
-        bc_group = mirror.group_sum(bc)
-        co2_group = mirror.group_max(co2_per_km)
-
-        self.baseline = Baseline(
-            pairs=self.pairs,
-            routes=routes,
-            counts=counts,
-            counts_group=counts_group,
+        self.baseline = self._route_baseline(
+            self.pairs,
             bc=bc,
-            bc_group=bc_group,
-            co2_per_km=co2_per_km,
-            co2_group=co2_group,
-        )
-        self.baseline.usage_rows = build_edge_usage_rows(
-            mirror,
-            counts_group,
-            routes.n_found,
-            co2_group,
-            betweenness=bc_group,
+            bc_group=mirror.group_sum(bc),
         )
         # Freezing lives in main.py now: it is only right for the objects that
         # stay until the process ends, and an area can be evicted.
         logger.info(
             "[AREA %s] baseline ready, %d usage rows", self.meta.id, len(self.baseline.usage_rows)
         )
+
+    def _route_baseline(
+        self,
+        pairs: PairArrays,
+        *,
+        bc: np.ndarray,
+        bc_group: np.ndarray,
+    ) -> Baseline:
+        """Route `pairs` on the unmodified network.
+
+        The betweenness is given, not computed: it depends on the graph only,
+        so every OD sample of the area shares it. The CO2 per km follows the
+        traffic, so each sample has its own.
+        """
+        mirror = self.mirror
+        t0 = time.perf_counter()
+        routes = route_pairs(mirror, pairs, mirror.travel_time)
+        routes.compute_metrics(mirror, mirror.travel_time, self.base_co2_g)
+        logger.info(
+            "[AREA %s] %d routes in %.1f s", self.meta.id, routes.n_found, time.perf_counter() - t0
+        )
+
+        counts = routes.edge_counts(mirror.n_edges)
+        counts_group = mirror.group_sum(counts)
+        # Same grams as the routes, so times the length the edges add up to
+        # the route totals.
+        co2_per_km_group = self._traffic_co2_per_km(self.base_co2_g, counts)
+        baseline = Baseline(
+            pairs=pairs,
+            routes=routes,
+            counts=counts,
+            counts_group=counts_group,
+            bc=bc,
+            bc_group=bc_group,
+            co2_per_km_group=co2_per_km_group,
+        )
+        baseline.usage_rows = build_edge_usage_rows(
+            mirror,
+            counts_group,
+            routes.n_found,
+            co2_per_km_group,
+            betweenness=bc_group,
+        )
+        return baseline
 
     # ── OD pairs ──────────────────────────────────────────────────────────────
 
@@ -451,6 +600,7 @@ class AreaGraph:
         resample_destinations: bool = False,
         include_baseline: bool = True,
         od_pairs: Optional[int] = None,
+        node_weighting: NodeWeighting = "uniform",
     ) -> dict:
         """Recalculate routes after edge modifications and return usage statistics.
 
@@ -462,11 +612,15 @@ class AreaGraph:
 
         The graph is never modified: a removed edge is an infinite weight in
         this request's own weight array.
+
+        `node_weighting` picks the OD sample: the pairs, the baseline they are
+        compared to and the pool elastic demand draws from.
         """
         if not self.mirror:
             raise RuntimeError("Graph not loaded")
-        if self.baseline is None:
-            raise RuntimeError("Baseline not computed")
+        # Drawn on the first request that asks for it, so outside the timings.
+        # Raises when the baseline is missing, or the area has no population.
+        od = self.od_set(node_weighting)
 
         mirror = self.mirror
         t_total = time.perf_counter()
@@ -481,22 +635,24 @@ class AreaGraph:
                 n_pairs = len(pairs)
                 original = self._route_set_for(pairs)
                 base = None
-                original_counts_group = mirror.group_sum(original.edge_counts(mirror.n_edges))
+                original_counts = original.edge_counts(mirror.n_edges)
+                original_counts_group = mirror.group_sum(original_counts)
+                original_co2_per_km = self._traffic_co2_per_km(self.base_co2_g, original_counts)
             else:
-                if self.pairs is None:
+                if od.pairs is None:
                     raise RuntimeError("No pairs available")
-                n_pairs = min(od_pairs or settings.od_pairs, len(self.pairs))
-                base = self.baseline_for(n_pairs)
+                n_pairs = min(od_pairs or settings.od_pairs, len(od.pairs))
+                base = self.baseline_for(n_pairs, node_weighting)
                 pairs = base.pairs
                 original = base.routes
                 original_counts_group = base.counts_group
+                original_co2_per_km = base.co2_per_km_group
 
         with timed("apply_modifications", timing):
             (
                 applied,
                 travel_time,
                 speed,
-                co2_per_km,
                 co2_g,
                 blocked,
                 changed_ids,
@@ -504,16 +660,15 @@ class AreaGraph:
                 mirror,
                 mirror.travel_time,
                 mirror.speed_free,
-                self.base_co2_per_km,
                 self.base_co2_g,
                 edge_modifications,
             )
             mods_key = tuple(sorted((m.u, m.v, m.action, m.speed_kph) for m in applied))
 
         resampled = False
-        if resample_destinations and self.od_nodes is not None and self.sampling_config:
+        if resample_destinations and od.nodes is not None and self.sampling_config:
             new_routes, affected_idx, delta_bc_group = self._strategy_resample(
-                pairs, travel_time, co2_g, timing
+                pairs, od.nodes, travel_time, co2_g, timing
             )
             resampled = True
         elif use_congestion:
@@ -550,7 +705,9 @@ class AreaGraph:
         with timed("edge_usage", timing):
             new_counts = self._new_counts(original, new_routes, affected_idx, base)
             new_counts_group = mirror.group_sum(new_counts)
-            co2_group = mirror.group_max(co2_per_km)
+            # co2_g is this request's array: a speed limit changes the grams of
+            # its edges, the same way it changed the routes' totals.
+            new_co2_per_km = self._traffic_co2_per_km(co2_g, new_counts)
             total_routes = original.n_found
 
             if not include_baseline:
@@ -564,15 +721,16 @@ class AreaGraph:
                     mirror,
                     original_counts_group,
                     total_routes,
-                    co2_group,
+                    original_co2_per_km,
                     betweenness=self.baseline.bc_group,
                 )
             new_rows = build_edge_usage_rows(
                 mirror,
                 new_counts_group,
                 total_routes,
-                co2_group,
+                new_co2_per_km,
                 original_counts=original_counts_group,
+                original_co2_per_km=original_co2_per_km,
                 betweenness=self.baseline.bc_group,
                 delta_betweenness=delta_bc_group,
             )
@@ -671,14 +829,14 @@ class AreaGraph:
 
         return new_routes, np.arange(len(pairs)), delta_bc_group
 
-    def _strategy_resample(self, pairs, travel_time, co2_g, timing):
+    def _strategy_resample(self, pairs, od_nodes, travel_time, co2_g, timing):
         """Elastic demand: draw new destinations on the modified network."""
         from app.services.sampling.od_sampler import resample_od_destinations
 
         mirror = self.mirror
         with timed("od_resampling", timing):
             new_pairs = resample_od_destinations(
-                pairs, self.od_nodes, mirror, travel_time, self.sampling_config
+                pairs, od_nodes, mirror, travel_time, self.sampling_config
             )
 
         with timed("route_calculation", timing):
@@ -745,12 +903,13 @@ class AreaGraph:
 
     # ── Payloads ──────────────────────────────────────────────────────────────
 
-    def baseline_payload(self, od_pairs: Optional[int] = None) -> dict:
+    def baseline_payload(
+        self, od_pairs: Optional[int] = None, node_weighting: NodeWeighting = "uniform"
+    ) -> dict:
         """The unmodified edge usage for N pairs, as served by GET /routes/baseline."""
-        if self.baseline is None:
-            raise RuntimeError("Baseline not computed")
-        n = min(od_pairs or settings.od_pairs, len(self.baseline.pairs))
-        base = self.baseline_for(n)
+        od = self.od_set(node_weighting)
+        n = min(od_pairs or settings.od_pairs, len(od.baseline.pairs))
+        base = self.baseline_for(n, node_weighting)
         return {
             "total_routes": base.routes.n_found,
             "od_pairs": len(base.pairs),

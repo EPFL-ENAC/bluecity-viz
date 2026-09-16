@@ -12,6 +12,7 @@ import {
   areaRingLayer,
   emptyArea
 } from '@/utils/areaCircle'
+import { outlineFeatures } from '@/utils/areaOutline'
 import {
   addGraphImages,
   applyCvrp,
@@ -105,8 +106,9 @@ export function useGraphOverlay(
   const themeStore = useThemeStore()
   const trafficStore = useTrafficAnalysisStore()
   const cvrpStore = useCVRPStore()
-  // One place says what the map draws: the lit zone of the dock.
-  const { shown } = useMapView()
+  // One place says what the map draws (the lit zone of the dock), and whether
+  // the pointer may edit the graph (the tool is past its initial model).
+  const { shown, editable } = useMapView()
 
   /** Ink treatment of the modifications: they recede once colour is on. */
   const inkMode = computed<'scenario' | 'result'>(() => (shown.value ? 'result' : 'scenario'))
@@ -203,8 +205,15 @@ export function useGraphOverlay(
             : undefined
         map.addLayer(areaRingLayer(colors.value), under)
       }
-      // The default city is not a circle the user drew, so it has no ring.
-      setData(map, AREA_SOURCE, area ? areaFeatures(area, true) : emptyArea())
+      // The default city is not an area the user drew, so it has no ring. The
+      // outline of a set of communes comes with the area, a moment after it.
+      const features =
+        area?.kind === 'circle'
+          ? areaFeatures(area, true)
+          : area?.kind === 'municipalities'
+            ? outlineFeatures(trafficStore.areaOutline, true)
+            : emptyArea()
+      setData(map, AREA_SOURCE, features)
     } catch {
       retryLater(map)
     }
@@ -675,11 +684,12 @@ export function useGraphOverlay(
     frame = requestAnimationFrame(() => {
       frame = 0
 
-      // The workbench owns the graph. With it closed the map is a picture:
-      // nothing to point at, and the card would offer a click that does
-      // nothing. Same while the user picks an area: the circle owns the
-      // pointer then, and its grab cursor must not be wiped here.
-      if (!scenarioStore.isOpen || trafficStore.pickMode) {
+      // The workbench owns the graph. With it closed, or before the initial
+      // model is validated, the map is a picture: nothing to point at, and the
+      // card would offer a click that does nothing. Same while the user picks
+      // an area: the circle owns the pointer then, and its grab cursor must not
+      // be wiped here.
+      if (!editable.value) {
         onMouseOut()
         const idle = mapRef.value
         if (idle && !trafficStore.pickMode) idle.getCanvas().style.cursor = ''
@@ -726,7 +736,7 @@ export function useGraphOverlay(
       callbacks.onHover?.(hit, { x: event.point.x, y: event.point.y })
 
       const map = mapRef.value
-      if (map) map.getCanvas().style.cursor = hit && scenarioStore.isOpen ? 'pointer' : ''
+      if (map) map.getCanvas().style.cursor = hit && editable.value ? 'pointer' : ''
     })
   }
 
@@ -759,10 +769,10 @@ export function useGraphOverlay(
   }
 
   function onClick(event: MapMouseEvent): void {
-    // The graph is always editable while the workbench is open, there is no
-    // mode to turn on first. Picking an area is the exception: a click moves
-    // the circle, it never touches a street.
-    if (!scenarioStore.isOpen || trafficStore.pickMode) return
+    // The graph is editable once the initial model is validated, there is no
+    // edit mode to turn on after that. Picking an area is the exception: a
+    // click moves the circle, it never touches a street.
+    if (!editable.value) return
     // A short drag with a tool on still fires a click. The tool has already
     // said what it caught, so this one is not ours.
     if (scenarioStore.tool !== 'pointer') return
@@ -815,7 +825,7 @@ export function useGraphOverlay(
       return
     }
 
-    if (!scenarioStore.isOpen || trafficStore.pickMode) return
+    if (!editable.value) return
     if (event.metaKey || event.ctrlKey || event.altKey) return
 
     const key = event.key.toLowerCase()
@@ -870,7 +880,9 @@ export function useGraphOverlay(
       duration: 600
     })
 
-    if (!select) return
+    // Before the initial model is validated a row only frames the streets, the
+    // graph cannot be edited yet.
+    if (!select || !editable.value) return
 
     // The popover waits for the camera: moving the map clears the selection,
     // and its screen pixels would point at the old place anyway.
@@ -945,7 +957,15 @@ export function useGraphOverlay(
     }
   )
 
-  watch(() => trafficStore.area, drawArea)
+  // Leaving the simulation (return to initialization, closing, picking an
+  // area) drops what the pointer was on, so no accent line or popover stays.
+  watch(editable, (can) => {
+    if (can) return
+    scenarioStore.select(null)
+    scenarioStore.hover(null)
+  })
+
+  watch([() => trafficStore.area, () => trafficStore.areaOutline], drawArea)
   watch(() => scenarioStore.edgeModifications, redraw)
   // Only a change of ink treatment needs the layers rebuilt, not every switch
   // of the lit zone.

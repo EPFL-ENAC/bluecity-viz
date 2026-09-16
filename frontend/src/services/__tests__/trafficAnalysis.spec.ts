@@ -5,6 +5,8 @@ import {
   fetchAreaEdges,
   fetchBaseline,
   fetchGraphInfo,
+  municipalityKey,
+  normaliseIds,
   previewArea,
   recalculateRoutes
 } from '@/services/trafficAnalysis'
@@ -50,6 +52,7 @@ describe('traffic analysis service', () => {
       useCongestionModel: true,
       congestionIterations: 3,
       elasticDemand: true,
+      nodeWeighting: 'population',
       odPairs: 20000
     })
 
@@ -62,6 +65,7 @@ describe('traffic analysis service', () => {
       use_congestion: true,
       congestion_iterations: 3,
       resample_destinations: true,
+      node_weighting: 'population',
       od_pairs: 20000,
       include_baseline: false
     })
@@ -76,6 +80,7 @@ describe('traffic analysis service', () => {
     expect(body.od_pairs).toBeNull()
     expect(body.include_baseline).toBe(false)
     expect(body.resample_destinations).toBe(false)
+    expect(body.node_weighting).toBe('uniform')
   })
 
   it('puts the pair count in the baseline query, and omits it when there is none', async () => {
@@ -136,6 +141,21 @@ describe('traffic analysis service', () => {
     expect(calledUrl(2)).toBe('/api/v1/routes/graph-info?area_id=c_7.4400_46.9500_3000')
   })
 
+  it('names the node weighting only when it is not the default', async () => {
+    fetchMock().mockResolvedValue(okResponse({ od_pairs: 100, edge_usage: [] }))
+
+    await fetchBaseline(100, 'c_7.4400_46.9500_3000', 'population')
+    expect(calledUrl()).toBe(
+      '/api/v1/routes/baseline?od_pairs=100&area_id=c_7.4400_46.9500_3000&node_weighting=population'
+    )
+
+    await fetchBaseline(undefined, null, 'population')
+    expect(calledUrl(1)).toBe('/api/v1/routes/baseline?node_weighting=population')
+
+    await fetchBaseline(100, null, 'uniform')
+    expect(calledUrl(2)).toBe('/api/v1/routes/baseline?od_pairs=100')
+  })
+
   it('sends the area in the recalculate body', async () => {
     fetchMock().mockResolvedValue(okResponse({ od_pairs: 100, new_edge_usage: [] }))
 
@@ -189,5 +209,38 @@ describe('traffic analysis service', () => {
       'c_7.4400_46.9500_3000'
     )
     expect(areaKey(null)).toBe('lausanne')
+  })
+
+  it('posts the municipalities sorted and without repeats', async () => {
+    fetchMock().mockResolvedValue(okResponse({ id: 'm_5586_5590' }))
+
+    await createArea({ kind: 'municipalities', ofsIds: [5590, 5586, 5590], name: 'Pully' })
+
+    expect(calledBody()).toEqual({ municipalities: [5586, 5590] })
+  })
+
+  it('previews the municipalities with the same body', async () => {
+    fetchMock().mockResolvedValue(okResponse({ ok: false, code: 'not_contiguous' }))
+
+    const answer = await previewArea({ kind: 'municipalities', ofsIds: [2196, 5586] })
+
+    expect(calledUrl()).toBe('/api/v1/areas/preview')
+    expect(calledBody()).toEqual({ municipalities: [2196, 5586] })
+    expect(answer.code).toBe('not_contiguous')
+  })
+
+  it('builds the same id as the server from the municipalities, whatever the order', () => {
+    expect(areaKey({ kind: 'municipalities', ofsIds: [5590, 5586] })).toBe('m_5586_5590')
+    expect(areaKey({ kind: 'municipalities', ofsIds: [5586, 5590, 5586] })).toBe('m_5586_5590')
+    // as numbers, not as text: the server writes m_5_10
+    expect(municipalityKey([10, 5])).toBe('m_5_10')
+    // the name is a label, not part of the id
+    expect(areaKey({ kind: 'municipalities', ofsIds: [5586], name: 'Lausanne' })).toBe('m_5586')
+  })
+
+  it('sorts ids as numbers and does not touch its input', () => {
+    const ids = [10, 5, 10, 200]
+    expect(normaliseIds(ids)).toEqual([5, 10, 200])
+    expect(ids).toEqual([10, 5, 10, 200])
   })
 })

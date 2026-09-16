@@ -1,23 +1,104 @@
 <script setup lang="ts">
 import BcRow from '@/components/ui/BcRow.vue'
+import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
 import type { AreaFeedback } from '@/composables/useAreaFeedback'
+import type { AreaOutline } from '@/services/trafficAnalysis'
+import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import { computed } from 'vue'
+import { communeName, type CommuneIndex } from '@/utils/municipalities'
+import type { Map as MapLibreMap } from 'maplibre-gl'
+import { computed, inject, onUnmounted, ref, watch, type Ref } from 'vue'
 
-// The circle itself lives on the map, drawn by AreaPickerOverlay. This panel
-// is the numbers and the two buttons.
+// The shape itself lives on the map, drawn by AreaPickerOverlay. This panel
+// is the mode, the numbers and the two buttons.
 const props = defineProps<{
   feedback: AreaFeedback
   canUse: boolean
   isChecking: boolean
-  limits: { min_radius_m: number; max_radius_m: number }
+  limits: {
+    min_radius_m: number
+    max_radius_m: number
+    has_municipalities?: boolean
+    max_municipalities?: number
+  }
+  communes: CommuneIndex | null
+  outline: AreaOutline | null
 }>()
 
 const trafficStore = useTrafficAnalysisStore()
+// The brush width is the one of the street brush, one size for both.
+const scenarioStore = useScenarioStore()
+
+const mapComponentRef = inject<Ref<{ map?: MapLibreMap } | undefined>>('mapRef')
+const map = computed(() => mapComponentRef?.value?.map)
+
+type Kind = 'circle' | 'municipalities'
+
+const kind = computed<Kind>(() => trafficStore.draftArea?.kind ?? 'circle')
+
+// Hidden only when the server says it has no boundaries, not while it has
+// not answered yet.
+const KIND_OPTIONS = [
+  { value: 'circle', label: 'Radius' },
+  { value: 'municipalities', label: 'Municipalities' }
+]
+const showKinds = computed(() => props.limits.has_municipalities !== false)
+
+function setKind(value: string): void {
+  if (value !== 'circle' && value !== 'municipalities') return
+  const centre = map.value?.getCenter()
+  trafficStore.setDraftKind(value, centre ? { lon: centre.lng, lat: centre.lat } : undefined)
+}
+
+// Click one commune, or paint many with the brush.
+const TOOL_OPTIONS = [
+  { value: 'pointer', label: 'Point' },
+  { value: 'brush', label: 'Brush B' }
+]
+
+const TOOL_HINT: Record<'pointer' | 'brush', string> = {
+  pointer: 'Click a municipality on the map to add it. Click again to remove it.',
+  brush: 'Paint over municipalities to add them. Hold Alt to remove, Space to pan, [ and ] resize.'
+}
+
+function setTool(value: string): void {
+  if (value === 'pointer' || value === 'brush') trafficStore.pickTool = value
+}
+
+const picked = computed(() => {
+  const draft = trafficStore.draftArea
+  if (draft?.kind !== 'municipalities') return []
+  return draft.ofsIds.map((id) => ({ id, name: communeName(id, props.communes) }))
+})
+
+// Under this zoom the communes are too small to click one on purpose.
+const PICK_ZOOM = 9
+const zoom = ref(map.value?.getZoom() ?? PICK_ZOOM)
+
+function readZoom(): void {
+  const current = map.value
+  if (current) zoom.value = current.getZoom()
+}
+
+watch(
+  map,
+  (current, previous) => {
+    previous?.off('zoomend', readZoom)
+    current?.on('zoomend', readZoom)
+    readZoom()
+  },
+  { immediate: true }
+)
+
+onUnmounted(() => map.value?.off('zoomend', readZoom))
 
 const radiusKm = computed({
-  get: () => Math.round(((trafficStore.draftArea?.radiusM ?? 3000) / 1000) * 10) / 10,
+  get: () => {
+    const draft = trafficStore.draftArea
+    const radiusM = draft?.kind === 'circle' ? draft.radiusM : 3000
+    return Math.round((radiusM / 1000) * 10) / 10
+  },
   set: (km: number) => trafficStore.setDraftRadius(Math.round(km * 1000))
 })
 
@@ -30,20 +111,43 @@ const STATUS_LABEL: Record<string, string> = {
   too_large: 'Too large',
   disconnected: 'Not connected',
   outside_coverage: 'Outside Switzerland',
-  unavailable: 'Not available here'
+  not_contiguous: 'Not touching',
+  unavailable: 'Not available here',
+  empty: 'Nothing selected',
+  checking: 'Checking…',
+  too_many: 'Too many'
 }
 
-const STATUS_HINT: Record<string, string> = {
-  ok: 'The tool can route inside this circle.',
-  too_sparse: 'Not enough junctions for routing. Move over a town, or make the circle bigger.',
-  too_large: 'More streets than the tool can route. Make the circle smaller.',
-  disconnected: 'The streets here are in separate pieces. Move the circle a little.',
-  outside_coverage: 'The road network only covers Switzerland.',
-  unavailable: 'This server only has the default city, it cannot build another area.'
+const STATUS_HINT: Record<Kind, Record<string, string>> = {
+  circle: {
+    ok: 'The tool can route inside this circle.',
+    too_sparse: 'Not enough junctions for routing. Move over a town, or make the circle bigger.',
+    too_large: 'More streets than the tool can route. Make the circle smaller.',
+    disconnected: 'The streets here are in separate pieces. Move the circle a little.',
+    outside_coverage: 'The road network only covers Switzerland.',
+    unavailable: 'This server only has the default city, it cannot build another area.'
+  },
+  municipalities: {
+    ok: 'The tool can route inside these municipalities.',
+    too_sparse: 'These municipalities have too few junctions. Add a neighbour.',
+    too_large: 'More streets than the tool can route. Remove a municipality.',
+    disconnected: 'The streets of this area are in separate pieces.',
+    outside_coverage: 'No road network for this municipality.',
+    not_contiguous: 'Every municipality must share a border with the others.',
+    unavailable: 'This server cannot build an area from municipalities.',
+    empty: 'Pick at least one municipality.',
+    checking: 'The server is counting the streets.'
+  }
 }
 
 const statusLabel = computed(() => STATUS_LABEL[props.feedback.status] ?? 'Unknown')
-const statusHint = computed(() => STATUS_HINT[props.feedback.status] ?? '')
+const statusHint = computed(() => {
+  // The limit comes from the server, it may answer after the panel opened.
+  if (props.feedback.status === 'too_many') {
+    return `At most ${props.limits.max_municipalities ?? 100} municipalities. Remove some.`
+  }
+  return STATUS_HINT[kind.value][props.feedback.status] ?? ''
+})
 
 const counts = computed(() => props.feedback.estimate)
 const isExact = computed(() => props.feedback.exact !== null)
@@ -54,13 +158,19 @@ function formatCount(value: number): string {
 
 const centre = computed(() => {
   const circle = trafficStore.draftArea
-  if (!circle) return ''
+  if (circle?.kind !== 'circle') return ''
   return `${circle.lat.toFixed(3)}, ${circle.lon.toFixed(3)}`
 })
 
 // The place the circle sits on, read from the basemap by AreaPickerOverlay.
 // Empty on a style with no labels, and then only the coordinates show.
 const placeName = computed(() => trafficStore.draftArea?.name ?? '')
+
+const sourceShape = computed(() => {
+  if (kind.value === 'circle') return `Centre ${centre.value}.`
+  const count = picked.value.length
+  return `${count} ${count === 1 ? 'municipality' : 'municipalities'}.`
+})
 </script>
 
 <template>
@@ -71,16 +181,62 @@ const placeName = computed(() => trafficStore.draftArea?.name ?? '')
     </div>
 
     <div class="dock-section">
-      <p class="bc-empty hint">Drag the circle on the map, or click where you want it.</p>
-
-      <BcSlider
-        v-model="radiusKm"
-        :min="minKm"
-        :max="maxKm"
-        :step="0.5"
-        label="Radius"
-        :display="`${radiusKm} km`"
+      <BcSeg
+        v-if="showKinds"
+        class="kinds"
+        :model-value="kind"
+        :options="KIND_OPTIONS"
+        equal
+        @update:model-value="setKind"
       />
+
+      <template v-if="kind === 'circle'">
+        <p class="bc-empty hint">Drag the circle on the map, or click where you want it.</p>
+
+        <BcSlider
+          v-model="radiusKm"
+          :min="minKm"
+          :max="maxKm"
+          :step="0.5"
+          label="Radius"
+          :display="`${radiusKm} km`"
+        />
+      </template>
+
+      <template v-else>
+        <BcSeg
+          class="kinds"
+          :model-value="trafficStore.pickTool"
+          :options="TOOL_OPTIONS"
+          equal
+          @update:model-value="setTool"
+        />
+        <BcSlider
+          v-if="trafficStore.pickTool === 'brush'"
+          v-model="scenarioStore.brushRadius"
+          :min="8"
+          :max="80"
+          :step="2"
+          label="Brush width"
+          :display="`${scenarioStore.brushRadius} px`"
+        />
+        <p class="bc-empty hint">{{ TOOL_HINT[trafficStore.pickTool] }}</p>
+        <p v-if="zoom < PICK_ZOOM" class="bc-empty hint">Zoom in to pick a municipality.</p>
+
+        <div class="picked">
+          <BcRow v-for="commune in picked" :key="commune.id" :check="false" on>
+            {{ commune.name }}
+            <template #trailing>
+              <button
+                class="bc-micro picked__remove"
+                @click.stop="trafficStore.removeDraftMunicipality(commune.id)"
+              >
+                Remove
+              </button>
+            </template>
+          </BcRow>
+        </div>
+      </template>
 
       <div class="feedback" :data-status="feedback.status">
         <div class="feedback__chip">{{ statusLabel }}</div>
@@ -104,10 +260,11 @@ const placeName = computed(() => trafficStore.draftArea?.name ?? '')
           </div>
         </div>
 
-        <p class="bc-empty feedback__source">
+        <p v-if="kind === 'circle' || picked.length" class="bc-empty feedback__source">
           <template v-if="isChecking">Checking with the server…</template>
-          <template v-else-if="isExact">Counted by the server. Centre {{ centre }}.</template>
-          <template v-else>Estimated. Centre {{ centre }}.</template>
+          <template v-else-if="isExact">Counted by the server. {{ sourceShape }}</template>
+          <template v-else-if="kind === 'circle'">Estimated. {{ sourceShape }}</template>
+          <template v-else>{{ sourceShape }}</template>
         </p>
       </div>
     </div>
@@ -127,7 +284,7 @@ const placeName = computed(() => trafficStore.draftArea?.name ?? '')
         <button
           class="bc-btn bc-btn--primary"
           :disabled="!canUse"
-          @click="trafficStore.exitPickMode(true)"
+          @click="trafficStore.exitPickMode(true, outline)"
         >
           Use this area
         </button>
@@ -157,6 +314,30 @@ const placeName = computed(() => trafficStore.draftArea?.name ?? '')
 
 .hint {
   margin: 0 0 14px;
+}
+
+.kinds {
+  margin-bottom: 14px;
+}
+
+.picked {
+  border-bottom: 1px solid var(--bc-line);
+}
+
+.picked:empty {
+  display: none;
+}
+
+.picked__remove {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--bc-grey);
+  cursor: pointer;
+}
+
+.picked__remove:hover {
+  color: var(--bc-ink);
 }
 
 .feedback {

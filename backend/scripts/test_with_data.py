@@ -11,8 +11,8 @@ import os
 
 import requests
 
-# Git worktrees export their own BACKEND_PORT (see docs/worktree-env/), so the
-# tests hit the server of the checkout they run in.
+# Git worktrees export their own BACKEND_PORT (wtx writes the ports in
+# .env.worktree), so the tests hit the server of the checkout they run in.
 BASE_URL = f"http://localhost:{os.environ.get('BACKEND_PORT', '8000')}"
 
 

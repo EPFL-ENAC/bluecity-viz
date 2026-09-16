@@ -2,8 +2,8 @@
 
 SOURCES = app tests scripts
 
-# Per-checkout override: git worktrees export BACKEND_PORT from .env.worktree
-# (see docs/worktree-env/), the main checkout keeps 8000.
+# Per-checkout override: wtx writes the ports in .env.worktree and every pane
+# exports BACKEND_PORT, the main checkout keeps 8000.
 BACKEND_PORT ?= 8000
 
 help:

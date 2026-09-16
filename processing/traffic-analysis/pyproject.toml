@@ -8,7 +8,7 @@ dependencies = [
     "networkx>=3.2",
     # Geospatial data handling
     "geopandas>=0.14.0",
-    "shapely>=2.0.0",
+    "shapely>=2.1.0",  # coverage_simplify, for the municipal boundaries
     # Elevation raster processing (Swiss ALTI3D)
     "rasterio>=1.4.0",
     "rio-vrt>=0.3.1",  # required by osmnx to merge multiple rasters into a VRT
@@ -17,6 +17,9 @@ dependencies = [
     "numpy>=1.26.0",
     # The graph store the backend reads, written here (see build_swiss_graph.py)
     "pyarrow>=17.0.0",
+    # Residents and jobs snapped to the nearest node (bfs_population.py)
+    "pyproj>=3.6.0",
+    "scipy>=1.11.0",
     # HTTP downloads (elevation data)
     "requests>=2.31.0",
     # Transit data extraction from OSM PBF

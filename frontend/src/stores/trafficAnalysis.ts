@@ -9,10 +9,13 @@ import {
   fetchGraphInfo,
   type AreaInfo,
   type AreaLimits,
+  type AreaOutline,
   type AreaSelection,
-  type ImpactStatistics
+  type ImpactStatistics,
+  type NodeWeighting
 } from '@/services/trafficAnalysis'
 import { useCVRPStore } from '@/stores/cvrp'
+import type { CircleArea } from '@/stores/layers/types'
 import { useScenarioStore } from '@/stores/scenario'
 import { rgb } from 'd3-color'
 import { scaleDiverging, scaleDivergingSymlog, scaleSequential } from 'd3-scale'
@@ -24,6 +27,11 @@ import { computed, markRaw, ref, shallowRef } from 'vue'
 // circle starts. The map centre wins when the caller knows it.
 const DEFAULT_CENTRE = { lon: 6.6323, lat: 46.5197 }
 const DEFAULT_RADIUS_M = 3000
+
+/** A copy the picker can change without touching the area behind it. */
+function copyArea(area: AreaSelection): AreaSelection {
+  return area.kind === 'municipalities' ? { ...area, ofsIds: [...area.ofsIds] } : { ...area }
+}
 
 type ColorScale = ((value: number) => string) | null
 type LegendMode =
@@ -53,7 +61,10 @@ export interface EdgeUsageStats {
   frequency: number
   delta_count?: number
   delta_frequency?: number
-  co2_per_km?: number
+  /** CO2 of the traffic on the edge, g/km: one vehicle over it, times count, per km */
+  co2_g_per_km?: number
+  /** change of co2_g_per_km after the modification, g/km */
+  delta_co2_g_per_km?: number
   betweenness_centrality?: number
   delta_betweenness?: number
 }
@@ -85,15 +96,8 @@ function emptyScales(): ModeScales {
   }
 }
 
-// Fixed CO₂/km scale — matches the grade-relative model range (g CO₂/km).
-// Fallback upper bound used only when all CO2 values are zero.
-const CO2_KM_MAX = 350
-
-// CO2 delta: fixed ±6 domain prevents sub-g/km changes from saturating the scale
-const CO2_DELTA_CLAMP = 6
-
-/** 98th-percentile max — prevents a few outlier edges (zero-length stubs, roundabout loops)
- *  with astronomical CO2/km from blowing up the color scale. */
+/** 98th percentile max, so a few very busy edges (the ring road, a bridge) do
+ *  not push every other street to the bottom of the colour scale. */
 function robustMax(values: number[], percentile = 0.98, fallback = 1): number {
   const pos = values.filter((v) => v > 0)
   if (pos.length === 0) return fallback
@@ -117,6 +121,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const useCongestionModel = ref<boolean>(false)
   const congestionIterations = ref<number>(1)
   const elasticDemand = ref<boolean>(false)
+  const nodeWeighting = ref<NodeWeighting>('uniform')
   const filterBusRoutes = ref<boolean>(false)
   // How many OD pairs to route. null means the server default.
   const odPairs = ref<number | null>(null)
@@ -129,6 +134,10 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const areaInfo = shallowRef<AreaInfo | null>(null)
   const isBuildingArea = ref(false)
   const areaError = shallowRef<{ code?: string; message: string } | null>(null)
+  // The outline of a set of communes, for the ring on the map. Never saved:
+  // the picker hands over the one it previewed, and the server gives it back
+  // when the area is built, so a shared link draws it too.
+  const areaOutline = shallowRef<AreaOutline | null>(null)
 
   /**
    * The name of the network the map has to show.
@@ -142,8 +151,14 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // The picker. UI only, nothing here is saved: the circle being dragged, and
   // the rules the server applies to it.
   const pickMode = ref(false)
+  // How the pointer picks communes: one click at a time, or a brush that
+  // paints over many. Kept between two openings of the picker.
+  const pickTool = ref<'pointer' | 'brush'>('pointer')
   const draftArea = ref<AreaSelection | null>(null)
   const areaLimits = shallowRef<AreaLimits | null>(null)
+  // The circle the user had before switching to communes, so switching back
+  // does not lose it. UI only.
+  let lastCircle: CircleArea | null = null
 
   // Filled once from /graph-info: the server default, the most it accepts, and
   // the count the "full" choice sends (the set really sampled at startup).
@@ -215,7 +230,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       modes.push({ value: 'frequency', label: 'Edge Usage Frequency' })
     }
     const hasCO2 = newEdgeUsage.value.some(
-      (stat) => stat.co2_per_km !== undefined && stat.co2_per_km > 0
+      (stat) => stat.co2_g_per_km !== undefined && stat.co2_g_per_km > 0
     )
     if (hasCO2 && hasCalculatedRoutes.value) {
       modes.push({ value: 'co2', label: 'CO₂ Emissions' })
@@ -278,8 +293,8 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     let absRelMax = 0.01
     let maxBC = 0.01
     let absBCDeltaMax = 0.01
-    let co2Min = Infinity
     const co2Values: number[] = []
+    const co2DeltaValues: number[] = []
     let hasCO2 = false
     let hasDeltaValues = false
     let hasBetweenness = false
@@ -289,12 +304,10 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       const frequency = stat.frequency
       if (frequency > maxFreq) maxFreq = frequency
 
-      const co2 = stat.co2_per_km ?? 0
+      const co2 = stat.co2_g_per_km ?? 0
       co2Values.push(co2)
-      if (stat.co2_per_km !== undefined && stat.co2_per_km > 0) {
-        hasCO2 = true
-        if (co2 < co2Min) co2Min = co2
-      }
+      if (co2 > 0) hasCO2 = true
+      co2DeltaValues.push(Math.abs(stat.delta_co2_g_per_km ?? 0))
 
       const deltaCount = stat.delta_count ?? 0
       if (stat.delta_count !== undefined && Math.abs(stat.delta_count) > 0.001) {
@@ -331,10 +344,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     }
 
     if (hasCO2) {
-      const co2Max = robustMax(co2Values, 0.98, CO2_KM_MAX)
+      // g/km of traffic: 0 is a street no route uses
+      const co2Max = robustMax(co2Values, 0.98, 1)
       built.co2 = {
-        scale: scaleSequential(interpolateViridis).domain([co2Min, co2Max]),
-        min: co2Min,
+        scale: scaleSequential(interpolateViridis).domain([0, co2Max]),
+        min: 0,
         max: co2Max
       }
     }
@@ -348,10 +362,13 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       }
 
       if (hasCO2) {
+        // symmetrical like delta, on the 98th percentile so the few streets
+        // next to a closure do not wash out the rest
+        const absCo2DeltaMax = robustMax(co2DeltaValues, 0.98, 1)
         built.co2_delta = {
-          scale: scaleDiverging(interpolateSpectral).domain([CO2_DELTA_CLAMP, 0, -CO2_DELTA_CLAMP]),
-          min: -CO2_DELTA_CLAMP,
-          max: CO2_DELTA_CLAMP
+          scale: scaleDiverging(interpolateSpectral).domain([absCo2DeltaMax, 0, -absCo2DeltaMax]),
+          min: -absCo2DeltaMax,
+          max: absCo2DeltaMax
         }
       }
 
@@ -474,19 +491,21 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   function getBaseline(count?: number): Promise<BaselineResult> {
     // Every key carries the area: two areas have different numbers for the
     // same pair count.
+    // The weighting too: another OD sample, other numbers.
     const scope = areaId.value ?? DEFAULT_AREA_ID
+    const weighting = nodeWeighting.value
     if (count !== undefined) {
-      const cached = baselineCache.get(`${scope}:${count}`)
+      const cached = baselineCache.get(`${scope}:${weighting}:${count}`)
       if (cached) return Promise.resolve({ odPairs: count, rows: cached })
     }
 
-    const key = `${scope}:${count ?? 'default'}`
+    const key = `${scope}:${weighting}:${count ?? 'default'}`
     const inFlight = baselinePending.get(key)
     if (inFlight) return inFlight
 
-    const request = fetchBaseline(count, areaId.value)
+    const request = fetchBaseline(count, areaId.value, weighting)
       .then((response) => {
-        baselineCache.set(`${scope}:${response.od_pairs}`, response.edge_usage)
+        baselineCache.set(`${scope}:${weighting}:${response.od_pairs}`, response.edge_usage)
         baselinePending.delete(key)
         return { odPairs: response.od_pairs, rows: response.edge_usage }
       })
@@ -532,6 +551,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     area.value = selection
     areaId.value = null
     areaInfo.value = null
+    areaOutline.value = null
     areaError.value = null
     areaPromise = null
     clearResults()
@@ -570,6 +590,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         if (areaKey(area.value) !== wanted) return areaId.value
         areaId.value = info.id
         areaInfo.value = info
+        areaOutline.value = info.outline ?? null
         return info.id
       })
       .catch((error: unknown) => {
@@ -589,22 +610,91 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     return request
   }
 
-  /** Open the picker on the current circle, or on a fresh one. */
+  /** A circle to start from: the last one, or a fresh one where the map looks. */
+  function freshCircle(centre?: { lon: number; lat: number }): CircleArea {
+    return {
+      kind: 'circle',
+      lon: centre?.lon ?? DEFAULT_CENTRE.lon,
+      lat: centre?.lat ?? DEFAULT_CENTRE.lat,
+      radiusM: DEFAULT_RADIUS_M
+    }
+  }
+
+  /** Open the picker on the current area, or on a fresh circle. */
   function enterPickMode(fallback?: { lon: number; lat: number }) {
-    draftArea.value = area.value
-      ? { ...area.value }
-      : {
-          kind: 'circle',
-          lon: fallback?.lon ?? DEFAULT_CENTRE.lon,
-          lat: fallback?.lat ?? DEFAULT_CENTRE.lat,
-          radiusM: DEFAULT_RADIUS_M
-        }
+    const current = area.value
+    lastCircle = current?.kind === 'circle' ? { ...current } : null
+    draftArea.value = current ? copyArea(current) : freshCircle(fallback)
     pickMode.value = true
   }
 
-  /** Close the picker. Confirming makes the draft the area of the scenario. */
-  function exitPickMode(confirm: boolean) {
-    if (confirm && draftArea.value) setArea({ ...draftArea.value })
+  /**
+   * Switch the picker between the circle and the communes.
+   *
+   * Each mode keeps what it had: back to the circle gives the last circle, and
+   * the communes start from the area when it is already a set of communes.
+   */
+  function setDraftKind(kind: AreaSelection['kind'], centre?: { lon: number; lat: number }) {
+    const draft = draftArea.value
+    if (!draft || draft.kind === kind) return
+    if (kind === 'circle') {
+      draftArea.value = lastCircle ? { ...lastCircle } : freshCircle(centre)
+      return
+    }
+    if (draft.kind === 'circle') lastCircle = { ...draft }
+    const current = area.value
+    draftArea.value =
+      current?.kind === 'municipalities'
+        ? copyArea(current)
+        : { kind: 'municipalities', ofsIds: [] }
+  }
+
+  /** Add a commune to the draft, or take it out when it is already in. */
+  function toggleDraftMunicipality(id: number) {
+    const draft = draftArea.value
+    if (draft?.kind !== 'municipalities') return
+    const ofsIds = draft.ofsIds.includes(id)
+      ? draft.ofsIds.filter((other) => other !== id)
+      : [...draft.ofsIds, id]
+    // The name was for the old selection, the picker writes the new one.
+    draftArea.value = { kind: 'municipalities', ofsIds }
+  }
+
+  function removeDraftMunicipality(id: number) {
+    removeDraftMunicipalities([id])
+  }
+
+  /** Add the communes a brush stroke went over. The ones already in stay where they are. */
+  function addDraftMunicipalities(ids: readonly number[]) {
+    const draft = draftArea.value
+    if (draft?.kind !== 'municipalities') return
+    const added = [...new Set(ids)].filter((id) => !draft.ofsIds.includes(id))
+    if (added.length === 0) return
+    draftArea.value = { kind: 'municipalities', ofsIds: [...draft.ofsIds, ...added] }
+  }
+
+  function removeDraftMunicipalities(ids: readonly number[]) {
+    const draft = draftArea.value
+    if (draft?.kind !== 'municipalities') return
+    const gone = new Set(ids)
+    const ofsIds = draft.ofsIds.filter((id) => !gone.has(id))
+    if (ofsIds.length === draft.ofsIds.length) return
+    draftArea.value = { kind: 'municipalities', ofsIds }
+  }
+
+  /**
+   * Close the picker. Confirming makes the draft the area of the scenario.
+   *
+   * `outline` is the one the picker previewed for a set of communes, so the
+   * ring is on the map before the server has built the area.
+   */
+  function exitPickMode(confirm: boolean, outline?: AreaOutline | null) {
+    const draft = draftArea.value
+    const empty = draft?.kind === 'municipalities' && draft.ofsIds.length === 0
+    if (confirm && draft && !empty) {
+      setArea(copyArea(draft))
+      if (draft.kind === 'municipalities' && outline) areaOutline.value = outline
+    }
     pickMode.value = false
     draftArea.value = null
   }
@@ -616,12 +706,13 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     draftArea.value = null
   }
 
+  // Only a circle moves or grows, a set of communes has no centre to drag.
   function moveDraft(lon: number, lat: number) {
-    if (draftArea.value) draftArea.value = { ...draftArea.value, lon, lat }
+    if (draftArea.value?.kind === 'circle') draftArea.value = { ...draftArea.value, lon, lat }
   }
 
   function setDraftRadius(radiusM: number) {
-    if (draftArea.value) draftArea.value = { ...draftArea.value, radiusM }
+    if (draftArea.value?.kind === 'circle') draftArea.value = { ...draftArea.value, radiusM }
   }
 
   /** The place the draft circle sits on, read from the basemap by the picker. */
@@ -704,6 +795,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     useCongestionModel?: boolean
     congestionIterations?: number
     elasticDemand?: boolean
+    nodeWeighting?: NodeWeighting
     filterBusRoutes?: boolean
     odPairs?: number | null
     resultOdPairs?: number | null
@@ -723,6 +815,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         area.value = next
         areaId.value = null
         areaInfo.value = null
+        areaOutline.value = null
         areaError.value = null
         areaPromise = null
       }
@@ -736,6 +829,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     if (state.congestionIterations !== undefined)
       congestionIterations.value = state.congestionIterations
     if (state.elasticDemand !== undefined) elasticDemand.value = state.elasticDemand
+    if (state.nodeWeighting !== undefined) nodeWeighting.value = state.nodeWeighting
     if (state.filterBusRoutes !== undefined) filterBusRoutes.value = state.filterBusRoutes
     // assigned, not setOdPairs: the results below belong to this state and
     // setOdPairs would clear them.
@@ -776,6 +870,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     useCongestionModel,
     congestionIterations,
     elasticDemand,
+    nodeWeighting,
     filterBusRoutes,
     odPairs,
     odPairsDefault,
@@ -785,10 +880,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     area,
     areaId,
     areaInfo,
+    areaOutline,
     graphKey,
     isBuildingArea,
     areaError,
     pickMode,
+    pickTool,
     draftArea,
     areaLimits,
 
@@ -819,6 +916,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     forgetAreaId,
     enterPickMode,
     exitPickMode,
+    setDraftKind,
+    toggleDraftMunicipality,
+    removeDraftMunicipality,
+    addDraftMunicipalities,
+    removeDraftMunicipalities,
     useDefaultArea,
     moveDraft,
     setDraftRadius,

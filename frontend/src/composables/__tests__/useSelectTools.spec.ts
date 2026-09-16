@@ -1,5 +1,6 @@
 import { useSelectTools, type StreetsInBox } from '@/composables/useSelectTools'
 import { useScenarioStore } from '@/stores/scenario'
+import { useStorylineStore } from '@/stores/storyline'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
@@ -69,6 +70,9 @@ function setup(tool: 'lasso' | 'brush' | 'pointer') {
   setActivePinia(createPinia())
   const store = useScenarioStore()
   store.isOpen = true
+  // the graph can only be edited once the initial model is validated
+  vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} })
+  useStorylineStore().validate('routing')
   store.tool = tool
 
   const map = fakeMap()

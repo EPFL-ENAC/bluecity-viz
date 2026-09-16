@@ -1,19 +1,48 @@
 <script setup lang="ts">
+import EffectRow, { type EffectState } from '@/components/dock/EffectRow.vue'
+import ScenarioEdges from '@/components/dock/ScenarioEdges.vue'
+import StoryStep from '@/components/dock/StoryStep.vue'
 import ImpactStatistics from '@/components/ImpactStatistics.vue'
 import BcIcon from '@/components/ui/BcIcon.vue'
 import BcRow from '@/components/ui/BcRow.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
-import { ApiError, recalculateRoutes } from '@/services/trafficAnalysis'
-import { useScenarioStore } from '@/stores/scenario'
+import { useDeltaBars } from '@/composables/useDeltaBars'
+import { useMapView } from '@/composables/useMapView'
+import { ApiError, recalculateRoutes, type NodeWeighting } from '@/services/trafficAnalysis'
+import { useScenarioStore, type StreetRef } from '@/stores/scenario'
+import { useStorylineStore } from '@/stores/storyline'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { computed, onMounted, ref, watch } from 'vue'
 
-// The routing tool, inside the scenario workbench. The scenario itself (the
-// modified edges) belongs to the dock above, both tools read it.
+// The routing tool as one storyline of three steps: set the model, edit the
+// network and run, then read the map and the numbers. The modified edges are
+// shared with the waste collection tool.
+
+const emit = defineEmits<{
+  (event: 'focus', keys: string[], select?: StreetRef): void
+}>()
 
 const trafficStore = useTrafficAnalysisStore()
 const scenarioStore = useScenarioStore()
+const storyline = useStorylineStore()
+const { absorbers, barWidth, deltaText } = useDeltaBars()
+
+// The dock shows the tool whose row is picked in the sidebar, so the open step
+// of the view is this tab's.
+const { step } = useMapView()
+
+/** The wheel while the routes run, the tick once the result matches the scenario. */
+const effectState = computed<EffectState>(() => {
+  if (trafficStore.isCalculating) return 'running'
+  if (trafficStore.hasCalculatedRoutes && !trafficStore.isStale) return 'done'
+  return 'idle'
+})
+
+/** Fit the map on one street. */
+function focus(key: string): void {
+  emit('focus', [key])
+}
 
 const loadingMessage = ref('')
 
@@ -32,6 +61,16 @@ function formatTrips(count: number): string {
 }
 
 // The two choices, hidden until we know the numbers.
+const nodeWeightingOptions = [
+  { value: 'uniform', label: 'Uniform' },
+  { value: 'population', label: 'Population + jobs' }
+]
+// BcSeg speaks plain strings
+const nodeWeighting = computed({
+  get: () => trafficStore.nodeWeighting,
+  set: (value: string) => (trafficStore.nodeWeighting = value as NodeWeighting)
+})
+
 const tripsOptions = computed(() => {
   const base = trafficStore.odPairsDefault
   const full = trafficStore.odPairsFull
@@ -62,6 +101,40 @@ const resultTrips = computed(() =>
   trafficStore.resultOdPairs === null ? '' : formatTrips(trafficStore.resultOdPairs)
 )
 
+/** The model in one line, for the folded Model step. */
+const modelSummary = computed(() => {
+  const parts: string[] = []
+  const odPairs = chosenOdPairs()
+  if (odPairs) parts.push(`${formatTrips(odPairs)} trips`)
+  const n = trafficStore.congestionIterations
+  parts.push(
+    trafficStore.useCongestionModel
+      ? `BPR, ${n} iteration${n > 1 ? 's' : ''}`
+      : 'static betweenness'
+  )
+  if (trafficStore.elasticDemand) parts.push('elastic demand')
+  if (trafficStore.nodeWeighting === 'population') parts.push('population + jobs')
+  return parts.join(' · ')
+})
+
+const scenarioSummary = computed(() => {
+  const n = scenarioStore.count
+  const edges = n === 0 ? 'No street modified' : `${n} street${n > 1 ? 's' : ''} modified`
+  if (step.value === 'model') return `${edges}. Validate the model to edit the network.`
+  return trafficStore.isStale ? `${edges}, changed since the result` : edges
+})
+
+const resultsSummary = computed(() => {
+  if (step.value === 'model') return 'Shown once the routes are calculated.'
+  if (!trafficStore.hasCalculatedRoutes) return 'Calculate the routes to see them.'
+  const mode = trafficStore.availableVisualizations.find(
+    (vis) => vis.value === trafficStore.activeVisualization
+  )
+  const parts = [resultTrips.value && `${resultTrips.value} trips`]
+  if (mode) parts.push(visLabel(mode.value, mode.label))
+  return parts.filter(Boolean).join(' · ')
+})
+
 // Sentence-case labels, per the design. Falls back to the store label.
 const VIS_LABELS: Record<string, string> = {
   frequency: 'Edge usage frequency',
@@ -85,6 +158,7 @@ function runOnce(odPairs: number | undefined) {
       useCongestionModel: trafficStore.useCongestionModel,
       congestionIterations: trafficStore.congestionIterations,
       elasticDemand: trafficStore.elasticDemand,
+      nodeWeighting: trafficStore.nodeWeighting,
       odPairs,
       areaId: trafficStore.areaId
     })
@@ -149,11 +223,18 @@ async function calculateRoutes() {
 </script>
 
 <template>
-  <div>
-    <p v-if="trafficStore.isStale" class="stale-banner">
-      Scenario changed since this result, shown at 40 % on the map.
-    </p>
-    <!-- Routing model -->
+  <StoryStep
+    :step="1"
+    title="Model"
+    :state="step === 'model' ? 'open' : 'done'"
+    action="Edit"
+    :busy="trafficStore.isCalculating"
+    @open="storyline.returnToInit('routing')"
+  >
+    <template #summary>
+      {{ modelSummary
+      }}<template v-if="trafficStore.hasCalculatedRoutes">. Editing it drops the result.</template>
+    </template>
     <div class="dock-section">
       <div class="bc-micro dock-section__title">Routing model</div>
 
@@ -214,6 +295,11 @@ async function calculateRoutes() {
         </template>
       </BcRow>
 
+      <div class="trips">
+        <div class="bc-micro trips__label">Node weights</div>
+        <BcSeg v-model="nodeWeighting" :options="nodeWeightingOptions" equal />
+      </div>
+
       <div v-if="tripsOptions.length > 0" class="trips">
         <div class="bc-micro trips__label">Trips</div>
         <BcSeg
@@ -228,6 +314,25 @@ async function calculateRoutes() {
         </p>
       </div>
 
+      <button class="bc-btn bc-btn--primary calculate" @click="storyline.validate('routing')">
+        Validate initial model
+      </button>
+    </div>
+  </StoryStep>
+
+  <StoryStep
+    :step="2"
+    title="Scenario"
+    :state="step === 'scenario' ? 'open' : step === 'model' ? 'todo' : 'done'"
+    @open="scenarioStore.mapMode = 'scenario'"
+  >
+    <template #summary>{{ scenarioSummary }}</template>
+    <p v-if="trafficStore.isStale" class="stale-banner">
+      Scenario changed since the last result. Calculate again to update it.
+    </p>
+    <div class="dock-section">
+      <ScenarioEdges @focus="(keys, select) => emit('focus', keys, select)" />
+
       <button
         class="bc-btn bc-btn--primary calculate"
         :disabled="trafficStore.isCalculating"
@@ -235,22 +340,41 @@ async function calculateRoutes() {
       >
         {{ trafficStore.isCalculating ? 'Calculating…' : 'Calculate routes' }}
       </button>
-      <v-progress-linear
-        v-if="trafficStore.isCalculating"
-        class="calculate__progress"
-        color="secondary"
-        :height="1"
-        indeterminate
-      />
+      <div class="effects">
+        <EffectRow label="Route the trips" :state="effectState" />
+      </div>
       <div v-if="trafficStore.isCalculating" class="bc-empty calculate__msg">
         {{ loadingMessage }}
       </div>
     </div>
+  </StoryStep>
 
-    <!-- Visualisation -->
-    <div v-if="trafficStore.hasCalculatedRoutes" class="dock-section">
+  <StoryStep
+    :step="3"
+    title="Results"
+    :state="
+      step === 'results'
+        ? 'open'
+        : step === 'scenario' && trafficStore.hasCalculatedRoutes
+          ? 'done'
+          : 'todo'
+    "
+    @open="scenarioStore.mapMode = 'result'"
+  >
+    <template #summary>{{ resultsSummary }}</template>
+    <div v-if="trafficStore.isStale" class="stale-banner">
+      Scenario changed since this result, shown at 40 % on the map.
+      <button
+        class="bc-micro stale-banner__btn"
+        :disabled="trafficStore.isCalculating"
+        @click="calculateRoutes"
+      >
+        {{ trafficStore.isCalculating ? 'Calculating…' : 'Calculate again' }}
+      </button>
+    </div>
+    <div class="dock-section">
       <div class="bc-micro dock-section__title">
-        Visualisation<template v-if="resultTrips"> · {{ resultTrips }} trips</template>
+        Layers<template v-if="resultTrips"> · {{ resultTrips }} trips</template>
       </div>
       <BcRow
         v-for="vis in trafficStore.availableVisualizations"
@@ -273,15 +397,41 @@ async function calculateRoutes() {
           >Bus routes</span
         >
       </div>
+
+      <!-- Where the diverted traffic ended up. These streets were not touched,
+           they are what the result says. -->
+      <template v-if="absorbers.length">
+        <div class="bc-micro absorb-head">Where the traffic went · top 3</div>
+        <div
+          v-for="row in absorbers"
+          :key="row.key"
+          class="edge-row edge-row--absorb edge-row--click"
+          :data-lit="scenarioStore.hoveredSet.has(row.key)"
+          title="Zoom to this street"
+          @click="focus(row.key)"
+          @mouseenter="scenarioStore.hover({ keys: [row.key], dir: 'both' })"
+          @mouseleave="scenarioStore.hover(null)"
+        >
+          <span class="edge-row__name">{{ row.name || 'Unnamed street' }}</span>
+          <div class="edge-row__meta">
+            <span class="edge-row__bar">
+              <span
+                class="edge-row__bar-fill"
+                :style="{ width: barWidth(row.value), background: row.color }"
+              ></span>
+            </span>
+            <span class="edge-row__delta">{{ deltaText(row.value) }}</span>
+          </div>
+        </div>
+      </template>
     </div>
 
-    <!-- Impact -->
     <ImpactStatistics
       v-if="trafficStore.impactStatistics"
       :statistics="trafficStore.impactStatistics"
       :elastic-demand="trafficStore.elasticDemand"
     />
-  </div>
+  </StoryStep>
 </template>
 
 <style scoped>
@@ -291,6 +441,22 @@ async function calculateRoutes() {
   border: 1px solid #b51f1f;
   color: #b51f1f;
   font-size: var(--bc-fs-small);
+}
+
+.stale-banner__btn {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.stale-banner__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .dock-head {
@@ -340,6 +506,10 @@ async function calculateRoutes() {
   padding: 7px 0;
   border-top: 1px solid var(--bc-line);
   font-size: var(--bc-fs-body);
+}
+
+.edge-row--click {
+  cursor: pointer;
 }
 
 .edge-row[data-lit='true'] {
@@ -506,8 +676,8 @@ async function calculateRoutes() {
   cursor: default;
 }
 
-.calculate__progress {
-  margin-top: 8px;
+.effects {
+  margin-top: 10px;
 }
 
 .calculate__msg {

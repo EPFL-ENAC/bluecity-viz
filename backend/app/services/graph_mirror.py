@@ -50,6 +50,8 @@ class GraphMirror:
         node_index   {NetworkX node id: igraph vertex id}
         node_x/y     (n_nodes,) longitude and latitude
         street_count (n_nodes,) number of streets at the node, 0 when unknown
+        residents    (n_nodes,) people living nearest to the node, 0 when unknown
+        jobs_fte     (n_nodes,) full-time jobs nearest to the node, 0 when unknown
         edge_u/v/key (n_edges,) the NetworkX (u, v, key) of each igraph edge
         length       metres
         travel_time  free-flow seconds
@@ -78,6 +80,12 @@ class GraphMirror:
             node_y=np.asarray([float(d.get("y") or 0.0) for d in node_data], dtype=np.float64),
             street_count=np.asarray(
                 [parse_street_count(d.get("street_count")) for d in node_data], dtype=np.int64
+            ),
+            residents=np.asarray(
+                [float(d.get("residents") or 0.0) for d in node_data], dtype=np.float64
+            ),
+            jobs_fte=np.asarray(
+                [float(d.get("jobs_fte") or 0.0) for d in node_data], dtype=np.float64
             ),
             edge_u=np.asarray([u for u, _v, _k, _d in edges], dtype=np.int64),
             edge_v=np.asarray([v for _u, v, _k, _d in edges], dtype=np.int64),
@@ -113,6 +121,8 @@ class GraphMirror:
         node_x: Optional[np.ndarray] = None,
         node_y: Optional[np.ndarray] = None,
         street_count: Optional[np.ndarray] = None,
+        residents: Optional[np.ndarray] = None,
+        jobs_fte: Optional[np.ndarray] = None,
     ) -> "GraphMirror":
         """Build a mirror from columnar data, without NetworkX.
 
@@ -125,6 +135,8 @@ class GraphMirror:
             node_x=node_x,
             node_y=node_y,
             street_count=street_count,
+            residents=residents,
+            jobs_fte=jobs_fte,
             edge_u=np.asarray(edge_u, dtype=np.int64),
             edge_v=np.asarray(edge_v, dtype=np.int64),
             edge_key=edge_key,
@@ -151,6 +163,8 @@ class GraphMirror:
         node_x: Optional[np.ndarray] = None,
         node_y: Optional[np.ndarray] = None,
         street_count: Optional[np.ndarray] = None,
+        residents: Optional[np.ndarray] = None,
+        jobs_fte: Optional[np.ndarray] = None,
     ) -> None:
         self.node_ids = node_ids
         self.node_index: Dict[int, int] = {int(n): i for i, n in enumerate(node_ids)}
@@ -164,6 +178,9 @@ class GraphMirror:
             if street_count is None
             else np.asarray(street_count, dtype=np.int64)
         )
+        # float64 like the other node arrays: they only feed a percentile rank
+        self.residents = zeros_n if residents is None else np.asarray(residents, dtype=np.float64)
+        self.jobs_fte = zeros_n if jobs_fte is None else np.asarray(jobs_fte, dtype=np.float64)
 
         self.edge_u = edge_u
         self.edge_v = edge_v
@@ -256,6 +273,11 @@ class GraphMirror:
     def edge_ids_for(self, u: int, v: int) -> Optional[np.ndarray]:
         """All igraph edge ids between u and v (several if the graph has parallel edges)."""
         return self._edge_ids_by_uv.get((u, v))
+
+    @property
+    def has_population(self) -> bool:
+        """True when some node has residents or jobs, so the population weight means something."""
+        return bool(self.residents.any() or self.jobs_fte.any())
 
     def has_edge(self, u: int, v: int) -> bool:
         return (u, v) in self._edge_ids_by_uv

@@ -2,7 +2,10 @@
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+# The most municipalities one area can be made of.
+MAX_MUNICIPALITIES = 100
 
 
 class Circle(BaseModel):
@@ -14,9 +17,23 @@ class Circle(BaseModel):
 
 
 class AreaCreateRequest(BaseModel):
-    """Create an area from a circle."""
+    """Create an area from a circle, or from municipalities by BFS number."""
 
-    circle: Circle
+    circle: Optional[Circle] = None
+    municipalities: Optional[List[int]] = Field(None, min_length=1, max_length=MAX_MUNICIPALITIES)
+
+    @model_validator(mode="after")
+    def one_shape(self) -> "AreaCreateRequest":
+        if (self.circle is None) == (self.municipalities is None):
+            raise ValueError("give either a circle or a list of municipalities")
+        return self
+
+
+class MunicipalitySet(BaseModel):
+    """The municipalities an area is made of, sorted by BFS number."""
+
+    ids: List[int]
+    names: List[str] = []
 
 
 class AreaCounts(BaseModel):
@@ -32,16 +49,24 @@ class AreaPreview(AreaCounts):
     """Answer to "can I use the tool here", without building anything."""
 
     ok: bool
-    code: Optional[Literal["too_sparse", "too_large", "disconnected", "outside_coverage"]] = None
+    code: Optional[
+        Literal["too_sparse", "too_large", "disconnected", "outside_coverage", "not_contiguous"]
+    ] = None
     message: str = ""
     bbox: Optional[List[float]] = None
+    # the GeoJSON geometry of a municipality area, set even when it is refused
+    outline: Optional[dict] = None
 
 
 class AreaInfo(BaseModel):
     """An area that is loaded and ready to answer routing requests."""
 
     id: str
-    circle: Circle
+    kind: Literal["circle", "municipalities"] = "circle"
+    name: str = ""
+    circle: Optional[Circle] = None
+    municipalities: Optional[MunicipalitySet] = None
+    outline: Optional[dict] = None
     bbox: Optional[List[float]] = None
     node_count: int
     edge_count: int
@@ -63,3 +88,6 @@ class AreaLimits(BaseModel):
     max_radius_m: float
     # Where the network is. The picker refuses a circle outside it.
     coverage_bbox: Optional[List[float]] = None
+    # Whether this server can cut an area by municipal boundaries.
+    has_municipalities: bool = False
+    max_municipalities: int = MAX_MUNICIPALITIES

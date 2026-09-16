@@ -243,6 +243,28 @@ describe('traffic analysis store', () => {
     expect(fetchBaseline).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps one baseline per node weighting', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockImplementation(async (odPairs?: number) => ({
+      total_routes: odPairs ?? 20000,
+      od_pairs: odPairs ?? 20000,
+      edge_usage: baselineRows(3)
+    }))
+
+    await store.getBaseline(20000)
+    store.nodeWeighting = 'population'
+    await store.getBaseline(20000)
+
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(fetchBaseline).mock.calls[0][2]).toBe('uniform')
+    expect(vi.mocked(fetchBaseline).mock.calls[1][2]).toBe('population')
+
+    // back to uniform, still cached
+    store.nodeWeighting = 'uniform'
+    await store.getBaseline(20000)
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+  })
+
   it('asks once when two calls overlap, and retries after a failure', async () => {
     const store = useTrafficAnalysisStore()
     vi.mocked(fetchBaseline).mockResolvedValue({
@@ -502,5 +524,197 @@ describe('traffic analysis store', () => {
 
     expect(store.area).toBeNull()
     expect(store.pickMode).toBe(false)
+  })
+})
+
+describe('an area made of municipalities', () => {
+  const LAUSANNE_PULLY = { kind: 'municipalities' as const, ofsIds: [5586, 5590] }
+  const OUTLINE = {
+    type: 'Polygon' as const,
+    coordinates: [
+      [
+        [6.6, 46.5],
+        [6.7, 46.5],
+        [6.7, 46.6],
+        [6.6, 46.5]
+      ]
+    ]
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.mocked(createArea).mockReset()
+  })
+
+  it('does nothing when the same municipalities are set in another order', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(LAUSANNE_PULLY)
+    store.setEdgeUsage(makeUsage(), makeUsage())
+
+    store.setArea({ kind: 'municipalities', ofsIds: [5590, 5586] })
+
+    expect(store.graphKey).toBe('m_5586_5590')
+    expect(store.newEdgeUsage.length).toBeGreaterThan(0)
+  })
+
+  it('opens the picker on a copy of the ids', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(LAUSANNE_PULLY)
+
+    store.enterPickMode()
+    store.toggleDraftMunicipality(5591)
+
+    expect(store.draftArea).toEqual({ kind: 'municipalities', ofsIds: [5586, 5590, 5591] })
+    expect(store.area).toEqual(LAUSANNE_PULLY)
+  })
+
+  it('switches to the municipalities and back to the same circle', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    store.enterPickMode()
+    store.moveDraft(7.45, 46.96)
+
+    store.setDraftKind('municipalities')
+    expect(store.draftArea).toEqual({ kind: 'municipalities', ofsIds: [] })
+
+    store.setDraftKind('circle', { lon: 8.54, lat: 47.37 })
+    expect(store.draftArea).toEqual({ ...BERN, lon: 7.45, lat: 46.96 })
+  })
+
+  it('starts a circle where the map looks when there was none', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(LAUSANNE_PULLY)
+    store.enterPickMode()
+
+    store.setDraftKind('circle', { lon: 8.54, lat: 47.37 })
+    expect(store.draftArea).toEqual({ kind: 'circle', lon: 8.54, lat: 47.37, radiusM: 3000 })
+
+    // and back: the municipalities of the area are still there
+    store.setDraftKind('municipalities')
+    expect(store.draftArea).toEqual(LAUSANNE_PULLY)
+  })
+
+  it('adds a municipality on the first click and takes it out on the second', () => {
+    const store = useTrafficAnalysisStore()
+    store.enterPickMode()
+    store.setDraftKind('municipalities')
+
+    store.toggleDraftMunicipality(5586)
+    store.toggleDraftMunicipality(5590)
+    expect(store.draftArea).toEqual(LAUSANNE_PULLY)
+
+    store.toggleDraftMunicipality(5586)
+    expect(store.draftArea).toEqual({ kind: 'municipalities', ofsIds: [5590] })
+
+    store.removeDraftMunicipality(5590)
+    expect(store.draftArea).toEqual({ kind: 'municipalities', ofsIds: [] })
+  })
+
+  it('adds a brush stroke once and removes it the same way', () => {
+    const store = useTrafficAnalysisStore()
+    store.enterPickMode()
+    store.setDraftKind('municipalities')
+    store.toggleDraftMunicipality(5590)
+    const before = store.draftArea
+
+    store.addDraftMunicipalities([5586, 5590, 5586, 5591])
+    expect(store.draftArea).toEqual({ kind: 'municipalities', ofsIds: [5590, 5586, 5591] })
+
+    store.removeDraftMunicipalities([5591, 9999])
+    expect(store.draftArea).toEqual({ kind: 'municipalities', ofsIds: [5590, 5586] })
+
+    // nothing new under the stroke: the draft is not replaced
+    const same = store.draftArea
+    store.addDraftMunicipalities([5586])
+    store.removeDraftMunicipalities([1234])
+    expect(store.draftArea).toBe(same)
+    expect(before).not.toBe(same)
+  })
+
+  it('never brushes communes into a circle', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    store.enterPickMode()
+
+    store.addDraftMunicipalities([5586])
+
+    expect(store.draftArea).toEqual(BERN)
+  })
+
+  it('forgets the old name when the selection changes', () => {
+    const store = useTrafficAnalysisStore()
+    store.enterPickMode()
+    store.setDraftKind('municipalities')
+    store.toggleDraftMunicipality(5586)
+    store.setDraftName('Lausanne')
+
+    store.toggleDraftMunicipality(5590)
+
+    expect(store.draftArea?.name).toBeUndefined()
+  })
+
+  it('does not move or grow a set of municipalities', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(LAUSANNE_PULLY)
+    store.enterPickMode()
+
+    store.moveDraft(7.44, 46.95)
+    store.setDraftRadius(5000)
+
+    expect(store.draftArea).toEqual(LAUSANNE_PULLY)
+  })
+
+  it('keeps the previewed outline when the pick is confirmed', () => {
+    const store = useTrafficAnalysisStore()
+    store.enterPickMode()
+    store.setDraftKind('municipalities')
+    store.toggleDraftMunicipality(5586)
+    store.toggleDraftMunicipality(5590)
+
+    store.exitPickMode(true, OUTLINE)
+
+    expect(store.area).toEqual(LAUSANNE_PULLY)
+    expect(store.areaOutline).toEqual(OUTLINE)
+    expect(store.pickMode).toBe(false)
+  })
+
+  it('does not confirm an empty selection', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    store.enterPickMode()
+    store.setDraftKind('municipalities')
+
+    store.exitPickMode(true)
+
+    expect(store.area).toEqual(BERN)
+  })
+
+  it('drops the outline with the area', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(LAUSANNE_PULLY)
+    store.enterPickMode()
+    store.exitPickMode(true, OUTLINE)
+
+    store.setArea(BERN)
+
+    expect(store.areaOutline).toBeNull()
+  })
+
+  it('reads the outline back when the server builds the area', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(createArea).mockResolvedValue({
+      ...areaInfo('m_5586_5590'),
+      kind: 'municipalities',
+      name: 'Lausanne + Pully',
+      circle: null,
+      municipalities: { ids: [5586, 5590], names: ['Lausanne', 'Pully'] },
+      outline: OUTLINE
+    })
+    store.setArea(LAUSANNE_PULLY)
+
+    await expect(store.ensureArea()).resolves.toBe('m_5586_5590')
+
+    expect(vi.mocked(createArea)).toHaveBeenCalledWith(LAUSANNE_PULLY)
+    expect(store.areaOutline).toEqual(OUTLINE)
   })
 })

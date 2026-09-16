@@ -13,12 +13,13 @@ def body(radius_m=2000.0, **over):
 
 
 @pytest.fixture
-def areas_client(client, swiss_store, small_area_limits, monkeypatch):
-    """The API client with the lattice store behind /areas."""
+def areas_client(client, swiss_store, communes, small_area_limits, monkeypatch):
+    """The API client with the lattice store and the communes behind /areas."""
     from app.api.v1 import areas as areas_module
     from app.services.sampling.config import SamplingConfig
 
     monkeypatch.setattr(areas_module, "graph_store", swiss_store)
+    monkeypatch.setattr(areas_module, "municipalities", communes)
     # a small node pool keeps the build fast
     monkeypatch.setattr(
         areas_module, "SamplingConfig", lambda: SamplingConfig(n_nodes_preprocess=100)
@@ -173,6 +174,48 @@ def test_two_areas_never_share_a_baseline_etag(areas_client):
     assert first.headers["etag"] != second.headers["etag"]
 
 
+def test_the_population_weighting_gives_other_numbers(areas_client):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    url = f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100"
+
+    uniform = areas_client.get(url)
+    population = areas_client.get(url + "&node_weighting=population")
+
+    assert uniform.status_code == population.status_code == 200
+    assert uniform.headers["etag"] != population.headers["etag"]
+    assert uniform.json()["edge_usage"] != population.json()["edge_usage"]
+
+    result = areas_client.post(
+        "/api/v1/routes/recalculate",
+        json={
+            "area_id": area_id,
+            "od_pairs": 100,
+            "edge_modifications": [],
+            "node_weighting": "population",
+        },
+    )
+    assert result.status_code == 200
+    assert result.json()["new_edge_usage"]
+
+
+def test_population_on_a_graph_without_it_is_a_422(areas_client):
+    baseline = areas_client.get("/api/v1/routes/baseline?od_pairs=10&node_weighting=population")
+    result = areas_client.post(
+        "/api/v1/routes/recalculate",
+        json={"edge_modifications": [], "od_pairs": 10, "node_weighting": "population"},
+    )
+
+    for answer in (baseline, result):
+        assert answer.status_code == 422
+        assert answer.json()["detail"]["code"] == "no_population_data"
+
+
+def test_an_unknown_weighting_is_refused(areas_client):
+    answer = areas_client.get("/api/v1/routes/baseline?od_pairs=10&node_weighting=cats")
+
+    assert answer.status_code == 422
+
+
 # ── Losing an area ────────────────────────────────────────────────────────────
 
 
@@ -214,3 +257,117 @@ def test_an_area_over_the_budget_is_still_the_one_we_answer_with(areas_client, g
     area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
 
     assert areas_client.get(f"/api/v1/routes/graph-info?area_id={area_id}").status_code == 200
+
+
+# ── Municipalities ────────────────────────────────────────────────────────────
+
+
+def communes_body(*ids):
+    return {"municipalities": list(ids)}
+
+
+def test_creating_an_area_from_municipalities(areas_client):
+    response = areas_client.post("/api/v1/areas", json=communes_body(2, 1))
+
+    assert response.status_code == 201
+    info = response.json()
+    assert info["id"] == "m_1_2"
+    assert info["kind"] == "municipalities"
+    assert info["name"] == "A + B"
+    assert info["municipalities"] == {"ids": [1, 2], "names": ["A", "B"]}
+    assert info["circle"] is None
+    assert info["outline"]["type"] == "Polygon"
+    assert info["node_count"] == 1600
+
+
+def test_a_circle_area_says_its_kind(areas_client):
+    info = areas_client.post("/api/v1/areas", json=body()).json()
+
+    assert info["kind"] == "circle"
+    assert info["municipalities"] is None and info["outline"] is None
+
+
+def test_the_same_municipalities_in_another_order_are_one_area(areas_client, graph_service):
+    first = areas_client.post("/api/v1/areas", json=communes_body(1, 2)).json()
+    areas_client.post("/api/v1/areas", json=body())
+    loaded = len(graph_service.registry.loaded())
+
+    again = areas_client.post("/api/v1/areas", json=communes_body(2, 1, 2)).json()
+
+    assert again["id"] == first["id"] == "m_1_2"
+    assert len(graph_service.registry.loaded()) == loaded, "nothing was built twice"
+
+
+def test_municipalities_apart_are_refused(areas_client):
+    response = areas_client.post("/api/v1/areas", json=communes_body(1, 3))
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "not_contiguous"
+    assert detail["ok"] is False
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"municipalities": []},
+        {"circle": {**CENTRE, "radius_m": 2000}, "municipalities": [1]},
+        {"municipalities": list(range(1, 102))},
+    ],
+)
+def test_a_request_must_give_exactly_one_shape(areas_client, payload):
+    assert areas_client.post("/api/v1/areas", json=payload).status_code == 422
+
+
+def test_without_municipalities_only_the_circle_works(areas_client, monkeypatch):
+    from app.api.v1 import areas as areas_module
+
+    monkeypatch.setattr(areas_module, "municipalities", None)
+
+    response = areas_client.post("/api/v1/areas/preview", json=communes_body(1))
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "no_municipalities"
+    assert areas_client.get("/api/v1/areas/limits").json()["has_municipalities"] is False
+    assert areas_client.post("/api/v1/areas/preview", json=body()).json()["ok"] is True
+
+
+def test_the_limits_say_municipalities_are_there(areas_client):
+    limits = areas_client.get("/api/v1/areas/limits").json()
+
+    assert limits["has_municipalities"] is True
+    assert limits["max_municipalities"] == 100
+
+
+def test_preview_of_municipalities_gives_the_outline(areas_client, graph_service, monkeypatch):
+    loaded = [a.meta.id for a in graph_service.registry.loaded()]
+
+    good = areas_client.post("/api/v1/areas/preview", json=communes_body(1, 2)).json()
+    assert good["ok"] is True
+    assert good["outline"]["type"] == "Polygon"
+    assert good["node_count"] == 1600
+
+    monkeypatch.setattr(settings, "area_max_nodes", 1000)
+    big = areas_client.post("/api/v1/areas/preview", json=communes_body(1, 2)).json()
+    assert big["ok"] is False and big["code"] == "too_large"
+    assert big["outline"]["type"] == "Polygon"
+
+    apart = areas_client.post("/api/v1/areas/preview", json=communes_body(1, 3)).json()
+    assert apart["code"] == "not_contiguous"
+    assert [a.meta.id for a in graph_service.registry.loaded()] == loaded, "nothing was built"
+
+
+def test_the_workbench_runs_on_municipalities(areas_client):
+    area_id = areas_client.post("/api/v1/areas", json=communes_body(1, 2)).json()["id"]
+
+    edges = areas_client.get(f"/api/v1/areas/{area_id}/edges")
+    assert edges.status_code == 200 and len(edges.json()) > 0
+
+    info = areas_client.get(f"/api/v1/routes/graph-info?area_id={area_id}").json()
+    assert info["area_id"] == "m_1_2"
+
+    result = areas_client.post(
+        "/api/v1/routes/recalculate",
+        json={"area_id": area_id, "od_pairs": 100, "edge_modifications": []},
+    )
+    assert result.status_code == 200

@@ -2,7 +2,8 @@
 //
 // The numbers in EXPECTED_SCALES were recorded from the store before the
 // single-pass refactor of setEdgeUsage. They are the contract: the new code
-// must give the same min/max and the same colors for every mode.
+// must give the same min/max and the same colors for every mode. The two CO2
+// modes were recorded again when the CO2 became the traffic CO2 (issue #44).
 
 import type { EdgeUsageStats } from '@/stores/trafficAnalysis'
 
@@ -28,9 +29,10 @@ export function makeUsage(): EdgeUsageStats[] {
     const count = Math.round(frequency * 500)
     // every 7th edge has no CO2 and no betweenness, like a service road
     const quiet = i % 7 === 0
-    // 3 outliers with a huge CO2/km (zero length stubs in real data)
+    // 3 outliers with huge CO2 per vehicle, so the 98th percentile is not the max.
+    // Same draws as before, so the other modes keep their recorded numbers.
     const outlier = i === 11 || i === 97 || i === 240
-    const co2 = quiet ? 0 : outlier ? 4000 + rand() * 1000 : +(20 + rand() * 300).toFixed(4)
+    const perVehicle = quiet ? 0 : outlier ? 4000 + rand() * 1000 : +(20 + rand() * 300).toFixed(4)
     // half the edges move, some up some down, some not at all
     const moves = i % 2 === 0
     const deltaFrequency = moves ? +((rand() - 0.5) * 0.05).toFixed(6) : 0
@@ -42,7 +44,9 @@ export function makeUsage(): EdgeUsageStats[] {
       frequency,
       delta_count: deltaCount,
       delta_frequency: deltaFrequency,
-      co2_per_km: co2,
+      // the CO2 of the traffic per km: one vehicle times the count
+      co2_g_per_km: +(count * perVehicle).toFixed(1),
+      delta_co2_g_per_km: +(deltaCount * perVehicle).toFixed(1),
       betweenness_centrality: quiet ? 0 : +(rand() * 1500).toFixed(4),
       delta_betweenness: moves ? +((rand() - 0.5) * 200).toFixed(4) : 0
     })
@@ -77,11 +81,11 @@ export const EXPECTED_SCALES = {
     },
     co2: {
       legendMode: 'co2',
-      min: 20.0789,
-      max: 316.2941,
+      min: 0,
+      max: 28187.2,
       colors: [
         [68, 1, 84],
-        [33, 144, 141],
+        [33, 145, 140],
         [253, 231, 37],
         [68, 1, 84]
       ]
@@ -110,8 +114,8 @@ export const EXPECTED_SCALES = {
     },
     co2_delta: {
       legendMode: 'co2_delta',
-      min: -6,
-      max: 6,
+      min: -3602.7,
+      max: 3602.7,
       colors: [
         [94, 79, 162],
         [251, 248, 176],
@@ -151,6 +155,7 @@ export const EXPECTED_PUBLIC_KEYS = [
   'areaError',
   'areaId',
   'areaInfo',
+  'areaOutline',
   'areaLimits',
   'availableVisualizations',
   'clearResults',
@@ -159,6 +164,7 @@ export const EXPECTED_PUBLIC_KEYS = [
   'congestionIterations',
   'draftArea',
   'elasticDemand',
+  'nodeWeighting',
   'ensureArea',
   'enterPickMode',
   'exitPickMode',
@@ -190,6 +196,7 @@ export const EXPECTED_PUBLIC_KEYS = [
   'openPanel',
   'originalEdgeUsage',
   'pickMode',
+  'pickTool',
   'restoreState',
   'resultOdPairs',
   'resultScenarioHash',
@@ -197,6 +204,11 @@ export const EXPECTED_PUBLIC_KEYS = [
   'setActiveVisualization',
   'setArea',
   'setDraftName',
+  'setDraftKind',
+  'toggleDraftMunicipality',
+  'removeDraftMunicipality',
+  'addDraftMunicipalities',
+  'removeDraftMunicipalities',
   'setDraftRadius',
   'setEdgeUsage',
   'setNodePairs',
@@ -213,11 +225,13 @@ export const EXPECTED_STATE_KEYS = [
   'areaError',
   'areaId',
   'areaInfo',
+  'areaOutline',
   'areaLimits',
   'colorScale',
   'congestionIterations',
   'draftArea',
   'elasticDemand',
+  'nodeWeighting',
   'filterBusRoutes',
   'impactStatistics',
   'isBuildingArea',
@@ -236,6 +250,7 @@ export const EXPECTED_STATE_KEYS = [
   'odPairsMax',
   'originalEdgeUsage',
   'pickMode',
+  'pickTool',
   'resultOdPairs',
   'resultScenarioHash',
   'useCongestionModel'

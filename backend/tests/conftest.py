@@ -6,7 +6,7 @@ import osmnx as ox
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
-from shapely.geometry import LineString
+from shapely.geometry import LineString, box
 
 from app.config import settings
 from app.services.cvrp_service import DEPOT_LAT, DEPOT_LON, CVRPService
@@ -14,6 +14,8 @@ from app.services.graph_service import GraphService
 from app.services.graph_store import GraphStore, Grid
 from app.services.graph_store import distance_m as store_distance
 from app.services.graph_store_writer import write_store
+from app.services.municipalities import Municipalities
+from app.services.municipalities_writer import neighbours_of, write_municipalities
 from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
 
 # Grid size: 4 columns x 5 rows = 20 nodes.
@@ -155,19 +157,41 @@ STORE_COLS, STORE_ROWS = 40, 40
 STORE_STEP = 0.002  # about 160 m, so a 2 km circle holds a few hundred nodes
 
 
-def build_lattice_store(directory, cut_column=None):
+# Where the lattice people live and work, by (row, column). The dense block
+# sits inside the 2 km test circle (centred near row 29, column 28), so a
+# population weighted sample has to lean towards it.
+DENSE_ROWS = range(30, STORE_ROWS)
+DENSE_COLS = range(30, STORE_COLS)
+
+
+def lattice_population(r: int, c: int):
+    """(residents, jobs_fte) of one lattice node: a dense block, a few houses elsewhere."""
+    if r in DENSE_ROWS and c in DENSE_COLS:
+        return 400, 250.0
+    if (r + c) % 5 == 0:
+        return 3, 0.0
+    return 0, 0.0
+
+
+def build_lattice_store(directory, cut_column=None, population=True):
     """A lattice of two-way streets, written as a graph store.
 
     `cut_column` removes every street crossing that column, which splits the
     lattice in two networks that cannot reach each other. That is the shape a
     circle over a lake or a valley has.
+
+    `population` fills residents and jobs_fte with `lattice_population`.
+    False leaves them out, like a store built without the federal statistics.
     """
-    node_id, xs, ys = [], [], []
+    node_id, xs, ys, residents, jobs_fte = [], [], [], [], []
     for r in range(STORE_ROWS):
         for c in range(STORE_COLS):
             node_id.append(2000 + r * STORE_COLS + c)
             xs.append(7.05 + c * STORE_STEP)
             ys.append(46.05 + r * STORE_STEP)
+            people, jobs = lattice_population(r, c)
+            residents.append(people)
+            jobs_fte.append(jobs)
     node_id = np.array(node_id, dtype=np.int64)
     xs, ys = np.array(xs), np.array(ys)
     pos = {int(n): i for i, n in enumerate(node_id)}
@@ -212,6 +236,9 @@ def build_lattice_store(directory, cut_column=None):
         "street_count": np.full(len(node_id), 3, dtype=np.int16),
         "elevation": np.zeros(len(node_id)),
     }
+    if population:
+        nodes["residents"] = np.array(residents, dtype=np.int32)
+        nodes["jobs_fte"] = np.array(jobs_fte, dtype=np.float32)
     edges = {
         "u": u,
         "v": v,
@@ -255,9 +282,43 @@ def small_area_limits(monkeypatch):
 def make_store(tmp_path):
     """Build a lattice store on demand, with an optional cut in the middle."""
 
-    def _make(cut_column=None):
-        directory = tmp_path / f"store_{cut_column}"
-        build_lattice_store(directory, cut_column=cut_column)
+    def _make(cut_column=None, population=True):
+        directory = tmp_path / f"store_{cut_column}_{population}"
+        build_lattice_store(directory, cut_column=cut_column, population=population)
         return GraphStore.open(directory)
 
     return _make
+
+
+# ── Three communes over the lattice, for the municipality areas ───────────────
+
+# The lattice columns sit at 7.05 + k * 0.002, so a border at 7.089 falls
+# between two columns and no node is on it. A keeps the 20 left columns.
+COMMUNE_A = box(7.04, 46.04, 7.089, 46.14)
+COMMUNE_B = box(7.089, 46.04, 7.14, 46.14)  # shares a border with A
+COMMUNE_C = box(7.20, 46.20, 7.25, 46.25)  # far away, no streets
+
+
+def build_communes_table(path):
+    geometries = [COMMUNE_B, COMMUNE_A, COMMUNE_C]  # not sorted, on purpose
+    ids = [2, 1, 3]
+    write_municipalities(
+        path,
+        bfs=ids,
+        name=["B", "A", "C"],
+        canton=[22, 22, 22],
+        neighbours=neighbours_of(geometries, ids),
+        geometry=geometries,
+        source="test",
+    )
+    return path
+
+
+@pytest.fixture(scope="session")
+def communes_path(tmp_path_factory):
+    return build_communes_table(tmp_path_factory.mktemp("communes") / "communes.parquet")
+
+
+@pytest.fixture
+def communes(communes_path):
+    return Municipalities.open(communes_path)

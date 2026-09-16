@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # The Swiss road graph, cut in cells. Empty or missing means the /areas
     # endpoints answer 503 and only the default city works.
     swiss_graph_dir: str = "data/swiss_graph"
+    # The Swiss municipalities (swissBOUNDARIES3D, simplified). Missing means
+    # an area can only be a circle.
+    municipalities_path: str = "data/swiss_communes.parquet"
 
     # What an area must look like for the tool to run on it. The node cap is
     # about twice Lausanne (4,771 nodes, 10,854 edges), which keeps a

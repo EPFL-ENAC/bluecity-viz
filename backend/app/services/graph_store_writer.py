@@ -57,7 +57,7 @@ EDGE_PARQUET = {
 }
 NODE_PARQUET = {
     "compression": "zstd",
-    "column_encoding": {name: "BYTE_STREAM_SPLIT" for name in ("x", "y", "elevation")},
+    "column_encoding": {name: "BYTE_STREAM_SPLIT" for name in ("x", "y", "elevation", "jobs_fte")},
     "use_dictionary": False,
 }
 
@@ -142,8 +142,10 @@ def write_store(
     """Write a store, one row group per cell.
 
     `nodes` needs node_id, x, y, street_count, elevation; `edges` needs u, v,
-    key and the per-edge attributes. Cells are derived here, so the caller
-    never has to know the grid.
+    key and the per-edge attributes. `nodes` may also carry residents and
+    jobs_fte (see `snap_hectares`); missing means zero, which the sampler reads
+    as "no population data". Cells are derived here, so the caller never has
+    to know the grid.
 
     `geometry` is one (n, 2) lon/lat array per edge. Missing means a straight
     line between the two nodes.
@@ -182,6 +184,7 @@ def write_store(
     # every column once per cell, and the country has thousands of cells.
     street_count = _clip(nodes["street_count"], np.int16)
     elevation = np.asarray(nodes["elevation"], dtype=np.float32)
+    residents, jobs_fte = population_columns(nodes, len(node_id))
     junction = np.asarray(nodes["street_count"], dtype=np.int64) >= 3
     x32 = x.astype(np.float32)
     y32 = y.astype(np.float32)
@@ -225,6 +228,8 @@ def write_store(
                         "y": y32[n_idx],
                         "street_count": street_count[n_idx],
                         "elevation": elevation[n_idx],
+                        "residents": residents[n_idx],
+                        "jobs_fte": jobs_fte[n_idx],
                     },
                     schema=pa.schema(NODE_COLUMNS),
                 )
@@ -309,6 +314,67 @@ def write_store(
 # times finer is about 1 km, which is small enough for the assumption to hold.
 
 
+# ── Population ────────────────────────────────────────────────────────────────
+
+
+def population_columns(nodes: Dict[str, np.ndarray], n: int):
+    """residents and jobs_fte of `nodes` in their stored types, zeros when absent."""
+    residents = nodes.get("residents")
+    jobs_fte = nodes.get("jobs_fte")
+    residents = (
+        np.zeros(n, dtype=np.int32)
+        if residents is None
+        else np.rint(np.asarray(residents, dtype=np.float64)).astype(np.int32)
+    )
+    jobs_fte = (
+        np.zeros(n, dtype=np.float32)
+        if jobs_fte is None
+        else np.asarray(jobs_fte, dtype=np.float32)
+    )
+    return residents, jobs_fte
+
+
+def snap_hectares(
+    node_x,
+    node_y,
+    hectare_e,
+    hectare_n,
+    residents,
+    jobs_fte,
+):
+    """Sum the hectare counts onto their nearest node.
+
+    Nodes are lon/lat (EPSG:4326), hectares are the centre of the square in
+    Swiss LV95 metres (EPSG:2056), so the E_KOORD / N_KOORD of the federal
+    files plus 50. Every node can receive a hectare, not only the junctions:
+    a dead end in a hamlet is where its people live.
+
+    A node no hectare is nearest to gets 0. Returns (residents int32,
+    jobs_fte float32), one value per node, in the order of the nodes.
+    """
+    from pyproj import Transformer
+    from scipy.spatial import cKDTree
+
+    node_x = np.asarray(node_x, dtype=np.float64)
+    node_y = np.asarray(node_y, dtype=np.float64)
+    n = len(node_x)
+    if n == 0:
+        return np.zeros(0, dtype=np.int32), np.zeros(0, dtype=np.float32)
+
+    to_lv95 = Transformer.from_crs("EPSG:4326", "EPSG:2056", always_xy=True)
+    e, north = to_lv95.transform(node_x, node_y)
+    hectares = np.column_stack(
+        [np.asarray(hectare_e, dtype=np.float64), np.asarray(hectare_n, dtype=np.float64)]
+    )
+    if len(hectares) == 0:
+        return np.zeros(n, dtype=np.int32), np.zeros(n, dtype=np.float32)
+
+    _dist, nearest = cKDTree(np.column_stack([e, north])).query(hectares)
+    res = np.bincount(nearest, weights=np.asarray(residents, dtype=np.float64), minlength=n)
+    jobs = np.bincount(nearest, weights=np.asarray(jobs_fte, dtype=np.float64), minlength=n)
+    return np.rint(res).astype(np.int32), jobs.astype(np.float32)
+
+
 def first_value(value, default=""):
     """OSM tags come as a list when the way was merged."""
     if isinstance(value, list):
@@ -328,6 +394,8 @@ def arrays_from_graph(graph):
             [parse_street_count(d.get("street_count")) for d in node_data], dtype=np.int16
         ),
         "elevation": np.asarray([float(d.get("elevation") or 0.0) for d in node_data]),
+        "residents": np.asarray([float(d.get("residents") or 0) for d in node_data]),
+        "jobs_fte": np.asarray([float(d.get("jobs_fte") or 0.0) for d in node_data]),
     }
 
     edge_list = list(graph.edges(keys=True, data=True))

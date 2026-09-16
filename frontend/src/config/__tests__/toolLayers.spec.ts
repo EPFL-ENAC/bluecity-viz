@@ -1,4 +1,12 @@
-import { swissNetworkLayer, swissNetworkStyle } from '@/config/toolLayers'
+import {
+  COMMUNES_HIT_LAYER,
+  COMMUNES_SOURCE,
+  communeLayerIds,
+  communeLayers,
+  swissCommunesSource,
+  swissNetworkLayer,
+  swissNetworkStyle
+} from '@/config/toolLayers'
 import { describe, expect, it } from 'vitest'
 
 type Case = ['case', unknown, number, number]
@@ -42,5 +50,47 @@ describe('swissNetworkStyle', () => {
     expect(style.version).toBe(8)
     expect(Object.keys(style.sources)).toEqual([swissNetworkLayer.sourceId])
     expect(style.layers.map((l) => l.id)).toEqual([swissNetworkLayer.layer.id])
+  })
+})
+
+describe('communeLayers', () => {
+  const colors = { ink: '#141414', grey: '#B8B8B8', accent: '#0500E1' }
+
+  it('all read the communes layer of the communes source', () => {
+    const layers = communeLayers(colors)
+    expect(layers.map((l) => l.id)).toEqual(communeLayerIds())
+    for (const layer of layers) {
+      expect(layer).toMatchObject({
+        source: COMMUNES_SOURCE,
+        'source-layer': 'communes',
+        minzoom: 7
+      })
+    }
+  })
+
+  it('starts with an invisible fill, the one the pointer hits', () => {
+    const [hit] = communeLayers(colors) as Array<{ id: string; paint: Record<string, unknown> }>
+    expect(hit.id).toBe(COMMUNES_HIT_LAYER)
+    expect(hit.paint['fill-opacity']).toBe(0)
+  })
+
+  it('shows hover and selection through feature-state, never a filter', () => {
+    const layers = communeLayers(colors) as Array<{ filter?: unknown }>
+    expect(layers.every((l) => l.filter === undefined)).toBe(true)
+    const json = JSON.stringify(layers)
+    expect(json).toContain('["feature-state","hover"]')
+    expect(json).toContain('["feature-state","selected"]')
+    expect(json).toContain('["feature-state","ok"]')
+  })
+
+  it('reads no property: the BFS number is the feature id', () => {
+    const json = JSON.stringify(communeLayers(colors))
+    expect(json).not.toContain('"get"')
+  })
+
+  it('loads the pmtiles next to the network', () => {
+    expect((swissCommunesSource as { url: string }).url).toMatch(
+      /^pmtiles:\/\/.*\/swiss_communes\.pmtiles$/
+    )
   })
 })

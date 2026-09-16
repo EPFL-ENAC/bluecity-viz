@@ -22,7 +22,7 @@
  */
 
 import { DISTRICT_REACH, DISTRICTS, type DistrictPoint } from '@/data/districts'
-import type { TrafficAreaSelection } from '@/stores/layers/types'
+import type { CircleArea } from '@/stores/layers/types'
 import { mPerDegLat, mPerDegLon } from '@/utils/areaDensity'
 import type { PlacePoint } from '@/utils/areaName'
 
@@ -70,7 +70,7 @@ function distanceM(a: [number, number], b: [number, number]): number {
 }
 
 /** The circle the group covers: the mean of its points, out to the farthest. */
-export function zoneCircle(lines: NamedLine[]): TrafficAreaSelection | null {
+export function zoneCircle(lines: NamedLine[]): CircleArea | null {
   let sumLon = 0
   let sumLat = 0
   let count = 0
@@ -106,10 +106,7 @@ export function zoneCircle(lines: NamedLine[]): TrafficAreaSelection | null {
  * The points cut the city the way a Voronoi does, so the closest one wins.
  * Outside Lausanne the list holds nothing in reach and this gives null.
  */
-export function district(
-  circle: TrafficAreaSelection,
-  points: DistrictPoint[] = DISTRICTS
-): string | null {
+export function district(circle: CircleArea, points: DistrictPoint[] = DISTRICTS): string | null {
   if (circle.radiusM > DISTRICT_MAX_RADIUS) return null
 
   let best: string | null = null
@@ -131,7 +128,7 @@ export function district(
  * Closest wins, whatever its kind: they are all parts of a town, and a
  * ranking between them would only guess.
  */
-export function localPlace(circle: TrafficAreaSelection, places: PlacePoint[]): string | null {
+export function localPlace(circle: CircleArea, places: PlacePoint[]): string | null {
   const reach = Math.max(circle.radiusM, LOCAL_REACH)
   let best: string | null = null
   let bestDistance = reach

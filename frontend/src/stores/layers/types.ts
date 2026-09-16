@@ -6,7 +6,10 @@ export interface EdgeUsageRow {
   frequency: number
   delta_count?: number
   delta_frequency?: number
-  co2_per_km?: number
+  /** CO2 of the traffic on the edge, g/km: one vehicle over it, times count, per km */
+  co2_g_per_km?: number
+  /** change of co2_g_per_km after the modification, g/km */
+  delta_co2_g_per_km?: number
   betweenness_centrality?: number
   delta_betweenness?: number
 }
@@ -45,6 +48,8 @@ export interface TrafficAnalysisInputs {
   useCongestionModel: boolean
   congestionIterations: number
   elasticDemand: boolean
+  /** how the OD sampler weighs the nodes, see NodeWeighting */
+  nodeWeighting: 'uniform' | 'population'
   filterBusRoutes: boolean
   /** how many OD pairs to route, null for the server default */
   odPairs: number | null
@@ -52,16 +57,27 @@ export interface TrafficAnalysisInputs {
   area: TrafficAreaSelection | null
 }
 
-// A circle on the map, the only shape the picker draws today. `name` is the
-// place the circle is on ("East Lausanne"), read from the basemap when it was
-// picked. It is a label only: the id of an area is its geometry (areaKey).
-export interface TrafficAreaSelection {
+// A circle on the map. `name` is the place the circle is on ("East Lausanne"),
+// read from the basemap when it was picked. It is a label only: the id of an
+// area is its geometry (areaKey).
+export interface CircleArea {
   kind: 'circle'
   lon: number
   lat: number
   radiusM: number
   name?: string
 }
+
+// One or more Swiss communes, by their BFS (OFS) number. The area is the union
+// of their official boundaries. The ids are the id of the area, the order does
+// not matter. `name` is a label only ("Lausanne + Pully").
+export interface MunicipalityArea {
+  kind: 'municipalities'
+  ofsIds: number[]
+  name?: string
+}
+
+export type TrafficAreaSelection = CircleArea | MunicipalityArea
 
 // The results of a run. Big (about 10k rows per array), kept in memory only.
 export interface TrafficResults {

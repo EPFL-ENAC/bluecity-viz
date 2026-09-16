@@ -83,7 +83,8 @@ describe('valueOf', () => {
         v: 2,
         frequency: 100,
         delta_count: 12,
-        co2_per_km: 3,
+        co2_g_per_km: 3,
+        delta_co2_g_per_km: 6,
         delta_frequency: 2,
         betweenness_centrality: 0.5,
         delta_betweenness: -0.1

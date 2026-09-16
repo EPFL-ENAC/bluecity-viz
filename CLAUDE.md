@@ -58,8 +58,9 @@ uv run python scripts/test_with_data.py        # manual check against a running 
 - `composables/useGraphOverlay.ts` — mounts the graph overlay on the map, owns
   the pointer (hover, click, shift-click, Esc), fits the camera on streets
   (`focus`) and writes the result and the routes through `feature-state`
-- `composables/useMapView.ts` — what the map draws (`shown`) and which dock zone
-  is dimmed, derived from the active tab and the lit zone
+- `composables/useMapView.ts` — what the map draws (`shown`), the open step of
+  the dock (`step`) and whether the graph can be edited (`editable`), derived
+  from the active tool, its phase (`stores/storyline.ts`) and `mapMode`
 - `composables/useResultStates.ts` — joins the per edge numbers to the streets
   and sums the two directions
 - `composables/useMapLogic.ts`, `useMapEvents.ts` — MapLibre map setup and event handling
@@ -84,11 +85,12 @@ dock on the right when a tool is open. There is no app bar and no drawer.
 **Components** worth knowing:
 - `views/HomeView.vue` — the shell: sidebar (header + four sections) and the map stage
 - `components/sidebar/` — `InvestigationSection` (project tree, rename, share, delete),
-  `DatasetsSection`, `LayersSection`, `ToolsSection`
+  `DatasetsSection`, `LayersSection`, `ToolsSection` (one row per tool, a click
+  opens the dock on it)
 - `components/panels/VisualizationsPanel.vue` — the map stage; mounts the map, the
   graph overlay and the dock
-- `components/dock/` — `ScenarioDock.vue` (the workbench: the shared scenario
-  plus a tab bar) with `RoutingTab.vue` and `CvrpTab.vue`
+- `components/dock/` — `ScenarioDock.vue` (the area plus the picked tool) with
+  `RoutingTab.vue` and `CvrpTab.vue`, each a storyline of `StoryStep`s
 - `components/map/` — `GraphOverlay.vue` and its chrome: `EdgeHoverCard`,
   `EdgePopover`, `EditChip`, `ModeToggle`, `RouteHoverCard`
 - `MapLibreMap.vue` — the map canvas
@@ -105,11 +107,14 @@ sources for the badges and the CVRP routes. The vocabulary (Bertin):
   paper dashes, a speed limit is ink with direction arrows, and a 22px square
   badge sits at the middle of the street
 - the accent blue is only the pointer: hover and selection
-The dock says what the map draws, there is no toggle on the map. It has two
-zones, the scenario block and the tool, and exactly one is lit: the map shows
-the ink scenario, or the active tab's result. The other zone goes to 40 % but
-stays clickable, and a click lights it. `composables/useMapView.ts` is the one
-place that answers "what is on the map". Only the tab you are on ever draws.
+The dock says what the map draws, there is no toggle on the map. Each tool is a
+storyline of three steps, Model, Scenario and Results, and only one is open:
+the map shows the base network, the ink scenario, or the tool's result. A
+folded step keeps a one line summary and its head opens it ("Edit" on Model
+goes back to the options and drops the result). The phase of each tool
+(`init` or `simulation`) is saved in localStorage; the graph is read only in
+`init`. `composables/useMapView.ts` is the one place that answers "what is on
+the map". Only the tool you are on ever draws.
 Colours and highlights ride `feature-state`, so switching never touches the
 6 MB source.
 
@@ -166,54 +171,52 @@ so each checkout talks to its own backend.
 
 ## Dev servers and worktrees
 
-Every checkout (the main one and each git worktree under `.claude/worktrees/<branch>`)
-gets its own tmux session `bluecity-viz/<branch>` with one `dev` window of four titled
-panes: `claude` (the left half, focused on attach), `backend`, `frontend` and
-`shell` stacked on the right (`scripts/tmux-dev.sh`, or `make tmux-dev-all`;
-`make go BRANCH=feat/x` creates the worktree and attaches, `wt create` alone
-starts it detached through `.wt.toml`). Full guide: `docs/worktree-env/`.
+One branch, one git worktree, one tmux session, one agent, managed by `wtx`
+(`wtx.toml` at the repo root holds every setting). Worktrees live under
+`.claude/worktrees/<branch>`. The session is `bluecity-viz/<branch>` and its
+panes are `agent` (the left half), `backend`, `frontend` and `shell`. A human
+runs `wtx go <branch>` to create or reach one, and `wtx done <branch>` to remove it.
 
 - **Know where you are**: you are in a worktree exactly when `.env.worktree`
-  exists at the repo root (same thing, your path contains `.claude/worktrees/`).
-  The tmux panes, the claude one included, start with that file exported, so
+  exists at the repo root. Every pane exports it, so
   `echo $WT_BRANCH $BACKEND_PORT $FRONTEND_PORT` orients you instantly. In a
   shell without them, run `set -a; . .env.worktree; set +a` first.
-- **Ports**: a worktree's `.env.worktree` holds its `BACKEND_PORT` /
-  `FRONTEND_PORT` (hashed from `<repo>/<branch>`, 18xxx/19xxx, stepping past a
-  pair another worktree holds); the main checkout uses 8000/5173. Read them
-  from that file, never guess, and never start a second server on a port that
-  is already served.
-  `scripts/wt-open.sh [frontend|backend]` prints and opens the URL.
-- **Reuse before starting**: the tmux session already runs both servers in its
-  `backend` and `frontend` panes. If you must start one yourself,
-  `set -a; . .env.worktree; set +a` first so uvicorn and vite pick the
-  worktree's values.
-- **Finish** a frontend or backend change by printing its URL:
+- **Ports are per worktree** and live in `.env.worktree`. Never hardcode a
+  port, read `BACKEND_PORT` and `FRONTEND_PORT` from the environment. The main
+  checkout keeps 8000/5173.
+- **The dev servers are already running** in their own panes. Do not start
+  them again. Read `.wt-logs/backend.log` and `.wt-logs/frontend.log` to see
+  what they are doing, the sandbox cannot reach the tmux socket.
+- **Checking your work**: read-only `curl` to your own `localhost` /
+  `127.0.0.1` ports is allowed (bare, `-s`, `-sS`, `-fsS`, `-i`, `-I`); write
+  forms prompt. `wtx curl <backend|frontend> [path]` reaches a server without
+  its port, with any method and no prompt (for example
+  `wtx curl backend /api/v1/routes/recalculate -X POST ...`). Finish a frontend
+  or backend change by printing its URL:
   `http://localhost:$FRONTEND_PORT/` or `http://127.0.0.1:$BACKEND_PORT/docs`.
-- **Checking your work**: read-only `curl` against your own `localhost` /
-  `127.0.0.1` ports is pre-allowed in the common forms (bare, `-s`, `-sS`,
-  `-fsS`, `-i`, `-I`), so hit your servers freely; write forms still prompt. The
-  backend and frontend panes mirror their output to `.wt-logs/backend.log` and
-  `.wt-logs/frontend.log` in the checkout root. When a server is down or
-  misbehaving, read those (the tmux socket is outside your sandbox, so `tmux`
-  commands will fail, the log files are the supported path).
-
-### Working in a worktree, rules
-
-- **You own exactly one branch**: the worktree's. Commit and push to it freely.
-  Never push `dev` or `main`, never push another branch, never force-push.
-  `scripts/git-push-guard.sh` refuses it in git itself (installed as the shared
-  `pre-push` hook), and the session's deny rules refuse it before that. Landing
-  into `dev` is a human's job, from the main checkout, with `scripts/wt-land.sh`.
-- **Dev data is shared, not copied**: `frontend/public/geodata` and the
-  `backend/data/*.csv` centroids are symlinks to the main checkout (they are
-  gitignored and big). Read them, do not rewrite them in place.
+- **Work on this branch only.** Never push `dev` or `main`, never force-push,
+  never push a tag (a `v*` tag deploys). When the work is ready, say so and a
+  human runs `wtx land <branch>` from the main checkout. A pre-push hook
+  enforces this. If it refuses a push, that is the design, not a bug to work
+  around.
+- **Dev data is shared, not copied**: `frontend/public/geodata` is a symlink
+  to the main checkout (gitignored, 160 MB of PMTiles). Read it, do not
+  rewrite it in place.
 - **`processing/`** is not installed in a worktree. Run `cd processing && uv sync`
   by hand if a task needs it.
 - **Network**: read the web freely. Anything that writes outward
   (`curl -X POST`, `gh pr create`, and so on) or runs downloaded code
   (`curl … | sh`, `npx -y …`) prompts the user by design. Do not work around a
   prompt.
+
+### Directories outside this repo
+
+- `k8s` at `~/code/enack8s-app-config/epfl-bluecity/bluecity-viz`, access `pair`.
+
+A `read` directory is yours to read as much as you like, with no prompt, and you
+may never write in it. To change one, ask for a paired worktree instead: a human
+runs `wtx go <branch> --with k8s`, and the change lands through that repo's own
+pull request.
 
 ## Kubernetes Deployment
 

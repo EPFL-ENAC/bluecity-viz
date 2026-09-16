@@ -5,7 +5,7 @@ import type { EdgeUsageStats } from '@/stores/trafficAnalysis'
 const isDev = import.meta.env.DEV
 
 // Relative in dev too: vite proxies /api to this checkout's own backend, whose
-// port changes per git worktree (see vite.config.ts and docs/worktree-env/).
+// port changes per git worktree (wtx writes the ports in .env.worktree).
 const API_BASE_URL = '/api/v1/routes'
 const AREAS_BASE_URL = '/api/v1/areas'
 
@@ -206,15 +206,28 @@ export async function fetchGraphInfo(areaId?: string | null): Promise<GraphInfo>
  */
 export async function fetchBaseline(
   odPairs?: number,
-  areaId?: string | null
+  areaId?: string | null,
+  nodeWeighting: NodeWeighting = 'uniform'
 ): Promise<BaselineResponse> {
-  const pairs = odPairs === undefined || odPairs === null ? '' : `?od_pairs=${odPairs}`
-  const url = `${API_BASE_URL}/baseline${pairs}${areaQuery(areaId, pairs ? '&' : '?')}`
+  const params = new URLSearchParams()
+  if (odPairs !== undefined && odPairs !== null) params.set('od_pairs', String(odPairs))
+  if (areaId) params.set('area_id', areaId)
+  // uniform is the server default, left out so the URL stays the one the
+  // browser cache already knows
+  if (nodeWeighting !== 'uniform') params.set('node_weighting', nodeWeighting)
+  const query = params.toString()
+  const url = `${API_BASE_URL}/baseline${query ? `?${query}` : ''}`
 
   const response = await fetch(url)
   if (!response.ok) await throwHttpError(response, 'Failed to fetch baseline')
   return response.json()
 }
+
+/**
+ * How the OD sampler weighs the nodes: every junction the same, or by the
+ * residents and jobs around it (federal statistics, per area percentiles).
+ */
+export type NodeWeighting = 'uniform' | 'population'
 
 export async function recalculateRoutes(
   edgeModifications: EdgeModification[],
@@ -222,6 +235,7 @@ export async function recalculateRoutes(
     useCongestionModel?: boolean
     congestionIterations?: number
     elasticDemand?: boolean
+    nodeWeighting?: NodeWeighting
     /** how many OD pairs, null for the server default */
     odPairs?: number | null
     /** which area to run on, null for the default one */
@@ -241,6 +255,7 @@ export async function recalculateRoutes(
       use_congestion: options?.useCongestionModel ?? false,
       congestion_iterations: options?.congestionIterations ?? 1,
       resample_destinations: options?.elasticDemand ?? false,
+      node_weighting: options?.nodeWeighting ?? 'uniform',
       od_pairs: options?.odPairs ?? null,
       // the baseline is the same for every run, we fetch it once from
       // GET /baseline instead of carrying it in every answer
@@ -253,20 +268,25 @@ export async function recalculateRoutes(
 
 // ── Areas ────────────────────────────────────────────────────────────────────
 
-/** A circle the user drew. This is what an investigation saves. */
-export interface AreaSelection {
-  kind: 'circle'
-  lon: number
-  lat: number
-  radiusM: number
-  /** The place the circle is on, for the dock. Never sent to the server. */
-  name?: string
-}
+// The area a scenario runs on, a circle or a set of communes. The one type
+// lives with the store, this name is kept for the callers of this module.
+import type { TrafficAreaSelection as AreaSelection } from '@/stores/layers/types'
+export type { AreaSelection }
+
+/** Where a set of communes is, as the server gives it. EPSG:4326. */
+export type AreaOutline =
+  | { type: 'Polygon'; coordinates: number[][][] }
+  | { type: 'MultiPolygon'; coordinates: number[][][][] }
 
 /** An area the server has in memory and can route on. */
 export interface AreaInfo {
   id: string
-  circle: { lon: number; lat: number; radius_m: number }
+  circle: { lon: number; lat: number; radius_m: number } | null
+  // Missing from a server older than the municipalities.
+  kind?: 'circle' | 'municipalities'
+  name?: string
+  municipalities?: { ids: number[]; names: string[] } | null
+  outline?: AreaOutline | null
   bbox: [number, number, number, number] | null
   node_count: number
   edge_count: number
@@ -276,7 +296,8 @@ export interface AreaInfo {
   od_pairs_max: number
 }
 
-export type AreaRejectionCode = 'too_sparse' | 'too_large' | 'disconnected' | 'outside_coverage'
+export type AreaRejectionCode =
+  'too_sparse' | 'too_large' | 'disconnected' | 'outside_coverage' | 'not_contiguous'
 
 /** Answer to "can the tool run here", without building anything. */
 export interface AreaPreview {
@@ -288,6 +309,8 @@ export interface AreaPreview {
   junction_count: number
   scc_fraction: number
   bbox: [number, number, number, number] | null
+  /** the union of the communes, null for a circle */
+  outline?: AreaOutline | null
 }
 
 /** The rules the picker checks while the circle is dragged. */
@@ -300,20 +323,37 @@ export interface AreaLimits {
   min_radius_m: number
   max_radius_m: number
   coverage_bbox: [number, number, number, number] | null
+  /** false when the server has no boundaries file, the picker hides the mode */
+  has_municipalities?: boolean
+  max_municipalities?: number
+}
+
+/** Commune ids without repeats, sorted as numbers: the order of the area id. */
+export function normaliseIds(ids: readonly number[]): number[] {
+  return Array.from(new Set(ids)).sort((a, b) => a - b)
+}
+
+/** Same id as the backend: `m_5586_5590`, whatever the click order. */
+export function municipalityKey(ids: readonly number[]): string {
+  return `m_${normaliseIds(ids).join('_')}`
 }
 
 function areaBody(area: AreaSelection): string {
+  if (area.kind === 'municipalities') {
+    return JSON.stringify({ municipalities: normaliseIds(area.ofsIds) })
+  }
   return JSON.stringify({
     circle: { lon: area.lon, lat: area.lat, radius_m: area.radiusM }
   })
 }
 
 /**
- * The id the server gives this circle. It is derived from the geometry, so we
- * can ask for an area by its shape without keeping a server id around.
+ * The id the server gives this area. It is derived from the shape, so we can
+ * ask for an area by its shape without keeping a server id around.
  */
 export function areaKey(area: AreaSelection | null): string {
   if (!area) return DEFAULT_AREA_ID
+  if (area.kind === 'municipalities') return municipalityKey(area.ofsIds)
   return `c_${area.lon.toFixed(4)}_${area.lat.toFixed(4)}_${Math.round(area.radiusM)}`
 }
 
@@ -334,7 +374,7 @@ export async function previewArea(area: AreaSelection): Promise<AreaPreview> {
   return response.json()
 }
 
-/** Build the routing graph of a circle. Takes a few seconds the first time. */
+/** Build the routing graph of an area. Takes a few seconds the first time. */
 export async function createArea(area: AreaSelection): Promise<AreaInfo> {
   const response = await fetch(AREAS_BASE_URL, {
     method: 'POST',

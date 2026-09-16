@@ -11,6 +11,7 @@ from app.services.sampling.betweenness import (
     edge_betweenness_mirror,
     get_considered_nodes,
     load_edge_attributes,
+    population_score,
 )
 from app.services.sampling.config import SamplingConfig
 from app.services.sampling.igraph_utils import (
@@ -38,6 +39,7 @@ __all__ = [
     "get_considered_nodes",
     "igraph_matrix_to_dict",
     "load_edge_attributes",
+    "population_score",
     "networkx_to_igraph_with_indices",
     "resample_od_destinations",
     "sample_od_pairs",
