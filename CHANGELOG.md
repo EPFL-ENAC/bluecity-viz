@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.5.0](https://github.com/EPFL-ENAC/bluecity-viz/compare/v0.4.0...v0.5.0) (2026-09-16)
+
+
+### Features
+
+* **backend:** add the swiss graph store, parquet cut in cells ([b4c2666](https://github.com/EPFL-ENAC/bluecity-viz/commit/b4c26661dce9e56bdf8853bed488b5ce448ea5bd))
+* **backend:** create a routing area from a circle on the map ([579ccfc](https://github.com/EPFL-ENAC/bluecity-viz/commit/579ccfcc9fb95a9a7ce5a9a2a3a42fe5a16328b1))
+* **backend:** cut an area by municipal boundaries ([f1a5d25](https://github.com/EPFL-ENAC/bluecity-viz/commit/f1a5d2553501929fa55dbcb033019c25e09da838)), closes [#101](https://github.com/EPFL-ENAC/bluecity-viz/issues/101)
+* **backend:** ship the Swiss graph store with the image ([5698f14](https://github.com/EPFL-ENAC/bluecity-viz/commit/5698f142cf8e1a6f74cf05cc50d26174ab3a2c5f))
+* **backend:** ship the Swiss graph store with the image ([0dd0363](https://github.com/EPFL-ENAC/bluecity-viz/commit/0dd036326a7d384952e9f417852ccbd575ba8ad9))
+* **frontend:** an area can be a set of municipalities ([4c61325](https://github.com/EPFL-ENAC/bluecity-viz/commit/4c61325e07ab6bf958c9cd8a494a36c7463b3753))
+* **frontend:** brush municipalities and keep picked borders visible ([f023aef](https://github.com/EPFL-ENAC/bluecity-viz/commit/f023aef07ee06f79dbb1b23e36154cc1e483c0d6))
+* **frontend:** click municipalities on the picker map ([455aa4d](https://github.com/EPFL-ENAC/bluecity-viz/commit/455aa4df13fec4fc8803c7015a816a17613b7a79))
+* **frontend:** commune index, outline helpers and commune layers ([97937b9](https://github.com/EPFL-ENAC/bluecity-viz/commit/97937b9df644e70aef89b8dc52e4586c5d10e485))
+* **frontend:** draw a zone as one shape with one sign ([a48cc34](https://github.com/EPFL-ENAC/bluecity-viz/commit/a48cc34fa3e2d4f83bf75d162a5dbdafa0d5168d))
+* **frontend:** draw the picker network on its own canvas, cut by CSS ([00e66e2](https://github.com/EPFL-ENAC/bluecity-viz/commit/00e66e21c3097c95ccc81741318e91a0d1e7f437))
+* **frontend:** edit a zone from its sign and give the map back ([0e56fcb](https://github.com/EPFL-ENAC/bluecity-viz/commit/0e56fcb4b0c4f4208f422dcec0570ccf041cac63))
+* **frontend:** feedback on picked municipalities ([ef5cd8d](https://github.com/EPFL-ENAC/bluecity-viz/commit/ef5cd8de9f9e67f79db2c45aa776c0d78db6f9bf))
+* **frontend:** municipalities mode in the area picker dock ([c39f250](https://github.com/EPFL-ENAC/bluecity-viz/commit/c39f2508f19617a7afcddac163589943a87c169a))
+* **frontend:** name a zone after the lausanne district it sits in ([5a4e3e0](https://github.com/EPFL-ENAC/bluecity-viz/commit/5a4e3e09877fdb10c9c66b1f081df6f62059981b))
+* **frontend:** name a zone after the place it sits in ([93557b4](https://github.com/EPFL-ENAC/bluecity-viz/commit/93557b44f3bd7127e40394c901101436482b916c))
+* **frontend:** name the picked area after the place it is on ([0e54026](https://github.com/EPFL-ENAC/bluecity-viz/commit/0e54026617209c547981e1ae3575ad5a8a2d5b4d))
+* **frontend:** pick any area of Switzerland with a circle on the map ([742d877](https://github.com/EPFL-ENAC/bluecity-viz/commit/742d87706a62bff70bed21a7f1dd5976a4c49749))
+* **frontend:** pick municipalities in the store ([9ff6b1e](https://github.com/EPFL-ENAC/bluecity-viz/commit/9ff6b1e8c28b2c9cf296f9e60fcb83f97aa204b1))
+* **frontend:** pick streets with a lasso or a brush ([42c57b8](https://github.com/EPFL-ENAC/bluecity-viz/commit/42c57b80ab71dbbcdb14d76646519f02aef07561))
+* **frontend:** plumb the area through the traffic workbench ([b640c2f](https://github.com/EPFL-ENAC/bluecity-viz/commit/b640c2f46e054f6dea811d9c4016592f93467f24))
+* **frontend:** select several streets and edit them together ([843c18f](https://github.com/EPFL-ENAC/bluecity-viz/commit/843c18fffc65b967f439179666451bcb02fe505d))
+* **frontend:** show a group of edited streets as one named zone ([ee1f8f2](https://github.com/EPFL-ENAC/bluecity-viz/commit/ee1f8f23ba853f1edd1d8e8e5174e2c77350d96f))
+* **frontend:** show the streets edited together as one group ([535f6e9](https://github.com/EPFL-ENAC/bluecity-viz/commit/535f6e9b3fe09e4602f0c466a0eaf3a28a6f47f0))
+* **frontend:** the picker circle is a filter, not a disc ([0c11b7a](https://github.com/EPFL-ENAC/bluecity-viz/commit/0c11b7af9966584abcfa66a7317c91c957436fe1))
+* keep more streets in the country tiles at low zoom ([e6afc67](https://github.com/EPFL-ENAC/bluecity-viz/commit/e6afc6763594e624ed2c0985602bc252e8e6cf35))
+* node weights toggle in the routing dock ([dd0f644](https://github.com/EPFL-ENAC/bluecity-viz/commit/dd0f644d37ac7f20afc3b521e87807fc3cf61409)), closes [#38](https://github.com/EPFL-ENAC/bluecity-viz/issues/38)
+* pick an area by municipal boundaries ([e7b99db](https://github.com/EPFL-ENAC/bluecity-viz/commit/e7b99dbd7cf6336a13f75e95783ccda5f3d6573b))
+* **processing:** build the municipalities from swissBOUNDARIES3D ([aefce47](https://github.com/EPFL-ENAC/bluecity-viz/commit/aefce47abe77fbfea51a01d14fd2831f434eac4e)), closes [#101](https://github.com/EPFL-ENAC/bluecity-viz/issues/101)
+* **processing:** build the Swiss graph store and its tiles ([86a535b](https://github.com/EPFL-ENAC/bluecity-viz/commit/86a535b62478a93ea3bd9af13e9a32c36cc68630))
+* run the scenario workbench on any area in Switzerland ([#94](https://github.com/EPFL-ENAC/bluecity-viz/issues/94)) ([577943b](https://github.com/EPFL-ENAC/bluecity-viz/commit/577943b28e469a711119d30d6fae6171c109512e))
+* shorter impact table with units that fit the numbers ([7c2b474](https://github.com/EPFL-ENAC/bluecity-viz/commit/7c2b4740e60cb711b48f45659667e83b839eaf86))
+* snap statpop and statent hectares to the store nodes ([3eba0f5](https://github.com/EPFL-ENAC/bluecity-viz/commit/3eba0f5b9f18583df2571983f73bcad24acac8f7)), closes [#38](https://github.com/EPFL-ENAC/bluecity-viz/issues/38)
+* storyline steps in the dock, one sidebar row per tool ([2dd1f53](https://github.com/EPFL-ENAC/bluecity-viz/commit/2dd1f5313182097a379b4e294ff1ae55648d103b))
+* storyline steps in the dock, one sidebar row per tool ([b0f1a8b](https://github.com/EPFL-ENAC/bluecity-viz/commit/b0f1a8b52b320b5762f9203a2a771b8df552f353)), closes [#42](https://github.com/EPFL-ENAC/bluecity-viz/issues/42)
+* weight the od sampling by residents and jobs ([3534d7c](https://github.com/EPFL-ENAC/bluecity-viz/commit/3534d7ca5fe3fef76cb88993fdfe8836f4ad51f6))
+* weight the od sampling by residents and jobs ([75fc644](https://github.com/EPFL-ENAC/bluecity-viz/commit/75fc644b69e8cb23b7cda6fcb4c84f70fc637925)), closes [#38](https://github.com/EPFL-ENAC/bluecity-viz/issues/38)
+
+
+### Bug Fixes
+
+* **backend:** count the density on a 1 km grid, not on the store's 5 km ([2fecb38](https://github.com/EPFL-ENAC/bluecity-viz/commit/2fecb38142f9b316c3273d30abecc68c55109a2e))
+* **ci:** drop the component prefix from release tags ([bcf3e3d](https://github.com/EPFL-ENAC/bluecity-viz/commit/bcf3e3d119d18bbd9ed1d5de00d000db2a5460e0))
+* **ci:** drop the component prefix from release tags ([1ec6fca](https://github.com/EPFL-ENAC/bluecity-viz/commit/1ec6fcadb307806064c62bc663c69928c39638ac))
+* **cvrp:** commit the waste centroid CSVs so the image has them ([#92](https://github.com/EPFL-ENAC/bluecity-viz/issues/92)) ([fafa350](https://github.com/EPFL-ENAC/bluecity-viz/commit/fafa350254f249da4b4f95b94fa2b6a465def478))
+* **frontend:** close the street popover on any outside interaction ([1af5f27](https://github.com/EPFL-ENAC/bluecity-viz/commit/1af5f27fef60cba61aafe05dd2656d8bf566ec18))
+* **frontend:** draw the map scale inside the legend ([dc7cb17](https://github.com/EPFL-ENAC/bluecity-viz/commit/dc7cb1787a09a71ac05fdef9eb63625f1f5b397f))
+* **frontend:** let the picker own the pointer while it is open ([69dbfa4](https://github.com/EPFL-ENAC/bluecity-viz/commit/69dbfa416776da865a87d6acd2d628b9caa7fa32))
+* **frontend:** make the investigation rename visible ([99d61ef](https://github.com/EPFL-ENAC/bluecity-viz/commit/99d61ef96a04543a6ed74a78f28344f24b7c4046))
+* **frontend:** name a zone after its main street, not a corner of the city ([b1a7af6](https://github.com/EPFL-ENAC/bluecity-viz/commit/b1a7af635a14f706951c5547809503db1ac5d089))
+* **frontend:** name the big cities on the basemap ([782cb0e](https://github.com/EPFL-ENAC/bluecity-viz/commit/782cb0efad3b3ffe8bd4cdd6183626cc313c2587))
+* **frontend:** put the lakes back under the picker mask ([a670c50](https://github.com/EPFL-ENAC/bluecity-viz/commit/a670c50db5da1e0cb1e72f4bf73d7d6af88b0ed4))
+* **frontend:** rename field, map scale in the legend, and a name for the picked area ([bfcf462](https://github.com/EPFL-ENAC/bluecity-viz/commit/bfcf4623380923eec9b15438d2e884e51ce2d3b9))
+* **frontend:** send the api key when the picker opens the country tiles ([f0b54e1](https://github.com/EPFL-ENAC/bluecity-viz/commit/f0b54e122c0c848ce6e7341636e956ec5990a95f))
+* **frontend:** send the api key when the picker opens the country tiles ([1999695](https://github.com/EPFL-ENAC/bluecity-viz/commit/199969561e0fb08291dac845c708d9d0eb775168))
+* **frontend:** tie the graph on the map to the circle of the area ([6c7b010](https://github.com/EPFL-ENAC/bluecity-viz/commit/6c7b010b42d4ee1beea50893c724a735f0064afc))
+* lower the density bar, and spool the tiles where we can write ([20de9d4](https://github.com/EPFL-ENAC/bluecity-viz/commit/20de9d4d71baec861e191de15d262cbe62e40789))
+* **processing:** build the country graph tile by tile ([b583108](https://github.com/EPFL-ENAC/bluecity-viz/commit/b58310899900b6abb1dfd75aa72527a255886b03))
+* **processing:** make the country pipeline actually run ([abe96fa](https://github.com/EPFL-ENAC/bluecity-viz/commit/abe96fa1ad20680bd836f17475aded52783631d9))
+* show the co2 of the traffic per km on each edge ([9af7720](https://github.com/EPFL-ENAC/bluecity-viz/commit/9af772095143f64c573b31c7623d1d4faa3ff1b5))
+* show the co2 of the traffic per km on each edge ([b9e7bfb](https://github.com/EPFL-ENAC/bluecity-viz/commit/b9e7bfb009183f3f552897e7b8e909c00bb40b94)), closes [#44](https://github.com/EPFL-ENAC/bluecity-viz/issues/44)
+
 ## [0.4.0](https://github.com/EPFL-ENAC/bluecity-viz/compare/bluecity-viz-v0.3.0...bluecity-viz-v0.4.0) (2026-09-07)
 
 
