@@ -183,12 +183,14 @@ function genPattern(id: string, T: BasemapTheme): ImageData | undefined {
  * the map keeps its theme in `__epflTheme`.
  */
 export function wirePatterns(map: MapLibreMap): void {
-  map.on('styleimagemissing', (e: { id: string }) => {
-    if (PATTERN_IDS.indexOf(e.id) >= 0 && !map.hasImage(e.id)) {
-      const img = genPattern(e.id, getMapTheme(map))
+  // maplibre 6: styleimagemissing only tells you, it cannot give the image
+  // back. The resolver is the one place that can still add it.
+  map.setMissingStyleImageResolver((id: string) => {
+    if (PATTERN_IDS.indexOf(id) >= 0 && !map.hasImage(id)) {
+      const img = genPattern(id, getMapTheme(map))
       if (!img) return
       try {
-        map.addImage(e.id, img, { pixelRatio: 2 })
+        map.addImage(id, img, { pixelRatio: 2 })
       } catch {
         // the image can already be there after a fast style swap
       }

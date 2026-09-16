@@ -37,6 +37,11 @@ import { useThemeStore } from '@/stores/theme'
 import { cdnRequest } from '@/utils/cdnRequest'
 import { Protocol } from 'pmtiles'
 
+// maplibre 6 types the paint and layout property names instead of taking a
+// string. Our names come from a layer config or from Object.keys, so we cast.
+type PaintKey = Parameters<MapLibre['setPaintProperty']>[1]
+type LayoutKey = Parameters<MapLibre['setLayoutProperty']>[1]
+
 const apiKeyStore = useApiKeyStore()
 const layersStore = useLayersStore()
 const themeStore = useThemeStore()
@@ -278,7 +283,7 @@ const setPaintProperty = (
   value: any,
   options?: StyleSetterOptions | undefined
 ) => {
-  map.value?.setPaintProperty(layerId, name, value, options)
+  map.value?.setPaintProperty(layerId, name as PaintKey, value, options)
 }
 
 const queryFeatures = (filter: any[]) => {
@@ -339,7 +344,7 @@ const setLayerVisibility = (layerId: string, visibility: boolean): boolean => {
 }
 
 const getPaintProperty = (layerId: string, name: string) => {
-  if (hasLoaded.value) return map.value?.getPaintProperty(layerId, name)
+  if (hasLoaded.value) return map.value?.getPaintProperty(layerId, name as PaintKey)
 }
 
 /** Hide the categories the user unchecked in the legend. */
@@ -427,20 +432,20 @@ function applyPaintDiff(
     const before = previousById.get(layer.id)
 
     /* eslint-disable @typescript-eslint/no-explicit-any */
-    const paint = ((layer as any).paint ?? {}) as Record<string, unknown>
-    const beforePaint = ((before as any)?.paint ?? {}) as Record<string, unknown>
+    const paint = ((layer as any).paint ?? {}) as Record<string, any>
+    const beforePaint = ((before as any)?.paint ?? {}) as Record<string, any>
     for (const key of Object.keys({ ...beforePaint, ...paint })) {
       if (JSON.stringify(paint[key]) !== JSON.stringify(beforePaint[key])) {
-        mapInstance.setPaintProperty(layer.id, key, paint[key])
+        mapInstance.setPaintProperty(layer.id, key as PaintKey, paint[key])
       }
     }
 
-    const layout = ((layer as any).layout ?? {}) as Record<string, unknown>
-    const beforeLayout = ((before as any)?.layout ?? {}) as Record<string, unknown>
+    const layout = ((layer as any).layout ?? {}) as Record<string, any>
+    const beforeLayout = ((before as any)?.layout ?? {}) as Record<string, any>
     /* eslint-enable @typescript-eslint/no-explicit-any */
     for (const key of Object.keys({ ...beforeLayout, ...layout })) {
       if (JSON.stringify(layout[key]) !== JSON.stringify(beforeLayout[key])) {
-        mapInstance.setLayoutProperty(layer.id, key, layout[key])
+        mapInstance.setLayoutProperty(layer.id, key as LayoutKey, layout[key])
       }
     }
   }
