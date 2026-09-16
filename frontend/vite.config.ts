@@ -12,11 +12,11 @@ const backendPort = process.env.BACKEND_PORT || '8000'
 
 // One vendor chunk per big library, so a change in app code does not
 // invalidate the cached maplibre / vuetify bundles.
-const vendorChunks: Record<string, RegExp> = {
-  maplibre: /[\\/]node_modules[\\/](maplibre-gl|pmtiles)[\\/]/,
-  vuetify: /[\\/]node_modules[\\/]vuetify[\\/]/,
-  d3: /[\\/]node_modules[\\/](d3-[a-z-]+|internmap)[\\/]/
-}
+const vendorChunks = [
+  { name: 'maplibre', test: /[\\/]node_modules[\\/](maplibre-gl|pmtiles)[\\/]/ },
+  { name: 'vuetify', test: /[\\/]node_modules[\\/]vuetify[\\/]/ },
+  { name: 'd3', test: /[\\/]node_modules[\\/](d3-[a-z-]+|internmap)[\\/]/ }
+]
 
 export default defineConfig({
   base: process.env.BASE_URL || '/',
@@ -42,21 +42,13 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   },
-  css: {
-    preprocessorOptions: {
-      scss: { api: 'modern-compiler' }
-    }
-  },
   build: {
     // .map files are emitted but not referenced from the bundles
     sourcemap: 'hidden',
-    rollupOptions: {
+    // vite 8 bundles with rolldown: manualChunks is gone, groups replace it
+    rolldownOptions: {
       output: {
-        manualChunks(id) {
-          for (const [name, pattern] of Object.entries(vendorChunks)) {
-            if (pattern.test(id)) return name
-          }
-        }
+        codeSplitting: { groups: vendorChunks }
       }
     }
   },
