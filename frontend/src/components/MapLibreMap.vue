@@ -12,6 +12,7 @@ import {
   wirePatterns,
   type BasemapTheme
 } from '@/utils/epflBasemap'
+import '@/utils/maplibreWorker'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { LegendColor } from '@/utils/legendColor'
