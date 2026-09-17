@@ -24,21 +24,12 @@ The API will be available at `http://localhost:8000`
 
 API documentation (Swagger UI): `http://localhost:8000/docs`
 
-## OD Pair Sampling
+## The model
 
-The backend supports two methods for generating origin-destination pairs:
-
-1. **Simple Random Sampling** (legacy): Fast uniform random sampling
-2. **Research-Based Sampling** (default): Sophisticated sampling using betweenness centrality and trip distance modeling
-
-See [RESEARCH_SAMPLING.md](./RESEARCH_SAMPLING.md) for detailed documentation on research-based sampling.
-
-### Quick Start
-
-```bash
-# Test the research-based sampling
-uv run python scripts/test_node_sampling.py
-```
+What the backend computes, with the formulas and the limitations, is in
+[docs/routing-model.md](../docs/routing-model.md): the demand sampling, the
+routing, the BPR congestion model, betweenness centrality, the CO₂ model and
+the three scenario modes.
 
 ## API Endpoints
 

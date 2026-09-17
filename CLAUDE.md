@@ -131,14 +131,21 @@ The backend loads a **GraphML road network** (Lausanne) at startup via osmnx, th
 1. Pre-generates 500 research-sampled OD pairs (betweenness-centrality-weighted, lognormal distance distribution)
 2. Serves routing and impact analysis via `/api/v1/routes/`
 
-**Service layer** is modular:
-- `services/graph_service.py` — orchestrator; holds all in-memory caches (`_edge_co2_cache`, `_edge_bc_cache`, `_route_edge_index`)
-- `services/routing_engine.py` — igraph one-to-many Dijkstra (much faster than NetworkX for bulk routing)
-- `services/bpr.py` — Bureau of Public Roads congestion model + betweenness centrality computation
+**Service layer**, one file per step of the model. `docs/routing-model.md` is
+the reference: the formulas, what each number means and what the model does
+not do. Read it before changing anything here.
+- `services/graph_mirror.py` — the network as igraph plus one numpy array per quantity, built once
+- `services/sampling/` — the demand: `node_pool.py` (which junctions, and their weights), `od_sampler.py` (the draw), `config.py` (the calibration)
+- `services/routing_engine.py` — igraph one-to-many Dijkstra, routes as flat arrays
+- `services/bpr.py` — the congestion model (speed form of the BPR curve)
+- `services/betweenness.py` — sampled edge betweenness, normalised to veh/day
 - `services/co2_calculator.py` — grade-aware CO₂/km model
-- `services/graph_helpers.py` — edge modification apply/restore, usage stats aggregation, graph serialization
-- `services/impact_calculator.py` — computes summary statistics comparing before/after routing
-- `services/node_sampling_service.py` + `services/sampling/` — research-based OD pair generation
+- `services/modifications.py` — a scenario, as per-request weight arrays
+- `services/recalculate.py` — one scenario run, end to end, and the three assignment models
+- `services/impact.py` — the signed comparison between the two runs
+- `services/usage_rows.py` — the per-street rows the API returns
+- `services/area_graph.py` — one area: its OD samples, baselines and caches
+- `services/graph_service.py` — the NetworkX graph (CVRP and legacy endpoints) and the area registry
 
 **Key API endpoints** (`/api/v1/routes/`):
 - `GET /graph` — full graph

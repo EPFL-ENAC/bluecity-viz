@@ -528,10 +528,10 @@ class AreaGraph:
     # ── Routing ───────────────────────────────────────────────────────────────
 
     def _weights_for(self, weight: str) -> np.ndarray:
-        """Map a weight name to a per-edge array."""
+        """The per-edge cost a /calculate request wants to minimise."""
         if weight == "length":
             return self.mirror.length
-        if weight not in ("travel_time", "duration_bc"):
+        if weight != "travel_time":
             logger.warning("Unknown weight %r, using travel_time", weight)
         return self.mirror.travel_time
 
