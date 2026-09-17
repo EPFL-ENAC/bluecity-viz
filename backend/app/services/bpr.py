@@ -27,7 +27,7 @@ new arrays. Nothing is written to the mirror or to the NetworkX graph.
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -87,7 +87,7 @@ def run_congestion_routing(
     blocked: Optional[np.ndarray],
     n_iterations: int,
     config,
-) -> RouteSet:
+) -> Tuple[RouteSet, np.ndarray]:
     """Route every trip, then iterate volume -> speed -> reroute.
 
     The first pass is free flow: everybody takes the fastest empty-city route,
@@ -99,9 +99,9 @@ def run_congestion_routing(
     ``x_k = x_{k-1} + (y_k - x_{k-1}) / k``) so the assignment does not flip
     between two extremes, and two iterations already converge reasonably.
 
-    Note the returned routes are the last assignment, not the averaged
-    volumes: the map shows one plausible assignment, close to but not exactly
-    the averaged equilibrium.
+    Returns the averaged volumes and the routes of the last pass. The volumes
+    are the equilibrium the map shows; the routes are one plausible assignment
+    close to it, and they are what a per-trip comparison can be made on.
     """
     routes = route_pairs(mirror, pairs, travel_time)
     volumes = routes.edge_counts(mirror.n_edges)
@@ -116,4 +116,4 @@ def run_congestion_routing(
         routes = route_pairs(mirror, pairs, weights)
         volumes = volumes + (routes.edge_counts(mirror.n_edges) - volumes) / k
 
-    return routes
+    return routes, volumes

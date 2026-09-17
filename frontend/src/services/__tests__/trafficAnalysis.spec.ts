@@ -45,7 +45,7 @@ describe('traffic analysis service', () => {
     vi.unstubAllGlobals()
   })
 
-  it('asks recalculate for a pair count and without the baseline', async () => {
+  it('asks recalculate for a pair count, with the baseline in congestion mode', async () => {
     fetchMock().mockResolvedValue(okResponse({ od_pairs: 20000, new_edge_usage: [] }))
 
     await recalculateRoutes([{ u: 1, v: 2, action: 'remove' }], {
@@ -65,7 +65,9 @@ describe('traffic analysis service', () => {
       resample_destinations: true,
       node_weighting: 'population',
       od_pairs: 20000,
-      include_baseline: false
+      // The equilibrium model has its own baseline, GET /baseline does not
+      // know it, so the answer has to carry it.
+      include_baseline: true
     })
   })
 
