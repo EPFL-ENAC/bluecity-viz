@@ -143,6 +143,12 @@ not do. Read it before changing anything here.
 - `services/modifications.py` — a scenario, as per-request weight arrays
 - `services/recalculate.py` — one scenario run, end to end, and the three assignment models
 - `services/impact.py` — the signed comparison between the two runs
+
+The rule behind all of it: both sides of a comparison are built the same way.
+Routes are chosen on congested travel times, distances and durations are
+reported free flow, and the trips are the same ones, so a scenario that
+changes nothing changes no number. Each mode has the baseline that matches it
+(the equilibrium model gets its own MSA run on the untouched network).
 - `services/usage_rows.py` — the per-street rows the API returns
 - `services/area_graph.py` — one area: its OD samples, baselines and caches
 - `services/graph_service.py` — the NetworkX graph (CVRP and legacy endpoints) and the area registry

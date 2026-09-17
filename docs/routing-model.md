@@ -35,9 +35,7 @@ Every edge carries:
 
 Speed and time are derived together, so the three of them are one consistent
 triple: a route that sums `travel_time` and an emission model that reads
-`speed_kph` describe the same drive. (Until recently they did not: an
-untagged street was driven at 30 km/h by the router and 40 km/h by the CO₂
-model.)
+`speed_kph` describe the same drive.
 
 **Streets and edges.** A two-way street is two directed edges. OSM also splits
 one street into several parallel edges between the same two junctions. The
@@ -46,9 +44,9 @@ for the API and the map, because a street is what a user clicks. Everything
 the API returns is per street, both directions summed by the frontend.
 
 **A scenario never changes the network.** Closing a street means writing `+inf`
-into *this request's copy* of the travel-time array, which igraph reads as
-"never use this edge" (`modifications.py`). Nothing is written back, so
-concurrent requests cannot see each other and there is nothing to roll back.
+into *this request's copy* of the travel-time array (`modifications.py`).
+Nothing is written back, so concurrent requests cannot see each other and
+there is nothing to roll back.
 
 ---
 
@@ -107,10 +105,10 @@ Mobility and Transport Microcensus. With `mu = 6.85`, `sigma = 0.83`:
 | median trip | 944 s, about 16 min |
 | mean trip | 1,332 s, about 22 min |
 
-The mean sits well past the peak because the tail is long. Relative weight by
-trip length: 2 min 0.25, 5 min 0.86, **8 min 1.00**, 15 min 0.74, 30 min 0.27,
-60 min 0.05. Very short trips are rare because people walk them, very long
-ones because few people commute an hour by car within one city.
+The mean sits well past the peak because the tail is long: relative weight
+0.25 at 2 min, 0.86 at 5, **1.00 at 8**, 0.74 at 15, 0.27 at 30, 0.05 at 60.
+Very short trips are rare because people walk them, very long ones because few
+people commute an hour by car within one city.
 
 **Nested sizes.** The startup draw is `OD_PAIRS_MAX` (76,400) pairs. A request
 asking for N gets the **first N**. The origin draws are in random order, so a
@@ -126,15 +124,25 @@ weighting changes the trips, so the numbers are not comparable across the two.
 
 ## 3. Routing
 
-`routing_engine.py`. Every trip takes the fastest path by `travel_time`,
-igraph Dijkstra, one search per origin serving all its destinations. A trip
-whose destination became unreachable is *failed*, and counted apart.
+`routing_engine.py`. Every trip takes the cheapest path, igraph Dijkstra, one
+search per origin serving all its destinations. Routes are stored as flat
+arrays of edge ids rather than objects: at 76,400 trips the objects cost more
+than the routing. Per trip the model sums `length`, `travel_time`, `elev_gain`
+and CO₂ along the path.
 
-Routes are stored as flat arrays of edge ids rather than objects: at 76,400
-trips the objects cost more than the routing.
+**The rule that makes the comparison mean something.** The baseline and the
+scenario are built the same way, in every mode: routes are **chosen** on
+congested travel times (section 4), distances, durations and CO₂ are
+**reported** free flow, and the trips are the same ones. So a scenario that
+changes nothing changes no number. That was not true before, when the baseline
+was routed free flow and a scenario chose on congested times.
 
-Per trip the model sums `length`, `travel_time`, `elev_gain` and CO₂ along the
-path.
+**A closed street is a travel time of `+inf`**, and igraph reads that as a very
+large cost, not as a missing edge: with no other way through it still hands
+back a path down the closed street. So a trip whose path still costs `+inf`
+after routing is marked **failed** and its edges are dropped. A trip whose
+destination became unreachable has no route; it does not take an impossible
+one.
 
 ---
 
@@ -196,11 +204,9 @@ the sampler talk about the same network. The normalisation is the same as for
 flows, which is what lets betweenness be fed into the BPR formula as a flow:
 it is a structural *estimate* of the load, in veh/day.
 
-Computed in chunks of 50 source junctions, with the targets always the whole
-pool. Betweenness sums over (source, target) pairs, so chunking sources and
-adding gives exactly the same result; the chunking exists only because
-python-igraph holds the GIL for the whole call and a single 500 ms call would
-freeze every other request.
+Computed in chunks of 50 source junctions, targets always the whole pool.
+The sum over (source, target) pairs is the same either way; chunking only
+stops one 500 ms igraph call from holding the GIL and freezing the server.
 
 ---
 
@@ -265,8 +271,9 @@ Only the trips that used a modified street pick a new route. Everybody else
 keeps theirs, which is exact: their path does not touch anything that changed.
 
 Those trips choose on **congested** travel times, from the betweenness of the
-modified network. Without that, every displaced trip would pile onto the one
-next-fastest street.
+modified network, which is the rule the baseline was routed with on the
+untouched one. Without congestion in the cost, every displaced trip would pile
+onto the one next-fastest street.
 
 Cheap, because closing a street usually touches a minority of trips.
 
@@ -284,18 +291,31 @@ averaged between passes (method of successive averages,
 `x_k = x_{k-1} + (y_k - x_{k-1})/k`) so the assignment does not oscillate
 between two extremes; two iterations already converge reasonably.
 
+The baseline is **the same MSA run on the untouched network**, not the
+free-flow one, cached per (trips, iterations). Otherwise the deltas would
+mostly show congestion spreading traffic around, which happens with or without
+a scenario: an empty scenario used to report 1,444 trips moving and 70 minutes
+of extra driving on Lausanne at 20,000 trips. It costs one extra run, on the
+first request at that pair count.
+
+The map gets the **averaged volumes**, the impact table the routes of the last
+pass, the only thing a per-trip comparison can be made on.
+
 ### Elastic demand
 
 Trips keep their origin but draw a **new destination**, with the same rule as
-the initial sample, on the modified network's travel times.
+the initial sample and on the same congested travel times, those of the
+modified network now. A destination behind a closed street is far away, so the
+draw moves off it.
 
-Fixed demand assumes a traveller drives to the same place whatever it costs.
-Elastic demand lets the destination move, so closing a road shows up as trips
-getting shorter rather than as an implausible total travel time.
+Fixed demand assumes a traveller drives to the same place whatever it costs,
+so a closure shows up as an implausible total travel time. Here it shows up as
+trips getting shorter.
 
 Because the destinations changed, trip *i* of the new run is not trip *i* of
 the old one. No per-trip comparison is meaningful, and the impact panel shows
-totals only.
+totals only. The baseline is still the fixed-demand one, so part of the
+difference is the redraw and not the scenario (section 9).
 
 ---
 
@@ -341,19 +361,29 @@ scenarios are what the tool is for.
 away from busy streets; it never jams, and the model will understate what
 happens when a closure pushes a street past its real capacity.
 
-**The default mode scores routes on free-flow time.** A targeted reroute
-*chooses* the new path on congested times but *reports* its duration in
-free-flow time. The reported detour is therefore the free-flow cost of a
-congestion-aware path, which is slightly pessimistic compared with the fastest
-free-flow alternative. Use the equilibrium mode when the travel-time numbers
-themselves matter.
+**Routes are chosen on congested time and reported free flow.** Both sides do
+it, so the comparison is fair, but a reported detour is the free-flow cost of a
+congestion-aware path, not the fastest free-flow path. Use the equilibrium mode
+when the travel-time numbers themselves matter.
 
-**The equilibrium mode reports its last assignment.** The iteration averages
-volumes, but the map shows the last pass's routes, one plausible assignment
-close to the averaged equilibrium rather than the average itself.
+**A street made faster only draws the trips already on it.** The targeted mode
+re-routes the trips that used a modified street and nobody else, so raising a
+speed limit shows the gain for its current traffic, never the traffic it would
+attract. Run the equilibrium mode for that.
 
-**Elastic demand ignores congestion when redrawing.** Destinations are drawn
-on free-flow times of the modified network.
+**Closing a street moves the betweenness of every other one**, so in principle
+a trip that never used it could prefer another route now. The targeted mode
+keeps its route; the equilibrium mode does not make the assumption.
+
+**The equilibrium mode shows two things at once**: the map has the averaged
+volumes, the impact table the routes of the last pass. Close, not identical.
+
+**An elastic run redraws the demand, so an empty scenario is not exactly
+zero.** The baseline keeps the destinations of the startup draw, the run draws
+its own, and two draws from the same distribution differ. On Lausanne at
+20,000 trips, an empty elastic scenario reports about +139 km and +52 kg of
+CO₂, against −1,381 km and −376 kg for a real closure. Read an elastic result
+as a trend, not as a number.
 
 **Only cars.** No buses, bikes, pedestrians or trains; no time of day, no peak
 hour; no traffic lights, no junction delay, no turn restrictions beyond what

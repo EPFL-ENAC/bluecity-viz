@@ -1,9 +1,13 @@
 """Running one scenario: what changes when a street closes.
 
 The question the tool answers is a comparison. The same trips are routed
-twice, once on the untouched network (the *baseline*, computed at startup and
-never recomputed) and once on the network the user modified, and the answer is
-the difference.
+twice, once on the untouched network (the *baseline*) and once on the network
+the user modified, and the answer is the difference.
+
+So both sides have to be built the same way. Routes are chosen on congested
+travel times, distances and durations are reported free flow, and the trips
+are the same ones. A scenario that changes nothing then changes no number,
+which is the property every mode here has to keep.
 
 The pipeline, in order:
 
