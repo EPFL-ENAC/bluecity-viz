@@ -1,20 +1,33 @@
-"""BPR congestion model and betweenness centrality, on the graph mirror.
+"""Congestion: how traffic slows a street down.
 
-The Bureau of Public Roads speed-reduction formula is used everywhere:
+The model is the speed form of the Bureau of Public Roads curve. A street
+carrying `flow` vehicles a day, with `lanes` lanes, drives at
 
-    speed_cong = speed_free / (1 + flow / (lanes * betweenness_to_slowdown))
+    speed(flow) = speed_free / (1 + flow / (lanes · k))
 
-where `flow` is in veh/day and betweenness_to_slowdown is the flow at which
-the speed is halved. `flow` is either the betweenness centrality (theoretical
-load) or the measured route volume, depending on the strategy.
+where `k` is `SamplingConfig.betweenness_to_slowdown`, the flow per lane at
+which the speed halves (at flow = lanes·k the denominator is 2). In travel
+time that is
+
+    time(flow) = length / (speed(flow) / 3.6) = time_free · (1 + flow / (lanes · k))
+
+which is the standard BPR curve `t = t0 · (1 + a·(v/c)^b)` with capacity
+c = lanes·k, a = 1 and **b = 1**. The usual road-engineering values are
+a = 0.15 and b = 4, a curve that stays flat until capacity and then explodes.
+This one is linear: it spreads traffic away from busy streets gently, and it
+never produces the sharp jams of a real assignment model.
+
+`flow` comes from one of two places, and that is the difference between the
+two scenario modes:
+  * the **betweenness** of the network, a structural estimate of the load
+  * the **volumes** the routed trips actually put on each street
 
 Everything here works on numpy arrays indexed by igraph edge id and returns
-new arrays. Nothing is written to the shared NetworkX graph.
+new arrays. Nothing is written to the mirror or to the NetworkX graph.
 """
 
 import logging
-import time
-from typing import List, Optional
+from typing import Optional
 
 import numpy as np
 
@@ -22,83 +35,48 @@ from app.services.routing_engine import RouteSet, route_pairs
 
 logger = logging.getLogger(__name__)
 
-# Betweenness is computed in chunks of source nodes so a single igraph call
-# does not hold the GIL for too long. python-igraph never releases it, so an
-# uninterrupted call of 500 ms freezes every other request for 500 ms.
-# Betweenness is a sum over (source, target) pairs, so chunking the sources
-# and adding the results gives exactly the same values.
-# 50 sources per chunk measured best: 20 was 10 % slower overall without
-# cutting the worst latency spike, which comes from elsewhere (numpy and
-# orjson also hold the GIL).
-BC_SOURCE_CHUNK = 50
+
+def congested_speed(
+    mirror, flow: np.ndarray, speed_kph: np.ndarray, betweenness_to_slowdown: float
+) -> np.ndarray:
+    """BPR congested speed per edge, in km/h. See the module docstring."""
+    return speed_kph / (1.0 + flow / (mirror.lanes * betweenness_to_slowdown))
 
 
 def congested_travel_time(
     mirror,
     flow: np.ndarray,
     speed_kph: np.ndarray,
+    betweenness_to_slowdown: float,
     blocked: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """Travel time in seconds under the BPR speed reduction, per edge.
 
-        speed_cong = speed_free / (1 + flow / (lanes * betweenness_to_slowdown))
-        time_s     = length_m / (speed_cong / 3.6)
-
-    `blocked` marks removed edges: they get +inf so no route uses them.
+    `blocked` marks closed streets: they get +inf, which igraph reads as
+    "never use this edge".
     """
-    from app.services.sampling.config import SamplingConfig
-
-    config = SamplingConfig()
-    speed_cong = speed_kph / (1.0 + flow / (mirror.lanes * config.betweenness_to_slowdown))
+    speed = congested_speed(mirror, flow, speed_kph, betweenness_to_slowdown)
     with np.errstate(divide="ignore", invalid="ignore"):
-        seconds = np.where(speed_cong > 0, mirror.length / (speed_cong / 3.6), np.inf)
+        seconds = np.where(speed > 0, mirror.length / (speed / 3.6), np.inf)
     if blocked is not None:
         seconds = np.where(blocked, np.inf, seconds)
     return seconds
 
 
-def normalise_flow(mirror, counts: np.ndarray, config) -> np.ndarray:
-    """Turn simulated route counts into daily vehicle flow (veh/day).
+def flow_from_counts(mirror, counts: np.ndarray, daily_km_driven: float) -> np.ndarray:
+    """Turn simulated trip counts into a daily vehicle flow (veh/day).
 
-    factor = daily_km_driven * 1000 / sum(count * length)
+    The OD sample is a few tens of thousands of trips, not a day of traffic,
+    so the counts are scaled to the vehicle-km the city really drives:
+
+        flow = counts · daily_km_driven · 1000 / Σ(counts · length)
+
+    which is the same normalisation betweenness gets, so the two are
+    interchangeable inside the BPR formula.
     """
     total_veh_m = float((counts * mirror.length).sum())
-    factor = (config.daily_km_driven * 1000.0 / total_veh_m) if total_veh_m > 0 else 1.0
+    factor = (daily_km_driven * 1000.0 / total_veh_m) if total_veh_m > 0 else 1.0
     return counts * factor
-
-
-def compute_betweenness(
-    mirror,
-    weights: np.ndarray,
-    sample_vertices: List[int],
-    config,
-    label: str = "BC",
-) -> np.ndarray:
-    """Sampled edge betweenness on the mirror, normalised to veh/day.
-
-    The same node sample is reused across calls so baseline and modified BC
-    stay comparable. Returns one value per igraph edge id.
-    """
-    t0 = time.perf_counter()
-    raw = np.zeros(mirror.n_edges, dtype=np.float64)
-
-    for start in range(0, len(sample_vertices), BC_SOURCE_CHUNK):
-        chunk = sample_vertices[start : start + BC_SOURCE_CHUNK]
-        # numpy array, not a list: igraph converts a python list of 10k floats
-        # on every call, which cost more than the chunking saved.
-        part = mirror.h.edge_betweenness(True, None, weights, chunk, sample_vertices)
-        raw += np.asarray(part, dtype=np.float64)
-
-    total = float((raw * mirror.length).sum())
-    factor = (config.daily_km_driven * 1000.0 / total) if total > 0 else 1.0
-    logger.debug(
-        "[TIMING] %s | nodes=%d | chunks=%d | %.0f ms",
-        label,
-        len(sample_vertices),
-        (len(sample_vertices) + BC_SOURCE_CHUNK - 1) // BC_SOURCE_CHUNK,
-        (time.perf_counter() - t0) * 1000,
-    )
-    return raw * factor
 
 
 def run_congestion_routing(
@@ -110,21 +88,32 @@ def run_congestion_routing(
     n_iterations: int,
     config,
 ) -> RouteSet:
-    """Route every pair, then iterate volume -> speed -> reroute toward equilibrium.
+    """Route every trip, then iterate volume -> speed -> reroute.
 
-    Iteration 0 is free flow. Each later iteration re-routes on travel times
-    derived from the volumes seen so far. Volumes are averaged with MSA
-    (method of successive averages), so the flow does not flip between two
-    extreme assignments and 2 iterations already converge reasonably.
+    The first pass is free flow: everybody takes the fastest empty-city route,
+    which overloads the same few streets. Each further pass re-routes on the
+    travel times the volumes seen so far imply, moving toward the state where
+    no driver can do better by switching route (a Wardrop user equilibrium).
+
+    Volumes are averaged with MSA (method of successive averages,
+    ``x_k = x_{k-1} + (y_k - x_{k-1}) / k``) so the assignment does not flip
+    between two extremes, and two iterations already converge reasonably.
+
+    Note the returned routes are the last assignment, not the averaged
+    volumes: the map shows one plausible assignment, close to but not exactly
+    the averaged equilibrium.
     """
     routes = route_pairs(mirror, pairs, travel_time)
     volumes = routes.edge_counts(mirror.n_edges)
 
+    # k is the MSA step number: the pass above produced x_1, so the first
+    # update below is x_2 = x_1 + (y_2 - x_1) / 2.
     for k in range(2, n_iterations + 2):
-        flow = normalise_flow(mirror, volumes, config)
-        weights = congested_travel_time(mirror, flow, speed_kph, blocked)
+        flow = flow_from_counts(mirror, volumes, config.daily_km_driven)
+        weights = congested_travel_time(
+            mirror, flow, speed_kph, config.betweenness_to_slowdown, blocked
+        )
         routes = route_pairs(mirror, pairs, weights)
-        # MSA: x_k = x_{k-1} + (y_k - x_{k-1}) / k
         volumes = volumes + (routes.edge_counts(mirror.n_edges) - volumes) / k
 
     return routes

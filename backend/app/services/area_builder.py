@@ -326,7 +326,7 @@ def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> Are
         edge_key=edges["key"],
         length=edges["length"],
         travel_time=edges["travel_time"],
-        speed_raw=edges["speed_kph"],
+        speed_kph=edges["speed_kph"],
         lanes=edges["lanes"],
         elev_gain=edges["elev_gain"],
         node_x=selection.x,

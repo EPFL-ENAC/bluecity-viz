@@ -32,6 +32,7 @@ from app.models.route import (
     TimingStats,
 )
 from app.services import bpr, routing_engine
+from app.services.betweenness import edge_betweenness
 from app.services.co2_calculator import CO2Calculator
 from app.services.graph_mirror import GraphMirror
 from app.services.impact_calculator import compute_impact_statistics_arrays
@@ -135,7 +136,7 @@ class AreaGraph:
         # Grams of CO2 for one vehicle over each edge. The routes sum it, and
         # times the edge counts it is the CO2 of the traffic on each edge.
         self.base_co2_g = CO2Calculator.edge_co2_array(
-            mirror.length, mirror.speed_co2, mirror.elev_gain
+            mirror.length, mirror.speed_kph, mirror.elev_gain
         )
         # 1 / km per edge, 0 for an edge with no length
         self._inv_km = np.divide(
@@ -148,7 +149,8 @@ class AreaGraph:
         self._od_lock = threading.Lock()
         self._seed = 42
         self.sampling_config = None
-        self._bc_sample_vertices: List[int] = []
+        # The junctions betweenness is computed over, set by the OD sampler.
+        self._bc_vertices: List[int] = []
 
         # Bounded caches. All three are pure memoisation: dropping an entry
         # only costs time, never correctness. The route cache is keyed by the
@@ -224,6 +226,10 @@ class AreaGraph:
         od.pairs, od.nodes = generate_research_based_pairs_mirror(
             self.mirror, n_pairs=n_pairs, config=run_config, seed=seed, return_nodes=True
         )
+        if node_weighting == "uniform":
+            # Betweenness runs on the same junctions the demand does, so the
+            # map and the sampler talk about the same network.
+            self._bc_vertices = [self.mirror.node_index[int(n)] for n in od.nodes.index]
 
     def od_set(self, node_weighting: NodeWeighting = "uniform") -> OdSet:
         """The OD sample of this weighting, drawn and routed on first use.
@@ -281,9 +287,7 @@ class AreaGraph:
             mirror.length,
             mirror.travel_time,
             mirror.lanes,
-            mirror.speed_raw,
-            mirror.speed_free,
-            mirror.speed_co2,
+            mirror.speed_kph,
             mirror.elev_gain,
             mirror.edge_u,
             mirror.edge_v,
@@ -291,7 +295,6 @@ class AreaGraph:
             mirror.uv_group,
             mirror.uv_u,
             mirror.uv_v,
-            mirror.last_of_group,
             mirror.node_ids,
             mirror.node_x,
             mirror.node_y,
@@ -429,12 +432,14 @@ class AreaGraph:
         mirror = self.mirror
         self._seed = seed
 
-        rng = random.Random(seed)
-        n = min(config.n_nodes_preprocess, mirror.n_nodes)
-        self._bc_sample_vertices = sorted(rng.sample(range(mirror.n_nodes), n))
+        if not self._bc_vertices:
+            # No research sampling ran (the simple random pairs of the tests).
+            rng = random.Random(seed)
+            n = min(config.n_nodes_preprocess, mirror.n_nodes)
+            self._bc_vertices = sorted(rng.sample(range(mirror.n_nodes), n))
 
         t0 = time.perf_counter()
-        bc = bpr.compute_betweenness(mirror, mirror.travel_time, self._bc_sample_vertices, config)
+        bc = edge_betweenness(mirror, mirror.travel_time, self._bc_vertices, config.daily_km_driven)
         logger.info("[AREA %s] betweenness in %.1f s", self.meta.id, time.perf_counter() - t0)
 
         self.baseline = self._route_baseline(
@@ -567,11 +572,11 @@ class AreaGraph:
         if cached is not None:
             self._bc_cache.move_to_end(key)
             return cached
-        bc = bpr.compute_betweenness(
+        bc = edge_betweenness(
             self.mirror,
             travel_time,
-            self._bc_sample_vertices,
-            self.sampling_config,
+            self._bc_vertices,
+            self.sampling_config.daily_km_driven,
             label="delta-BC",
         )
         self._bc_cache[key] = bc
@@ -650,7 +655,7 @@ class AreaGraph:
             ) = modifications_to_arrays(
                 mirror,
                 mirror.travel_time,
-                mirror.speed_free,
+                mirror.speed_kph,
                 self.base_co2_g,
                 edge_modifications,
             )
@@ -771,7 +776,9 @@ class AreaGraph:
             if len(changed_ids) > 0:
                 bc_new = self._betweenness(travel_time, mods_key)
                 delta_bc_group = mirror.group_sum(bc_new - self.baseline.bc)
-                weights = bpr.congested_travel_time(mirror, bc_new, speed, blocked)
+                weights = bpr.congested_travel_time(
+                    mirror, bc_new, speed, self.sampling_config.betweenness_to_slowdown, blocked
+                )
 
         with timed("route_calculation", timing):
             new_routes = route_pairs(
@@ -827,7 +834,7 @@ class AreaGraph:
         mirror = self.mirror
         with timed("od_resampling", timing):
             new_pairs = resample_od_destinations(
-                pairs, od_nodes, mirror, travel_time, self.sampling_config
+                pairs, od_nodes, mirror, travel_time, self.sampling_config, self._seed
             )
 
         with timed("route_calculation", timing):

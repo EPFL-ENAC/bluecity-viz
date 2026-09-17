@@ -1,17 +1,23 @@
-"""Configuration for research-based OD pair sampling."""
+"""What the demand model is calibrated with.
+
+See docs/routing-model.md for what each number does to the result.
+"""
 
 from pydantic import BaseModel, Field
 
 
 class SamplingConfig(BaseModel):
-    """Configuration for research-based OD pair sampling.
+    """The parameters of the demand and congestion models, tuned for Lausanne.
 
-    Calibrated to Lausanne travel patterns:
-    - betweenness_to_slowdown: BC value (veh·day⁻¹·lane⁻¹) at which free-flow speed halves.
-      Derived from the BPR formula: speed_cong = speed_free / (1 + BC / (lanes × k))
-      where k = betweenness_to_slowdown.
-    - lognorm_mu / lognorm_sigma: fitted to travel survey data.
-      mode ≈ 940 s (≈ 15 min), reflecting typical urban trip lengths.
+    The trip-length distribution is a lognormal over travel time. With the
+    default mu and sigma the most likely trip takes 474 s (about 8 min), half
+    the trips are under 944 s (about 16 min) and the average is 1,332 s (about
+    22 min): the long tail pulls the average well past the peak.
+
+    `betweenness_to_slowdown` is the flow per lane at which a street drops to
+    half its free-flow speed, and `daily_km_driven` sets the scale flows are
+    measured on. An area smaller than Lausanne gets a proportionally smaller
+    `daily_km_driven` (see area_builder._scaled_config).
     """
 
     n_destinations_per_origin: int = Field(

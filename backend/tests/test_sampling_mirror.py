@@ -14,20 +14,22 @@ import pandas as pd
 import pytest
 
 from app.services.graph_mirror import GraphMirror
-from app.services.sampling.betweenness import (
+from app.services.sampling.config import SamplingConfig
+from app.services.sampling.node_pool import (
     POPULATION_SCORE_FLOOR,
-    considered_nodes_from_mirror,
+    junction_pool,
     population_score,
 )
-from app.services.sampling.config import SamplingConfig
 from app.services.sampling.od_sampler import generate_research_based_pairs_mirror
 
 GRAPH = Path(__file__).resolve().parents[1] / "data" / "lausanne.graphml"
 
 # Sampled from data/lausanne.graphml at seed 42, n_pairs=3000, default config.
+# Last moved when the sampler and the map were put on one betweenness and one
+# speed (see docs/routing-model.md): a different draw of the same distribution.
 # It changes only when the model changes, which is a decision, never a
 # side effect: regenerate it in the same commit and say why.
-LAUSANNE_GOLDEN = "d2b4abaf6afc74fdf6fadd891e9003bb"
+LAUSANNE_GOLDEN = "69669c2b882be0f4f7e38b4c4486ca6c"
 LAUSANNE_PAIRS = 3000
 
 
@@ -102,7 +104,7 @@ def test_asking_for_no_pair_is_an_error(synthetic_graph, config):
 
 def test_the_pool_keeps_junctions_only(synthetic_graph):
     mirror = GraphMirror(synthetic_graph)
-    pool = considered_nodes_from_mirror(mirror, np.random.RandomState(42), 100, "dummy")
+    pool = junction_pool(mirror, np.random.RandomState(42), 100, "dummy")
 
     keep = mirror.street_count >= 3
     assert list(pool.index) == list(mirror.node_ids[keep])
@@ -111,9 +113,7 @@ def test_the_pool_keeps_junctions_only(synthetic_graph):
 
 def test_node_pool_refuses_a_column_the_mirror_does_not_have(synthetic_graph):
     with pytest.raises(ValueError, match="node_weight_col"):
-        considered_nodes_from_mirror(
-            GraphMirror(synthetic_graph), np.random.RandomState(42), 100, "elevation"
-        )
+        junction_pool(GraphMirror(synthetic_graph), np.random.RandomState(42), 100, "elevation")
 
 
 # ── Population weight ─────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ def test_the_population_pool_carries_the_score(synthetic_graph):
         graph.nodes[node]["jobs_fte"] = 0.0 if i % 2 else float(i)
     mirror = GraphMirror(graph)
 
-    pool = considered_nodes_from_mirror(mirror, np.random.RandomState(42), 100, "population")
+    pool = junction_pool(mirror, np.random.RandomState(42), 100, "population")
 
     keep = mirror.street_count >= 3
     assert list(pool.index) == list(mirror.node_ids[keep])
@@ -172,7 +172,7 @@ def test_a_skewed_population_still_draws_a_small_pool(synthetic_graph):
     mirror = GraphMirror(graph)
     score = pd.Series(population_score(mirror.residents, mirror.jobs_fte), index=mirror.node_ids)
 
-    pool = considered_nodes_from_mirror(mirror, np.random.RandomState(42), 5, "population")
+    pool = junction_pool(mirror, np.random.RandomState(42), 5, "population")
 
     assert len(pool) == 5
     assert np.allclose(pool.values, score[pool.index].values)

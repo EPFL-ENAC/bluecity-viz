@@ -10,7 +10,7 @@ from pyproj import Transformer
 
 from app.services.graph_mirror import GraphMirror
 from app.services.graph_store_writer import population_columns, snap_hectares
-from app.services.sampling.betweenness import POPULATION_SCORE_FLOOR, population_score
+from app.services.sampling.node_pool import POPULATION_SCORE_FLOOR, population_score
 
 
 def lv95(x, y):

@@ -1,4 +1,26 @@
-"""OD pair sampling using lognormal travel-time weighting."""
+"""Where the trips go: drawing the origin-destination sample.
+
+The tool does not know real traffic counts, so it builds a synthetic demand:
+a fixed set of trips, drawn once, reused by every scenario. Two scenarios are
+comparable because they move the same trips over a different network.
+
+The draw, in one sentence: junctions are picked as origins in proportion to
+their weight, and each origin picks its destinations in proportion to how
+plausible a trip of that length is, on a network that already carries traffic.
+
+    origin      ~ w(o)
+    destination ~ w(d) · lognorm.pdf(t_od ; sigma, exp(mu))
+
+where `w` is the junction weight (uniform, or residents and jobs) and `t_od`
+is the travel time under congestion. The lognormal is the trip-length
+distribution of the Swiss travel survey: few very short trips, a peak around
+eight minutes, a long tail.
+
+The set is drawn once at startup, at `OD_PAIRS_MAX` pairs. A request asking
+for N pairs gets the first N: the origin draws are in random order, so a
+prefix is itself a fair sample, and a result at 20,000 pairs is a subset of
+the one at 76,400 rather than a different experiment.
+"""
 
 import logging
 import math
@@ -13,12 +35,12 @@ logger = logging.getLogger(__name__)
 
 
 def show_weight_info(lognorm_mu: float, lognorm_sigma: float) -> None:
-    """Log relative destination weights at representative travel times."""
-    max_time = np.exp(lognorm_mu - lognorm_sigma**2)
-    logger.info(f"Maximum weight at {max_time:.0f} s ({max_time / 60:.1f} min) travel time")
+    """Log the trip-length distribution the destinations are drawn from."""
+    mode = np.exp(lognorm_mu - lognorm_sigma**2)
+    logger.info(f"Most likely trip: {mode:.0f} s ({mode / 60:.1f} min) of travel time")
     times = [1, 2, 5, 10, 30, 60]
     weights = lognorm.pdf(
-        [max_time] + [t * 60 for t in times], s=lognorm_sigma, scale=np.exp(lognorm_mu)
+        [mode] + [t * 60 for t in times], s=lognorm_sigma, scale=np.exp(lognorm_mu)
     )
     weights = weights / weights[0]
     logger.info(
@@ -36,22 +58,20 @@ def sample_od_pairs_matrix(
     t_matrix: np.ndarray,
     row_of: Dict[int, int],
 ) -> Dict[int, List[int]]:
-    """Sample OD pairs using lognormal travel-time weighting.
+    """Draw the origins, then each origin's destinations.
 
-    Destinations are weighted by a lognormal distribution over travel time from
-    each origin. Parameters (mu=6.85, sigma=0.83) are calibrated to travel survey
-    data with mode ≈ 940 s (≈ 15 min), reflecting typical urban trip lengths.
-
-    Origins are sampled WITH replacement so high-weight nodes attract more trips.
-    An origin drawn twice gets twice as many destinations. It used to overwrite
-    its own entry, so 500 draws gave 382 origins and lost the extra weight.
+    Origins are drawn WITH replacement, so a heavy junction attracts more
+    trips: an origin drawn twice gets twice as many destinations.
 
     Args:
-        nodes: Node weights indexed by NetworkX node ID
-        n_origins: Number of origin draws
-        n_destinations: Number of destinations per origin draw
+        nodes: junction weights, indexed by node id
+        n_origins: number of origin draws
+        n_destinations: destinations per origin draw
         t_matrix: (N, N) travel times, rows and columns in ``nodes.index`` order
         row_of: {node id: row index in t_matrix}
+
+    Returns:
+        {origin: [destination, ...]}, in the order the origins were first drawn.
     """
     origins = list(nodes.sample(n_origins, random_state=rng, replace=True, weights=nodes).index)
 
@@ -64,13 +84,13 @@ def sample_od_pairs_matrix(
         weights = nodes * time_weights
 
         try:
-            destinations = list(
+            od_pairs[origin] = list(
                 nodes.sample(
                     n_destinations * draws, random_state=rng, replace=True, weights=weights
                 ).index
             )
-            od_pairs[origin] = destinations
         except ValueError:
+            # Every destination is unreachable from here, so every weight is 0.
             failed_origins.append(origin)
 
     if failed_origins:
@@ -81,42 +101,141 @@ def sample_od_pairs_matrix(
     return od_pairs
 
 
-def resample_od_destinations(
-    pairs,
-    nodes: pd.Series,
+def generate_research_based_pairs_mirror(
     mirror,
-    weights,
-    config,
+    n_pairs: int,
+    config=None,
+    seed: int = 42,
+    return_nodes: bool = False,
 ):
-    """Resample destinations for each origin using travel times on the modified graph.
+    """Draw `n_pairs` origin-destination pairs on a graph mirror.
 
-    Preserves origin structure (same origins, same destination count per origin)
-    while choosing new destinations based on lognormal-weighted travel times
-    on the modified graph, modelling elastic demand adaptation.
+    Five steps:
+      1. the junction pool and its weights
+      2. betweenness of the network, in veh/day
+      3. the travel times that betweenness implies, through the BPR formula:
+         a trip does not choose its destination on an empty city
+      4. the travel-time matrix over the pool, on those congested times
+      5. the draw itself, see the module docstring
+
+    Returns a PairArrays, and the junction pool when `return_nodes`.
+    """
+    from app.services.betweenness import edge_betweenness
+    from app.services.bpr import congested_speed
+    from app.services.sampling.config import SamplingConfig
+    from app.services.sampling.node_pool import junction_pool
+
+    config = config or SamplingConfig()
+
+    if n_pairs < 1:
+        raise ValueError(f"n_pairs must be at least 1, got {n_pairs}")
+
+    n_destinations = config.n_destinations_per_origin
+    n_origins = max(1, math.ceil(n_pairs / n_destinations))
+
+    logger.info("Starting research-based OD pair sampling")
+    logger.info(f"Configuration: {config.model_dump()}")
+    show_weight_info(config.lognorm_mu, config.lognorm_sigma)
+
+    rng = np.random.RandomState(seed)
+
+    # 1. the junctions trips can start and end at
+    nodes = junction_pool(mirror, rng, config.n_nodes_preprocess, config.node_weight_col)
+    nodes_ig = [mirror.node_index[int(n)] for n in nodes.index]
+
+    # 2. how much traffic the structure of the network puts on each street
+    logger.info("Calculating betweenness centrality...")
+    betweenness = edge_betweenness(
+        mirror, mirror.travel_time, nodes_ig, config.daily_km_driven, label="sampling BC"
+    )
+
+    # 3. the travel times that traffic implies
+    speed_bc = congested_speed(
+        mirror, betweenness, mirror.speed_kph, config.betweenness_to_slowdown
+    )
+    reduction = (mirror.speed_kph - speed_bc) / mirror.speed_kph * 100
+    logger.info(f"Speed reduction — Avg: {reduction.mean():.1f}%  Max: {reduction.max():.1f}%")
+    duration_bc = mirror.length / (speed_bc / 3.6)
+
+    # 4. how far every junction is from every other one
+    logger.info("Computing travel-time matrix...")
+    t_matrix = np.asarray(
+        mirror.h.distances(source=nodes_ig, target=nodes_ig, weights=duration_bc), dtype=float
+    )
+    row_of = {int(node): i for i, node in enumerate(nodes.index)}
+
+    # 5. the draw
+    logger.info(
+        f"Sampling {n_pairs} OD pairs: {n_origins} origin draws × "
+        f"{n_destinations} destinations per draw..."
+    )
+    od_pairs = sample_od_pairs_matrix(
+        nodes,
+        rng,
+        n_origins,
+        n_destinations,
+        config.lognorm_mu,
+        config.lognorm_sigma,
+        t_matrix,
+        row_of,
+    )
+
+    pairs = _flatten(od_pairs, n_pairs)
+    logger.info(f"Generated {len(pairs)} OD pairs from {len(od_pairs)} distinct origins")
+
+    if return_nodes:
+        return pairs, nodes
+    return pairs
+
+
+def _flatten(od_pairs: Dict[int, List[int]], n_pairs: int):
+    """{origin: [destination]} to two flat arrays, cut to n_pairs."""
+    from app.services.routing_engine import PairArrays
+
+    total = sum(len(d) for d in od_pairs.values())
+    origins = np.empty(total, dtype=np.int64)
+    destinations = np.empty(total, dtype=np.int64)
+    at = 0
+    for origin, dests in od_pairs.items():
+        stop = at + len(dests)
+        origins[at:stop] = origin
+        destinations[at:stop] = dests
+        at = stop
+    return PairArrays(origins=origins[:n_pairs], destinations=destinations[:n_pairs])
+
+
+def resample_od_destinations(pairs, nodes: pd.Series, mirror, weights, config, seed: int):
+    """Draw new destinations for the same origins, on the modified network.
+
+    Elastic demand: a traveller whose destination became far away does not
+    drive there anyway, they go somewhere else. The origins and the number of
+    trips per origin do not change; each destination is drawn again with the
+    same rule as the initial sample, on the travel times of the modified
+    network.
 
     Args:
-        pairs: PairArrays (or a NodePair list) giving the origins and how many
-            destinations each one has
-        nodes: Candidate pool, pd.Series {NX node ID: weight}
+        pairs: PairArrays giving the origins and how many trips each one has
+        nodes: the junction pool, {node id: weight}
         mirror: GraphMirror of the network
-        weights: Per-edge travel time array of the modified network
+        weights: per-edge travel time of the modified network
         config: SamplingConfig (uses lognorm_mu / lognorm_sigma)
+        seed: the area's seed, so the same request gives the same answer
 
     Returns:
-        PairArrays of the same length as the input.
+        PairArrays, the same length as the input.
     """
     from app.services.routing_engine import PairArrays
 
     pa = PairArrays.coerce(pairs)
     nx_to_ig = mirror.node_index
 
-    # Build candidate arrays (only nodes present in igraph)
+    # The candidates: the pool, minus anything not in this graph.
     candidate_nx_ids = [n for n in nodes.index if n in nx_to_ig]
     candidate_ig_ids = [nx_to_ig[n] for n in candidate_nx_ids]
     candidate_weights = nodes.reindex(candidate_nx_ids).values.astype(float)
     candidate_arr = np.asarray(candidate_nx_ids, dtype=np.int64)
 
-    # Destinations per origin, in first-seen order (what the dict used to give).
+    # Trips per origin, in first-seen order (what the dict used to give).
     uniq, first_seen, counts = np.unique(pa.origins, return_index=True, return_counts=True)
     keep = np.argsort(first_seen)
     uniq, counts = uniq[keep], counts[keep]
@@ -126,10 +245,9 @@ def resample_od_destinations(
     valid_counts = counts[valid]
     origin_ig_ids = [nx_to_ig[int(o)] for o in valid_origin_nx]
 
-    # Compute travel-time matrix: origins x candidates
     t_matrix = mirror.h.distances(source=origin_ig_ids, target=candidate_ig_ids, weights=weights)
 
-    rng = np.random.RandomState()
+    rng = np.random.RandomState(seed)
     out_origins: List[np.ndarray] = []
     out_dests: List[np.ndarray] = []
     failed_origins = []
@@ -153,15 +271,11 @@ def resample_od_destinations(
             keep_original(origin_nx)
             continue
 
-        try:
-            dest_indices = rng.choice(
-                len(candidate_nx_ids), size=n_dests, replace=True, p=combined / total
-            )
-            out_origins.append(np.full(n_dests, origin_nx, dtype=np.int64))
-            out_dests.append(candidate_arr[dest_indices])
-        except Exception:
-            failed_origins.append(origin_nx)
-            keep_original(origin_nx)
+        dest_indices = rng.choice(
+            len(candidate_nx_ids), size=n_dests, replace=True, p=combined / total
+        )
+        out_origins.append(np.full(n_dests, origin_nx, dtype=np.int64))
+        out_dests.append(candidate_arr[dest_indices])
 
     if failed_origins:
         logger.warning(
@@ -174,111 +288,3 @@ def resample_od_destinations(
             origins=np.empty(0, dtype=np.int64), destinations=np.empty(0, dtype=np.int64)
         )
     return PairArrays(origins=np.concatenate(out_origins), destinations=np.concatenate(out_dests))
-
-
-def generate_research_based_pairs_mirror(
-    mirror,
-    n_pairs: int,
-    config=None,
-    seed: int = 42,
-    return_nodes: bool = False,
-):
-    """Same pipeline as ``generate_research_based_pairs``, on the graph mirror.
-
-    No NetworkX and nothing written to a shared graph, so an area cut out of
-    the Swiss store can sample its own OD pairs. For the same graph and the
-    same seed it draws exactly the same pairs as the NetworkX version, which
-    ``tests/test_sampling_mirror.py`` checks.
-
-    Returns a PairArrays, and the candidate node Series when `return_nodes`.
-    """
-    from app.services.routing_engine import PairArrays
-    from app.services.sampling.betweenness import (
-        considered_nodes_from_mirror,
-        edge_betweenness_mirror,
-    )
-    from app.services.sampling.config import SamplingConfig
-
-    config = config or SamplingConfig()
-
-    if n_pairs < 1:
-        raise ValueError(f"n_pairs must be at least 1, got {n_pairs}")
-
-    n_destinations = config.n_destinations_per_origin
-    n_origins = max(1, math.ceil(n_pairs / n_destinations))
-
-    logger.info("Starting research-based OD pair sampling")
-    logger.info(f"Configuration: {config.model_dump()}")
-    show_weight_info(config.lognorm_mu, config.lognorm_sigma)
-
-    rng = np.random.RandomState(seed)
-
-    length = mirror.length
-    lanes = mirror.lanes
-    # speed_free is speed_kph when the data has it, and a 30 km/h fallback
-    # otherwise. The NetworkX version reads speed_kph straight and refuses a
-    # graph with holes, so on a complete graph the two are the same array.
-    speed = mirror.speed_free
-
-    # Step 1: free-flow edge weights
-    duration = length / (speed / 3.6)
-    nodes = considered_nodes_from_mirror(
-        mirror, rng, config.n_nodes_preprocess, config.node_weight_col
-    )
-    nodes_ig = [mirror.node_index[int(n)] for n in nodes.index]
-
-    # Step 2: betweenness centrality
-    logger.info("Calculating betweenness centrality...")
-    betweenness = edge_betweenness_mirror(
-        mirror, duration, config.daily_km_driven, nodes_ig, nodes_ig
-    )
-
-    # Step 3: BC-congested edge weights
-    speed_bc = speed / (1 + betweenness / lanes / config.betweenness_to_slowdown)
-    reduction = (speed - speed_bc) / speed * 100
-    logger.info(f"Speed reduction — Avg: {reduction.mean():.1f}%  Max: {reduction.max():.1f}%")
-    duration_bc = length / (speed_bc / 3.6)
-    # The NetworkX version copies these weights onto igraph keyed by (u, v),
-    # so every parallel edge ends up with the last one's value. Same here.
-    duration_bc_ig = duration_bc[mirror.last_of_group[mirror.uv_group]]
-
-    # Step 4: travel-time matrix
-    logger.info("Computing travel-time matrix...")
-    t_matrix = np.asarray(
-        mirror.h.distances(source=nodes_ig, target=nodes_ig, weights=duration_bc_ig),
-        dtype=float,
-    )
-    row_of = {int(node): i for i, node in enumerate(nodes.index)}
-
-    # Step 5: sample OD pairs
-    logger.info(
-        f"Sampling {n_pairs} OD pairs: {n_origins} origin draws × "
-        f"{n_destinations} destinations per draw..."
-    )
-    od_pairs_dict = sample_od_pairs_matrix(
-        nodes,
-        rng,
-        n_origins,
-        n_destinations,
-        config.lognorm_mu,
-        config.lognorm_sigma,
-        t_matrix,
-        row_of,
-    )
-
-    total = sum(len(d) for d in od_pairs_dict.values())
-    origins = np.empty(total, dtype=np.int64)
-    destinations = np.empty(total, dtype=np.int64)
-    at = 0
-    for origin, dests in od_pairs_dict.items():
-        stop = at + len(dests)
-        origins[at:stop] = origin
-        destinations[at:stop] = dests
-        at = stop
-
-    pairs = PairArrays(origins=origins[:n_pairs], destinations=destinations[:n_pairs])
-    logger.info(f"Generated {len(pairs)} OD pairs from {len(od_pairs_dict)} distinct origins")
-
-    if return_nodes:
-        return pairs, nodes
-    return pairs

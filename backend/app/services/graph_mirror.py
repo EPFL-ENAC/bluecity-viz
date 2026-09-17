@@ -13,9 +13,9 @@ to igraph as ``weights=``. Removing an edge is a weight of ``+inf``, which
 igraph treats as "never use this edge", so there is nothing to roll back and
 two requests cannot corrupt each other.
 
-Parallel edges (same u and v, different key) keep their own igraph edge id.
-Statistics are grouped back to (u, v) through ``uv_group``, because that is
-the key the API and the frontend use.
+Parallel edges (same u and v, different key) keep their own igraph edge id
+and their own value in every array. Statistics are grouped back to (u, v)
+through ``uv_group``, because a street is what the API and the frontend name.
 
 Two ways to build one: ``GraphMirror(graph)`` from a NetworkX MultiDiGraph,
 and ``GraphMirror.from_arrays(...)`` from plain numpy arrays. The second one
@@ -35,10 +35,10 @@ __all__ = ["GraphMirror"]
 
 logger = logging.getLogger(__name__)
 
-# Speed used when an edge has no usable speed_kph.
-# Two different values on purpose: they reproduce what the old code did.
-CO2_FALLBACK_SPEED_KPH = 40.0  # CO2Calculator.DEFAULT_SPEED_KPH
-BPR_FALLBACK_SPEED_KPH = 30.0  # bpr.write_bc_duration / apply_congestion_weights
+# Speed of an edge whose data gives none and whose travel time gives none
+# either: a city street nobody tagged. One value, used by every model that
+# reads a speed (routing, congestion, CO2).
+FALLBACK_SPEED_KPH = 30.0
 
 
 class GraphMirror:
@@ -54,15 +54,13 @@ class GraphMirror:
         jobs_fte     (n_nodes,) full-time jobs nearest to the node, 0 when unknown
         edge_u/v/key (n_edges,) the NetworkX (u, v, key) of each igraph edge
         length       metres
-        travel_time  free-flow seconds
-        speed_raw    km/h as the data gives it, 0 when missing
-        speed_free   km/h used by the BPR formula
-        speed_co2    km/h used by the CO2 model
+        speed_kph    free-flow km/h: the data value, else derived from the
+                     travel time, else FALLBACK_SPEED_KPH
+        travel_time  free-flow seconds, length / speed_kph
         lanes        int
         elev_gain    metres of climb
         uv_group     (n_edges,) index into the (u, v) groups
         uv_u, uv_v   (n_groups,) the (u, v) of each group
-        last_of_group (n_groups,) the last igraph edge id of each (u, v) group
     """
 
     def __init__(self, graph):
@@ -99,7 +97,7 @@ class GraphMirror:
             lanes=np.asarray(
                 [parse_lanes(d.get("lanes", 2)) for _u, _v, _k, d in edges], dtype=np.float64
             ),
-            speed_raw=np.asarray(
+            speed_kph=np.asarray(
                 [float(d.get("speed_kph") or 0.0) for _u, _v, _k, d in edges], dtype=np.float64
             ),
             elev_gain=elev_gain,
@@ -114,7 +112,7 @@ class GraphMirror:
         *,
         length: np.ndarray,
         travel_time: np.ndarray,
-        speed_raw: np.ndarray,
+        speed_kph: np.ndarray,
         lanes: np.ndarray,
         elev_gain: np.ndarray,
         edge_key: Optional[np.ndarray] = None,
@@ -143,7 +141,7 @@ class GraphMirror:
             length=np.asarray(length, dtype=np.float64),
             travel_time=np.asarray(travel_time, dtype=np.float64),
             lanes=np.asarray(lanes, dtype=np.float64),
-            speed_raw=np.asarray(speed_raw, dtype=np.float64),
+            speed_kph=np.asarray(speed_kph, dtype=np.float64),
             elev_gain=np.asarray(elev_gain, dtype=np.float64),
         )
         return mirror
@@ -158,7 +156,7 @@ class GraphMirror:
         length: np.ndarray,
         travel_time: np.ndarray,
         lanes: np.ndarray,
-        speed_raw: np.ndarray,
+        speed_kph: np.ndarray,
         elev_gain: np.ndarray,
         node_x: Optional[np.ndarray] = None,
         node_y: Optional[np.ndarray] = None,
@@ -197,31 +195,12 @@ class GraphMirror:
         self.h = ig.Graph(n=self.n_nodes, edges=ig_edges, directed=True)
 
         self.length = length
-        self.travel_time = travel_time
         self.lanes = lanes
         self.elev_gain = elev_gain
-        self.speed_raw = speed_raw
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            derived = np.where(
-                self.travel_time > 0,
-                (self.length / 1000.0) / (self.travel_time / 3600.0),
-                0.0,
-            )
-        have = speed_raw > 0
-        self.speed_free = np.where(have, speed_raw, BPR_FALLBACK_SPEED_KPH)
-        self.speed_co2 = np.where(
-            have, speed_raw, np.where(derived > 0, derived, CO2_FALLBACK_SPEED_KPH)
-        )
+        self.speed_kph, self.travel_time = self._free_flow(length, travel_time, speed_kph)
 
         self.uv_group, self.uv_u, self.uv_v = self._build_uv_groups()
         self.n_groups = len(self.uv_u)
-
-        # Last igraph edge of each (u, v) group. The OD sampler needs it: it
-        # used to key betweenness by (u, v) in a dict, so the last parallel
-        # edge won and the others read back as 0.
-        self.last_of_group = np.zeros(self.n_groups, dtype=np.int64)
-        self.last_of_group[self.uv_group] = np.arange(self.n_edges, dtype=np.int64)
 
         by_uv: Dict[Tuple[int, int], list] = {}
         for i in range(self.n_edges):
@@ -249,6 +228,23 @@ class GraphMirror:
             if diff > 0:
                 return float(diff)
         return 0.0
+
+    @staticmethod
+    def _free_flow(length, travel_time, speed_kph):
+        """The one free-flow speed and time of each edge.
+
+        The data usually gives a speed limit; when it does not, an existing
+        travel time says what the speed was, and otherwise the edge is a city
+        street at FALLBACK_SPEED_KPH. The time always follows the speed, so
+        length, speed and time stay one consistent triple: a route summing
+        travel_time and a CO2 model reading speed_kph describe the same drive.
+        """
+        with np.errstate(divide="ignore", invalid="ignore"):
+            derived = np.where(travel_time > 0, (length / 1000.0) / (travel_time / 3600.0), 0.0)
+        speed = np.where(
+            speed_kph > 0, speed_kph, np.where(derived > 0, derived, FALLBACK_SPEED_KPH)
+        )
+        return speed, length / (speed / 3.6)
 
     def _build_uv_groups(self):
         """Map every igraph edge to a (u, v) group, keeping first-seen order."""
