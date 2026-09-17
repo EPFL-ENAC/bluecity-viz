@@ -251,16 +251,17 @@ async function calculateRoutes() {
             <div>
               <div class="font-weight-bold mb-1">Static betweenness vs. iterative volumes</div>
               <div class="mb-2">
-                <strong>Off (static betweenness):</strong> BC is computed once on the modified graph
-                to derive congested travel times (<em>duration_bc</em>), then all affected routes
-                are re-run with those weights. Roads that structurally attract more flow appear
-                slower, discouraging over-assignment without any iteration.
+                <strong>Off:</strong> only the trips that used a modified street are re-routed, on
+                travel times derived from the betweenness of the modified network. Roads that
+                structurally attract more flow appear slower, so the displaced traffic spreads
+                instead of piling onto the one next-fastest street.
               </div>
               <div>
-                <strong>On (iterative volumes):</strong> actual simulated route volumes are counted,
-                normalised to daily vehicle-km, and fed into the BPR speed-reduction formula. Routes
-                are then re-run with the updated weights, repeating for the chosen number of
-                iterations, converging toward a <em>Wardrop user equilibrium</em>.
+                <strong>On:</strong> every trip is re-routed, and the simulated volumes are
+                normalised to daily vehicle-km and fed back into the BPR speed-reduction formula,
+                repeating for the chosen number of iterations, converging toward a
+                <em>Wardrop user equilibrium</em>. Slower, and the right choice when the
+                travel-time numbers themselves matter.
               </div>
             </div>
           </v-tooltip>
@@ -285,10 +286,11 @@ async function calculateRoutes() {
             <div>
               <div class="font-weight-bold mb-1">Elastic demand</div>
               <div>
-                When on, trip destinations are resampled to reflect that travellers adapt to new
-                travel times. Closing a major road shifts trips to closer destinations rather than
-                spiking total travel time. Origins remain unchanged; only destination choice
-                responds to the modified network.
+                When on, trip destinations are drawn again, to reflect that travellers adapt to
+                new travel times: closing a major road shifts trips to closer destinations rather
+                than spiking total travel time. Origins stay put, only the destination responds.
+                Because the destinations moved, no trip can be compared with itself, so the impact
+                panel shows totals only.
               </div>
             </div>
           </v-tooltip>

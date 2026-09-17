@@ -25,8 +25,7 @@ from app.models.cvrp import (
     CVRPRouteSegment,
     CVRPSolveResponse,
 )
-from app.services.graph_helpers import apply_edge_modifications
-from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
+from app.services.cvrp_graph import apply_edge_modifications, networkx_to_igraph_with_indices
 
 if TYPE_CHECKING:
     from app.services.graph_service import GraphService
@@ -657,10 +656,9 @@ class CVRPService:
         request: CVRPRequest,
     ) -> dict:
         """Synchronous CVRP solve pipeline (runs in thread pool)."""
-        # Apply edge modifications to our private copy (pass empty caches, the copy
-        # is thrown away after the solve)
+        # Applied on our private copy, which is thrown away after the solve.
         if request.edge_modifications:
-            apply_edge_modifications(graph, {}, {}, request.edge_modifications)
+            apply_edge_modifications(graph, request.edge_modifications)
 
         # Build igraph from (possibly modified) graph
         g_ig, idx_maps = networkx_to_igraph_with_indices(graph)
