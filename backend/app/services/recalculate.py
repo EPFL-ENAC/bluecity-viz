@@ -197,10 +197,16 @@ def _assign_targeted(area, base: BaselineRun, scenario: Scenario, timing: dict) 
     Everybody else keeps the route they had, which is what makes this cheap:
     closing one street usually touches a small share of the trips.
 
-    The new route is chosen on travel times derived from the betweenness of
-    the modified network, so a street that structurally attracts traffic looks
-    slower and absorbs less of the displaced load. Without that, every
-    displaced trip would pile onto the single next-fastest street.
+    The new route is chosen on the betweenness of the *modified* network, put
+    through the BPR curve, which is the rule the baseline was routed with on
+    the untouched network. Same rule on both sides, so the difference is the
+    scenario and nothing else. Without congestion in it, every displaced trip
+    would pile onto the single next-fastest street.
+
+    Two limits worth knowing. Closing a street moves the betweenness of every
+    other street a little, so in principle a trip that never used it could
+    prefer another route; it keeps the one it had. And a street made *faster*
+    only draws the trips already on it, since nobody else is re-routed.
     """
     mirror = area.mirror
 
@@ -209,7 +215,7 @@ def _assign_targeted(area, base: BaselineRun, scenario: Scenario, timing: dict) 
 
     with timed("delta_bc", timing):
         bc = None
-        weights = scenario.travel_time
+        weights = area.congested_time
         if not scenario.is_empty:
             bc = area.betweenness_for(scenario)
             weights = bpr.congested_travel_time(

@@ -49,7 +49,8 @@ def test_baseline_for_n_equals_routing_the_first_n_pairs(service):
     assert np.array_equal(base.pairs.origins, first_n.origins)
     assert np.array_equal(base.pairs.destinations, first_n.destinations)
 
-    fresh = route_pairs(service.mirror, first_n, service.mirror.travel_time)
+    # Same cost the baseline is routed with, see AreaGraph.congested_time.
+    fresh = route_pairs(service.mirror, first_n, service.default_area.congested_time)
     assert np.array_equal(base.counts, fresh.edge_counts(service.mirror.n_edges))
     assert base.routes.n_found == fresh.n_found
 
