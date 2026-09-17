@@ -99,12 +99,7 @@ async def lifespan(app: FastAPI):
 
         # Generate default OD pairs using research-based sampling
         logger.info("Initializing default routes with research-based sampling...")
-        await routes.graph_service.initialize_default_routes(
-            count=500,  # 500 OD pairs (research-based sampling is more intensive)
-            seed=42,
-            sampling_method="research",  # Use research-based method by default
-            sampling_config=None,  # Use default configuration
-        )
+        await routes.graph_service.initialize_default_routes(seed=42)
         logger.info("Default routes initialized")
 
         # The NetworkX graph and the default area live until the process ends.

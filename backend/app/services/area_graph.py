@@ -33,11 +33,12 @@ from app.models.route import (
 )
 from app.services import bpr, routing_engine
 from app.services.co2_calculator import CO2Calculator
-from app.services.graph_helpers import build_edge_usage_rows, modifications_to_arrays
 from app.services.graph_mirror import GraphMirror
 from app.services.impact_calculator import compute_impact_statistics_arrays
+from app.services.modifications import modifications_to_arrays
 from app.services.payload_cache import PayloadCache
 from app.services.routing_engine import PairArrays, RouteSet, route_pairs
+from app.services.usage_rows import build_edge_usage_rows
 from app.services.utils.timing import timed
 
 logger = logging.getLogger(__name__)
@@ -536,12 +537,7 @@ class AreaGraph:
             logger.warning("Unknown weight %r, using travel_time", weight)
         return self.mirror.travel_time
 
-    def calculate_routes(
-        self,
-        pairs: List[NodePair],
-        weight: str = "travel_time",
-        use_parallel: bool = None,
-    ) -> List[Route]:
+    def calculate_routes(self, pairs: List[NodePair], weight: str = "travel_time") -> List[Route]:
         """Shortest paths for the given OD pairs, as Route objects."""
         if not self.mirror or not pairs:
             return []
@@ -885,7 +881,6 @@ class AreaGraph:
 
         return TimingStats(
             cache_lookup_ms=ms("cache_lookup") or 0.0,
-            graph_copy_ms=0.0,
             apply_modifications_ms=ms("apply_modifications") or 0.0,
             od_resampling_ms=ms("od_resampling"),
             affected_routes_ms=ms("affected_routes"),

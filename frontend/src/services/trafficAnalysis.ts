@@ -102,7 +102,6 @@ export interface EdgeModification {
 
 export interface TimingStats {
   cache_lookup_ms: number
-  graph_copy_ms: number
   apply_modifications_ms: number
   od_resampling_ms?: number
   affected_routes_ms?: number
@@ -250,8 +249,6 @@ export async function recalculateRoutes(
     body: JSON.stringify({
       area_id: options?.areaId ?? null,
       edge_modifications: edgeModifications,
-      weight: 'travel_time',
-      include_geometry: true,
       use_congestion: options?.useCongestionModel ?? false,
       congestion_iterations: options?.congestionIterations ?? 1,
       resample_destinations: options?.elasticDemand ?? false,

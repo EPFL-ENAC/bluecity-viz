@@ -124,20 +124,3 @@ class CO2Calculator:
         grade_factor = 1.0 + grade * cls.GRADE_CO2_SENSITIVITY
 
         return np.where(length > 0, per_km * (length / 1000.0) * grade_factor, 0.0)
-
-    @classmethod
-    def calculate_route_co2(cls, edges_data: list) -> float:
-        """Calculate total CO₂ emissions for a route from a list of edge dicts.
-
-        Each dict should contain 'length', and optionally 'speed_kph',
-        'travel_time', and 'elevation_gain'.
-        """
-        return sum(
-            cls.calculate_edge_co2(
-                length=e.get("length", 0),
-                speed_kph=e.get("speed_kph"),
-                elevation_gain=e.get("elevation_gain", 0),
-                travel_time=e.get("travel_time"),
-            )
-            for e in edges_data
-        )

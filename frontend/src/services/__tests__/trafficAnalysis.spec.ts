@@ -58,8 +58,6 @@ describe('traffic analysis service', () => {
     expect(calledBody()).toEqual({
       area_id: null,
       edge_modifications: [{ u: 1, v: 2, action: 'remove' }],
-      weight: 'travel_time',
-      include_geometry: true,
       use_congestion: true,
       congestion_iterations: 3,
       resample_destinations: true,

@@ -354,13 +354,3 @@ def _reorder(
 def routed_pairs_subset(pairs, indices: np.ndarray) -> PairArrays:
     """Pick the OD pairs at these indices, keeping their order."""
     return PairArrays.coerce(pairs).subset(indices)
-
-
-def build_route_edge_index(routes: List[Route]) -> Dict[tuple, list]:
-    """Inverted index edge -> route indices. Kept for callers outside the hot path."""
-    edge_index: Dict[tuple, list] = {}
-    for i, route in enumerate(routes):
-        for j in range(len(route.path) - 1):
-            key = (route.path[j], route.path[j + 1])
-            edge_index.setdefault(key, []).append(i)
-    return edge_index

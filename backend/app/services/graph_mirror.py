@@ -279,18 +279,6 @@ class GraphMirror:
         """True when some node has residents or jobs, so the population weight means something."""
         return bool(self.residents.any() or self.jobs_fte.any())
 
-    def has_edge(self, u: int, v: int) -> bool:
-        return (u, v) in self._edge_ids_by_uv
-
-    def vertex_of(self, nx_node: int) -> Optional[int]:
-        return self.node_index.get(nx_node)
-
     def group_sum(self, per_edge: np.ndarray) -> np.ndarray:
         """Sum a per-edge array into per-(u, v)-group values."""
         return np.bincount(self.uv_group, weights=per_edge, minlength=self.n_groups)
-
-    def group_max(self, per_edge: np.ndarray) -> np.ndarray:
-        """Largest value per (u, v) group (used for values that must not be summed)."""
-        out = np.zeros(self.n_groups, dtype=np.float64)
-        np.maximum.at(out, self.uv_group, per_edge)
-        return out

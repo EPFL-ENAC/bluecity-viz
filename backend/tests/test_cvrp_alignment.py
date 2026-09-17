@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import LineString
 
+from app.services.cvrp_graph import networkx_to_igraph_with_indices
 from app.services.cvrp_service import (
     UNREACHABLE_DISTANCE,
     _build_problem_data,
@@ -17,7 +18,6 @@ from app.services.cvrp_service import (
     _ordered_locations,
     _solve_cvrp,
 )
-from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
 
 # Five nodes in a directed ring with very different lengths, so any wrong
 # pairing of rows and locations shows up as a wrong number.

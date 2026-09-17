@@ -14,15 +14,6 @@ class SamplingConfig(BaseModel):
       mode ≈ 940 s (≈ 15 min), reflecting typical urban trip lengths.
     """
 
-    n_origins: int = Field(
-        default=500,
-        ge=10,
-        le=2000,
-        description=(
-            "Unused when a pair count is given: the number of origin draws is "
-            "derived from n_pairs / n_destinations_per_origin."
-        ),
-    )
     n_destinations_per_origin: int = Field(
         default=200, ge=5, le=500, description="Number of destinations per origin"
     )

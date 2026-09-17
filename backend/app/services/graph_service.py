@@ -14,7 +14,7 @@ Delegates to:
   area_graph      - one routing graph, its OD pairs, its baseline and caches
   area_registry   - which areas are in memory, and which one to drop
   graph_mirror    - persistent igraph topology and per-edge arrays
-  graph_helpers   - graph serialization for the legacy endpoints
+  graph_export    - graph serialization for the legacy endpoints
 """
 
 import functools
@@ -31,7 +31,7 @@ from app.models.route import NodePair, Route
 from app.services.area_graph import DEFAULT_AREA_ID, AreaGraph, Baseline
 from app.services.area_registry import AreaNotLoaded, AreaRegistry
 from app.services.co2_calculator import CO2Calculator
-from app.services.graph_helpers import get_edge_geometries, get_graph_data
+from app.services.graph_export import get_edge_geometries, get_graph_data
 from app.services.routing_engine import PairArrays
 from app.services.utils.timing import timed  # noqa: F401 - kept for the old import path
 
@@ -155,14 +155,7 @@ class GraphService:
 
     # ── Startup: OD pairs and baseline ────────────────────────────────────────
 
-    async def initialize_default_routes(
-        self,
-        count: int = 500,
-        radius_km: float = 2.0,
-        seed: int = 42,
-        sampling_method: str = "research",
-        sampling_config=None,
-    ):
+    async def initialize_default_routes(self, seed: int = 42, sampling_config=None):
         """Await-able wrapper: runs the sync startup work in a worker thread.
 
         main.py calls this with `await` during the FastAPI lifespan. The work
@@ -170,24 +163,25 @@ class GraphService:
         """
         await anyio.to_thread.run_sync(
             functools.partial(
-                self.initialize_default_routes_sync,
-                count=count,
-                radius_km=radius_km,
-                seed=seed,
-                sampling_method=sampling_method,
-                sampling_config=sampling_config,
+                self.initialize_default_routes_sync, seed=seed, sampling_config=sampling_config
             )
         )
 
     def initialize_default_routes_sync(
         self,
-        count: int = 500,
-        radius_km: float = 2.0,
         seed: int = 42,
-        sampling_method: str = "research",
         sampling_config=None,
+        sampling_method: str = "research",
+        count: int = 100,
+        radius_km: float = 2.0,
     ):
-        """Generate the default OD pairs and compute the baseline once."""
+        """Draw the default OD pairs and compute the baseline once.
+
+        The app always runs the research sampler, which draws OD_PAIRS_MAX
+        pairs: the size is a setting, not an argument. `sampling_method` and
+        `count` are there for the tests, which want a handful of random pairs
+        on a synthetic graph instead.
+        """
         if not self.graph:
             raise RuntimeError("Graph not loaded")
 
@@ -198,19 +192,13 @@ class GraphService:
         area.sampling_config = config
 
         if sampling_method == "research":
-            # main.py still passes count=500, which the old sampler ignored: the
-            # real size was n_origins x n_destinations_per_origin. The size is a
-            # setting now. Drop the argument in main.py when that file is free.
-            n_pairs = settings.od_pairs_max
-            if settings.od_pairs > n_pairs:
+            if settings.od_pairs > settings.od_pairs_max:
                 raise ValueError(
-                    f"OD_PAIRS ({settings.od_pairs}) cannot be larger than OD_PAIRS_MAX ({n_pairs})"
+                    f"OD_PAIRS ({settings.od_pairs}) cannot be larger than "
+                    f"OD_PAIRS_MAX ({settings.od_pairs_max})"
                 )
-            if count != n_pairs:
-                logger.info("[STARTUP] ignoring count=%s, using OD_PAIRS_MAX=%d", count, n_pairs)
-            # No lock: the sampler reads the mirror and writes nothing. The old
-            # one set weight attributes on the shared NetworkX graph.
-            area.sample_research_pairs(n_pairs, config, seed)
+            # No lock: the sampler reads the mirror and writes nothing.
+            area.sample_research_pairs(settings.od_pairs_max, config, seed)
         else:
             logger.info("[STARTUP] simple random sampling, %d OD pairs", count)
             area.pairs = PairArrays.from_nodepairs(
@@ -236,11 +224,7 @@ class GraphService:
         return self.area(area_id).baseline_payload(od_pairs, node_weighting)
 
     def calculate_routes(
-        self,
-        pairs,
-        weight: str = "travel_time",
-        use_parallel: bool = None,
-        area_id: Optional[str] = None,
+        self, pairs, weight: str = "travel_time", area_id: Optional[str] = None
     ) -> List[Route]:
         return self.area(area_id).calculate_routes(pairs, weight=weight)
 

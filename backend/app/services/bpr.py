@@ -101,11 +101,6 @@ def compute_betweenness(
     return raw * factor
 
 
-def congested_speed(mirror, flow: np.ndarray, speed_kph: np.ndarray, config) -> np.ndarray:
-    """BPR congested speed per edge, in km/h."""
-    return speed_kph / (1.0 + flow / (mirror.lanes * config.betweenness_to_slowdown))
-
-
 def run_congestion_routing(
     mirror,
     pairs,

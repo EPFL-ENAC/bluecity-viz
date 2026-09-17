@@ -5,13 +5,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.config import settings
-
-# Re-export SamplingConfig from node_sampling_service for API use
-try:
-    from app.services.node_sampling_service import SamplingConfig
-except ImportError:
-    # Fallback if service not available
-    SamplingConfig = None
+from app.services.sampling.config import SamplingConfig
 
 
 class NodePair(BaseModel):
@@ -71,7 +65,6 @@ class RouteRequest(BaseModel):
 
     pairs: List[NodePair] = Field(..., description="List of origin-destination pairs")
     weight: str = Field(default="travel_time", description="Edge weight attribute")
-    include_geometry: bool = Field(default=False, description="Include path geometry")
     area_id: Optional[str] = Field(
         default=None,
         description=(
@@ -106,8 +99,6 @@ class RecalculateRequest(BaseModel):
         max_length=500,
         description="Edge modifications (remove or change speed)",
     )
-    weight: str = Field(default="travel_time", description="Edge weight attribute")
-    include_geometry: bool = Field(default=False, description="Include path geometry")
     use_congestion: bool = Field(
         default=False, description="Use iterative congestion-aware routing on modified graph"
     )
@@ -162,34 +153,6 @@ class RecalculateRequest(BaseModel):
                 f"(OD_PAIRS_MAX, the set sampled at startup)"
             )
         return value
-
-
-class RouteComparison(BaseModel):
-    """Comparison between original and recalculated route."""
-
-    origin: int
-    destination: int
-    original_route: Route
-    new_route: Route
-    modified_edge_on_path: Optional[EdgeModification] = None
-    distance_delta: Optional[float] = Field(
-        None, description="Additional distance in meters (new - original)"
-    )
-    distance_delta_percent: Optional[float] = Field(
-        None, description="Percentage increase in distance"
-    )
-    time_delta: Optional[float] = Field(
-        None, description="Additional travel time in seconds (new - original)"
-    )
-    time_delta_percent: Optional[float] = Field(
-        None, description="Percentage increase in travel time"
-    )
-    is_affected: bool = Field(
-        False, description="Whether this route was affected by edge modifications"
-    )
-    route_failed: bool = Field(
-        False, description="Whether route calculation failed (no path found)"
-    )
 
 
 class EdgeUsageStats(BaseModel):
@@ -264,7 +227,6 @@ class TimingStats(BaseModel):
     """Per-phase timing breakdown for a recalculate request (all values in ms)."""
 
     cache_lookup_ms: float = Field(..., description="Original route lookup or computation")
-    graph_copy_ms: float = Field(..., description="Graph deep-copy")
     apply_modifications_ms: float = Field(..., description="Applying edge modifications")
     od_resampling_ms: Optional[float] = Field(
         None, description="OD destination resampling (elastic demand mode only)"

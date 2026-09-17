@@ -9,12 +9,12 @@ from fastapi.testclient import TestClient
 from shapely.geometry import LineString
 
 from app.config import settings
+from app.services.cvrp_graph import networkx_to_igraph_with_indices
 from app.services.cvrp_service import DEPOT_LAT, DEPOT_LON, CVRPService
 from app.services.graph_service import GraphService
 from app.services.graph_store import GraphStore, Grid
 from app.services.graph_store import distance_m as store_distance
 from app.services.graph_store_writer import write_store
-from app.services.sampling.igraph_utils import networkx_to_igraph_with_indices
 
 # Grid size: 4 columns x 5 rows = 20 nodes.
 GRID_COLS = 4
