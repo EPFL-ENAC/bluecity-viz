@@ -1,24 +1,9 @@
 <script setup lang="ts">
+import type { ImpactStatistics } from '@/services/trafficAnalysis'
 import { formatCo2, formatCount, formatDistance, formatTime } from '@/utils/impactFormat'
 import { computed } from 'vue'
 
-export interface ImpactStats {
-  total_routes: number
-  affected_routes: number
-  failed_routes: number
-  total_distance_increase_km: number
-  total_time_increase_minutes: number
-  avg_distance_increase_km: number
-  avg_time_increase_minutes: number
-  max_distance_increase_km: number
-  max_time_increase_minutes: number
-  avg_distance_increase_percent: number
-  avg_time_increase_percent: number
-  total_co2_increase_grams?: number
-  avg_co2_increase_grams?: number
-  max_co2_increase_grams?: number
-  avg_co2_increase_percent?: number
-}
+export type ImpactStats = ImpactStatistics
 
 interface Props {
   statistics: ImpactStats | null
@@ -44,20 +29,20 @@ const rows = computed(() => {
   return [
     {
       key: 'Distance',
-      total: formatDistance(s.total_distance_increase_km),
-      avg: formatDistance(s.avg_distance_increase_km),
+      total: formatDistance(s.total_distance_change_km),
+      avg: formatDistance(s.avg_distance_change_km),
       max: formatDistance(s.max_distance_increase_km)
     },
     {
       key: 'Time',
-      total: formatTime(s.total_time_increase_minutes),
-      avg: formatTime(s.avg_time_increase_minutes),
+      total: formatTime(s.total_time_change_minutes),
+      avg: formatTime(s.avg_time_change_minutes),
       max: formatTime(s.max_time_increase_minutes)
     },
     {
       key: 'CO₂',
-      total: formatCo2(s.total_co2_increase_grams),
-      avg: formatCo2(s.avg_co2_increase_grams),
+      total: formatCo2(s.total_co2_change_grams),
+      avg: formatCo2(s.avg_co2_change_grams),
       max: formatCo2(s.max_co2_increase_grams)
     }
   ]
@@ -73,7 +58,7 @@ const rows = computed(() => {
       <span class="impact__col">Total</span>
       <template v-if="!elasticDemand">
         <span class="impact__col">Avg</span>
-        <span class="impact__col">Max</span>
+        <span class="impact__col" title="The worst single trip">Max</span>
       </template>
 
       <template v-for="row in rows" :key="row.key">

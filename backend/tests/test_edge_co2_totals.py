@@ -58,16 +58,18 @@ def test_edge_co2_is_one_vehicle_times_the_count_per_km(area):
 
 
 def test_closing_a_street_moves_the_co2_and_the_totals_still_match(area, monkeypatch):
+    from app.services import recalculate as pipeline
+
     mirror = area.mirror
     captured = {}
-    targeted = area._strategy_targeted_bc
+    targeted = pipeline._assign_targeted
 
     def spy(*args, **kwargs):
-        new_routes, affected_idx, delta_bc = targeted(*args, **kwargs)
-        captured["new_routes"], captured["affected_idx"] = new_routes, affected_idx
-        return new_routes, affected_idx, delta_bc
+        assignment = targeted(*args, **kwargs)
+        captured["assignment"] = assignment
+        return assignment
 
-    monkeypatch.setattr(area, "_strategy_targeted_bc", spy)
+    monkeypatch.setattr(pipeline, "_assign_targeted", spy)
 
     busiest = max(area.baseline.usage_rows, key=lambda r: r["count"])
     result = area.recalculate_with_modifications(
@@ -78,9 +80,10 @@ def test_closing_a_street_moves_the_co2_and_the_totals_still_match(area, monkeyp
 
     # the routes after the change: the untouched ones, plus the rerouted ones
     routes = area.baseline.routes
-    affected = captured["affected_idx"]
+    assignment = captured["assignment"]
+    affected = assignment.rerouted
     assert len(affected) > 0
-    expected = routes.co2.sum() - routes.co2[affected].sum() + captured["new_routes"].co2.sum()
+    expected = routes.co2.sum() - routes.co2[affected].sum() + assignment.routes.co2.sum()
     assert grams(mirror, new) == pytest.approx(expected, abs=tol)
 
     # the deltas add up to the real change, the closed street included

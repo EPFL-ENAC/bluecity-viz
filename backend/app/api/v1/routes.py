@@ -21,7 +21,7 @@ from app.models.route import (
 )
 from app.services.area_graph import NoPopulationData
 from app.services.area_registry import AreaNotLoaded
-from app.services.graph_helpers import habitat_geojson
+from app.services.graph_export import habitat_geojson
 from app.services.graph_service import GraphService
 from app.services.payload_cache import PayloadCache
 
@@ -163,7 +163,6 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
         result = _area(request.area_id).recalculate_with_modifications(
             pairs=request.pairs,
             edge_modifications=request.edge_modifications,
-            weight=request.weight,
             use_congestion=request.use_congestion,
             congestion_iterations=request.congestion_iterations,
             resample_destinations=request.resample_destinations,
@@ -292,7 +291,7 @@ def generate_random_pairs(request: RandomPairsRequest):
                 n_pairs=request.count,
                 config=config,
                 seed=request.seed or 42,
-            ).to_nodepairs()
+            ).pairs.to_nodepairs()
         else:
             pairs = _area(request.area_id).generate_random_pairs(
                 count=request.count,
