@@ -9,6 +9,7 @@ import math
 import numpy as np
 import pytest
 
+from app.config import settings
 from app.models.route import EdgeModification, NodePair
 from app.services import recalculate as pipeline
 from app.services.modifications import build_scenario
@@ -19,6 +20,21 @@ from app.services.routing_engine import route_pairs
 def area(graph_service):
     graph_service.initialize_default_routes_sync(count=80, sampling_method="random", seed=1)
     return graph_service.default_area
+
+
+@pytest.fixture
+def research_area(graph_service):
+    """An area drawn by the research sampler, so it has a junction pool.
+
+    Elastic demand draws its new destinations from that pool. Without it
+    `recalculate` quietly falls back to the targeted model, so the plain
+    `area` fixture cannot test elastic at all.
+    """
+    old_max, old_default = settings.od_pairs_max, settings.od_pairs
+    settings.od_pairs_max, settings.od_pairs = 200, 200
+    graph_service.initialize_default_routes_sync(seed=1, sampling_method="research")
+    yield graph_service.default_area
+    settings.od_pairs_max, settings.od_pairs = old_max, old_default
 
 
 def rows_by_street(rows):
@@ -202,8 +218,51 @@ def test_the_equilibrium_model_runs_and_reroutes_every_trip(area, closure):
     assert result["impact_statistics"]["total_routes"] > 0
 
 
-def test_elastic_demand_gives_the_same_answer_twice(area, closure):
+def test_the_equilibrium_model_compares_against_an_equilibrium_baseline(area):
+    """A no-op scenario has to change nothing in the equilibrium model too.
+
+    It used to be compared with the free-flow baseline, so the deltas showed
+    congestion spreading the traffic out, which happens with or without a
+    scenario. On Lausanne an empty scenario reported 1444 trips moving and
+    70 minutes of extra driving.
+    """
+    result = area.recalculate_with_modifications(
+        edge_modifications=[], use_congestion=True, congestion_iterations=2
+    )
+
+    stats = result["impact_statistics"]
+    assert stats["affected_routes"] == 0
+    assert stats["failed_routes"] == 0
+    for key, value in stats.items():
+        if key != "total_routes" and isinstance(value, (int, float)):
+            assert value == 0, f"{key} is {value}"
+    for row in result["new_edge_usage"]:
+        assert row["delta_count"] == 0, f"{row['u']}-{row['v']} moved"
+
+
+def test_the_equilibrium_baseline_is_computed_once(area):
+    """It costs a whole MSA run, so it is cached on the OD set."""
+    od = area.od["uniform"]
+    assert not od.equilibrium
+
+    first = area.equilibrium_baseline_for(len(area.baseline.pairs), 2)
+    again = area.equilibrium_baseline_for(len(area.baseline.pairs), 2)
+
+    assert again is first
+    assert len(od.equilibrium) == 1
+    # Another iteration count is another baseline, not the same one reused.
+    other = area.equilibrium_baseline_for(len(area.baseline.pairs), 3)
+    assert other is not first
+    assert len(od.equilibrium) == 2
+
+
+# ── Elastic demand ────────────────────────────────────────────────────────────
+
+
+def test_elastic_demand_gives_the_same_answer_twice(research_area):
     """It draws new destinations, so it needs a seed like everything else."""
+    area = research_area
+    closure = [EdgeModification(u=1000, v=1001, action="remove")]
     once = area.recalculate_with_modifications(
         edge_modifications=closure, resample_destinations=True
     )
@@ -213,6 +272,39 @@ def test_elastic_demand_gives_the_same_answer_twice(area, closure):
 
     assert once["new_edge_usage"] == twice["new_edge_usage"]
     assert once["impact_statistics"] == twice["impact_statistics"]
+
+
+def test_the_elastic_redraw_sees_the_closed_street(research_area, monkeypatch):
+    """The new destinations are drawn on the modified network, not the old one.
+
+    A destination behind a closed street is far away now, so the draw has to
+    be told about the closure. It used to redraw on free-flow times while the
+    first draw had used congested ones, two different rules for the same step.
+    """
+    from app.services.sampling import od_sampler
+
+    area = research_area
+    seen = {}
+    real = od_sampler.resample_od_destinations
+
+    def spy(pairs, nodes, mirror, weights, config, seed):
+        seen["weights"] = weights
+        return real(pairs, nodes, mirror, weights, config, seed)
+
+    monkeypatch.setattr(od_sampler, "resample_od_destinations", spy)
+
+    ids = area.mirror.edge_ids_for(1000, 1001)
+    area.recalculate_with_modifications(
+        edge_modifications=[EdgeModification(u=1000, v=1001, action="remove")],
+        resample_destinations=True,
+    )
+
+    weights = seen["weights"]
+    assert np.isinf(weights[ids]).all(), "the closed street is still walkable in the draw"
+    # And the rest is the congested times, not the free-flow ones.
+    open_edges = np.setdiff1d(np.arange(area.mirror.n_edges), ids)
+    assert np.all(weights[open_edges] >= area.mirror.travel_time[open_edges] - 1e-9)
+    assert not np.array_equal(weights[open_edges], area.mirror.travel_time[open_edges])
 
 
 def test_the_congestion_sensitivity_changes_the_result(area, closure):

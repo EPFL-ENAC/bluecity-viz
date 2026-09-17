@@ -150,10 +150,16 @@ function visLabel(mode: string, fallback: string) {
   return VIS_LABELS[mode] ?? fallback
 }
 
-/** The baseline and the run, both on the area the store points at. */
+/**
+ * The baseline and the run, both on the area the store points at.
+ *
+ * The equilibrium model is compared with a baseline run the same way, which
+ * the answer carries, so GET /baseline is not asked in that mode.
+ */
 function runOnce(odPairs: number | undefined) {
+  const ownBaseline = trafficStore.useCongestionModel
   return Promise.all([
-    trafficStore.getBaseline(odPairs),
+    ownBaseline ? Promise.resolve(null) : trafficStore.getBaseline(odPairs),
     recalculateRoutes(scenarioStore.wire, {
       useCongestionModel: trafficStore.useCongestionModel,
       congestionIterations: trafficStore.congestionIterations,
@@ -203,12 +209,12 @@ async function calculateRoutes() {
     // The count changed while we were waiting, this answer is for the old one.
     if (odPairs !== chosenOdPairs()) return
 
-    if (baseline.odPairs !== result.od_pairs) {
+    if (baseline && baseline.odPairs !== result.od_pairs) {
       console.warn(`Baseline is on ${baseline.odPairs} pairs, the run on ${result.od_pairs}`)
     }
 
     trafficStore.setEdgeUsage(
-      baseline.rows,
+      baseline?.rows ?? result.original_edge_usage ?? [],
       result.new_edge_usage,
       result.impact_statistics,
       result.od_pairs,

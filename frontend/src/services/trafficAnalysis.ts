@@ -208,9 +208,13 @@ export async function fetchGraphInfo(areaId?: string | null): Promise<GraphInfo>
 }
 
 /**
- * Edge usage of the unmodified network. It never changes while the server
- * runs, so it is served with an ETag: a plain fetch does the conditional
- * request by itself and gets a 304 on the second load.
+ * Edge usage of the unmodified network, free flow. It never changes while the
+ * server runs, so it is served with an ETag: a plain fetch does the
+ * conditional request by itself and gets a 304 on the second load.
+ *
+ * Not the right baseline for the equilibrium model: that one re-routes every
+ * trip until the volumes settle, and has to be compared with the same thing
+ * run on the untouched network. `recalculateRoutes` brings it back instead.
  */
 export async function fetchBaseline(
   odPairs?: number,
@@ -263,9 +267,11 @@ export async function recalculateRoutes(
       resample_destinations: options?.elasticDemand ?? false,
       node_weighting: options?.nodeWeighting ?? 'uniform',
       od_pairs: options?.odPairs ?? null,
-      // the baseline is the same for every run, we fetch it once from
-      // GET /baseline instead of carrying it in every answer
-      include_baseline: false
+      // The free-flow baseline is the same for every run, we fetch it once
+      // from GET /baseline instead of carrying it in every answer. The
+      // equilibrium model has its own baseline, which that endpoint does not
+      // know, so there we take the one the answer carries.
+      include_baseline: options?.useCongestionModel ?? false
     })
   })
   if (!response.ok) await throwHttpError(response, 'Failed to recalculate routes')

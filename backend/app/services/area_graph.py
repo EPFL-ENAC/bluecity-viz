@@ -48,6 +48,9 @@ ROUTE_CACHE_SIZE = 3
 BC_CACHE_SIZE = 16
 # One entry per OD pair count a client asks for.
 BASELINE_CACHE_SIZE = 8
+# One entry per (pair count, iteration count) the equilibrium model is asked
+# for. Each holds a route set, so keep few.
+EQUILIBRIUM_CACHE_SIZE = 2
 
 # An area the user drew is smaller and there are many of them, so it keeps
 # less. Lausanne is pinned and answers most requests, so it keeps the old
@@ -55,6 +58,7 @@ BASELINE_CACHE_SIZE = 8
 DYNAMIC_ROUTE_CACHE_SIZE = 1
 DYNAMIC_BASELINE_CACHE_SIZE = 2
 DYNAMIC_BC_CACHE_SIZE = 8
+DYNAMIC_EQUILIBRIUM_CACHE_SIZE = 1
 
 # Rough cost of one usage row (a small dict of 9 numbers) in CPython.
 USAGE_ROW_BYTES = 300
@@ -118,6 +122,10 @@ class OdSet:
     nodes: object = None  # pd.Series {node id: weight}, pool for resampling
     baseline: Optional[Baseline] = None
     by_n: "OrderedDict[int, Baseline]" = field(default_factory=OrderedDict)
+    # The equilibrium model needs its own baseline, keyed by (pairs,
+    # iterations): an MSA run on the untouched network, so that its deltas
+    # show the scenario and not the congestion spreading itself.
+    equilibrium: "OrderedDict[tuple, Baseline]" = field(default_factory=OrderedDict)
 
 
 def _nbytes(*arrays) -> int:
@@ -209,6 +217,10 @@ class AreaGraph:
     @property
     def bc_cache_size(self) -> int:
         return DYNAMIC_BC_CACHE_SIZE if self.dynamic else BC_CACHE_SIZE
+
+    @property
+    def equilibrium_cache_size(self) -> int:
+        return DYNAMIC_EQUILIBRIUM_CACHE_SIZE if self.dynamic else EQUILIBRIUM_CACHE_SIZE
 
     # ── OD pairs and startup ──────────────────────────────────────────────────
 
@@ -350,6 +362,11 @@ class AreaGraph:
                 # the route set is a view on the baseline one, only the rows are new
                 total += _nbytes(small.counts, small.counts_group, small.co2_per_km_group)
                 total += USAGE_ROW_BYTES * len(small.usage_rows)
+            for eq in od.equilibrium.values():
+                # a real route set of its own, routed on the congested times
+                total += route_set_bytes(eq.routes)
+                total += _nbytes(eq.counts, eq.counts_group, eq.co2_per_km_group)
+                total += USAGE_ROW_BYTES * len(eq.usage_rows)
         for rs in self.route_cache.values():
             total += route_set_bytes(rs)
         for bc in self._bc_cache.values():
@@ -378,11 +395,15 @@ class AreaGraph:
     def clear_route_cache(self) -> None:
         """Drop the memoised route sets and betweenness.
 
-        The baselines stay: they are the unmodified network, they only change
-        when the graph or the OD sample changes, which means a restart.
+        The free-flow baselines stay: they are the unmodified network, they
+        only change when the graph or the OD sample changes, which means a
+        restart. The equilibrium ones go, they are the expensive memoisation
+        this is meant to free.
         """
         self.route_cache.clear()
         self._bc_cache.clear()
+        for od in self.od.values():
+            od.equilibrium.clear()
 
     # ── Baseline ──────────────────────────────────────────────────────────────
 
@@ -455,6 +476,55 @@ class AreaGraph:
         )
         return small
 
+    def equilibrium_baseline_for(
+        self, n_pairs: int, iterations: int, node_weighting: NodeWeighting = "uniform"
+    ) -> Baseline:
+        """The untouched network under the equilibrium model, for these trips.
+
+        The equilibrium model re-routes every trip on the travel times the
+        volumes imply, so it does not land on the free-flow baseline even when
+        the user changed nothing: congestion alone moves traffic around. Its
+        deltas only mean something against a baseline run the same way, which
+        is what this is.
+
+        It costs one MSA run (`iterations + 1` routings of the whole sample),
+        paid on the first request that asks for this pair count and iteration
+        count, and cached after that.
+        """
+        base = self.baseline_for(n_pairs, node_weighting)
+        od = self.od[node_weighting]
+        key = (len(base.pairs), iterations)
+        cached = od.equilibrium.get(key)
+        if cached is not None:
+            od.equilibrium.move_to_end(key)
+            return cached
+
+        mirror = self.mirror
+        t0 = time.perf_counter()
+        routes, volumes = bpr.run_congestion_routing(
+            mirror,
+            base.pairs,
+            mirror.travel_time,
+            mirror.speed_kph,
+            None,
+            iterations,
+            self.sampling_config,
+        )
+        routes.compute_metrics(mirror, mirror.travel_time, self.base_co2_g)
+        logger.info(
+            "[AREA %s] equilibrium baseline, %d pairs, %d iterations, %.1f s",
+            self.meta.id,
+            len(base.pairs),
+            iterations,
+            time.perf_counter() - t0,
+        )
+
+        eq = self._baseline_from(base.pairs, routes, volumes, base.bc, base.bc_group)
+        od.equilibrium[key] = eq
+        while len(od.equilibrium) > self.equilibrium_cache_size:
+            od.equilibrium.popitem(last=False)
+        return eq
+
     def build_baseline(self, config, seed: int) -> None:
         """Route the default pairs, compute betweenness and the CO2 per edge."""
         mirror = self.mirror
@@ -512,8 +582,23 @@ class AreaGraph:
         logger.info(
             "[AREA %s] %d routes in %.1f s", self.meta.id, routes.n_found, time.perf_counter() - t0
         )
+        return self._baseline_from(pairs, routes, routes.edge_counts(mirror.n_edges), bc, bc_group)
 
-        counts = routes.edge_counts(mirror.n_edges)
+    def _baseline_from(
+        self,
+        pairs: PairArrays,
+        routes: RouteSet,
+        counts: np.ndarray,
+        bc: np.ndarray,
+        bc_group: np.ndarray,
+    ) -> Baseline:
+        """Wrap routes and their edge counts into a Baseline, with its rows.
+
+        The counts are passed in rather than taken from the routes, because
+        the equilibrium baseline counts averaged volumes, not the edges of one
+        assignment.
+        """
+        mirror = self.mirror
         counts_group = mirror.group_sum(counts)
         # Same grams as the routes, so times the length the edges add up to
         # the route totals.

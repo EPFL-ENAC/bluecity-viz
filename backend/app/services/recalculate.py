@@ -64,12 +64,17 @@ class Assignment:
         elastic   True when the trips drew new destinations, so trip i of
                   `routes` is not trip i of the baseline and only totals can
                   be compared.
+        counts    the edge counts to report, when they are not simply the
+                  edges of `routes`. The equilibrium model sets it: what it
+                  puts on the map is the volume averaged over its passes, not
+                  the last assignment.
     """
 
     routes: RouteSet
     rerouted: Optional[np.ndarray]
     bc: Optional[np.ndarray]
     elastic: bool = False
+    counts: Optional[np.ndarray] = None
 
     @property
     def is_full_reroute(self) -> bool:
@@ -114,8 +119,12 @@ def recalculate(
     t_total = time.perf_counter()
     timing: dict = {}
 
+    # The equilibrium model needs a baseline run the same way, or its deltas
+    # would show congestion spreading traffic rather than the scenario.
+    equilibrium_iterations = congestion_iterations if use_congestion else None
+
     with timed("cache_lookup", timing):
-        base = _baseline_run(area, od, pairs, od_pairs, node_weighting)
+        base = _baseline_run(area, od, pairs, od_pairs, node_weighting, equilibrium_iterations)
 
     with timed("apply_modifications", timing):
         scenario = build_scenario(mirror, area.base_co2_g, edge_modifications or [])
@@ -153,12 +162,23 @@ def recalculate(
 # ── 1. the trips and their baseline ───────────────────────────────────────────
 
 
-def _baseline_run(area, od, pairs, od_pairs: Optional[int], node_weighting: str) -> BaselineRun:
+def _baseline_run(
+    area,
+    od,
+    pairs,
+    od_pairs: Optional[int],
+    node_weighting: str,
+    equilibrium_iterations: Optional[int] = None,
+) -> BaselineRun:
     """The untouched network for the trips of this request.
 
     Normally the trips are the first N of the area's OD sample, whose baseline
     was computed at startup and only has to be sliced. A client may also send
     its own pairs, and then the baseline is routed here and memoised.
+
+    `equilibrium_iterations` asks for the baseline of the equilibrium model
+    instead: the same trips on the same untouched network, but assigned by the
+    same MSA loop the scenario will run. Built on first use, then cached.
     """
     mirror = area.mirror
     if pairs:
@@ -177,7 +197,10 @@ def _baseline_run(area, od, pairs, od_pairs: Optional[int], node_weighting: str)
     if od.pairs is None:
         raise RuntimeError("No pairs available")
     n_pairs = min(od_pairs or settings.od_pairs, len(od.pairs))
-    cached = area.baseline_for(n_pairs, node_weighting)
+    if equilibrium_iterations is not None:
+        cached = area.equilibrium_baseline_for(n_pairs, equilibrium_iterations, node_weighting)
+    else:
+        cached = area.baseline_for(n_pairs, node_weighting)
     return BaselineRun(
         pairs=cached.pairs,
         routes=cached.routes,
@@ -241,6 +264,14 @@ def _assign_equilibrium(
     Congestion moves load across the whole network, so no trip can be assumed
     unaffected: a street far from the closure gets slower because the traffic
     that left the closure arrived on it. See `bpr.run_congestion_routing`.
+
+    The baseline this is compared with is an MSA run of the same length on the
+    untouched network (`area.equilibrium_baseline_for`), not the free-flow
+    one: otherwise the deltas would mostly show congestion spreading traffic
+    around, which happens with or without the scenario.
+
+    The map gets the averaged volumes, the impact table the routes of the last
+    pass, which is the only thing a per-trip comparison can be made on.
     """
     mirror = area.mirror
 
@@ -248,7 +279,7 @@ def _assign_equilibrium(
         bc = area.betweenness_for(scenario) if not scenario.is_empty else None
 
     with timed("route_calculation", timing):
-        routes = bpr.run_congestion_routing(
+        routes, volumes = bpr.run_congestion_routing(
             mirror,
             base.pairs,
             scenario.travel_time,
@@ -259,7 +290,7 @@ def _assign_equilibrium(
         )
         routes.compute_metrics(mirror, scenario.travel_time, scenario.co2_g)
 
-    return Assignment(routes=routes, rerouted=None, bc=bc)
+    return Assignment(routes=routes, rerouted=None, bc=bc, counts=volumes)
 
 
 def _assign_elastic(
@@ -270,20 +301,36 @@ def _assign_elastic(
     Fixed demand says a traveller drives to the same place whatever it costs.
     Elastic demand lets the destination move: closing a road then shows up as
     trips getting shorter, not as an implausible total travel time.
+
+    The draw and the routing both use the congested times of the modified
+    network, which is the rule the startup draw followed on the untouched one.
+    A destination is picked on how long it really takes to get there, so a
+    closed street pushes the draw away from what is behind it.
     """
     from app.services.sampling.od_sampler import resample_od_destinations
 
     mirror = area.mirror
-    with timed("od_resampling", timing):
-        new_pairs = resample_od_destinations(
-            base.pairs, od_nodes, mirror, scenario.travel_time, area.sampling_config, area.seed
-        )
 
     with timed("delta_bc", timing):
-        bc = area.betweenness_for(scenario) if not scenario.is_empty else None
+        bc = None
+        weights = area.congested_time
+        if not scenario.is_empty:
+            bc = area.betweenness_for(scenario)
+            weights = bpr.congested_travel_time(
+                mirror,
+                bc,
+                scenario.speed_kph,
+                area.sampling_config.betweenness_to_slowdown,
+                scenario.blocked,
+            )
+
+    with timed("od_resampling", timing):
+        new_pairs = resample_od_destinations(
+            base.pairs, od_nodes, mirror, weights, area.sampling_config, area.seed
+        )
 
     with timed("route_calculation", timing):
-        routes = route_pairs(mirror, new_pairs, scenario.travel_time)
+        routes = route_pairs(mirror, new_pairs, weights)
         routes.compute_metrics(mirror, scenario.travel_time, scenario.co2_g)
 
     return Assignment(routes=routes, rerouted=None, bc=bc, elastic=True)
@@ -295,10 +342,14 @@ def _assign_elastic(
 def counts_after(mirror, base: BaselineRun, assignment: Assignment) -> np.ndarray:
     """How many trips use each edge once the scenario is applied.
 
-    A full reroute is simply counted. A targeted one is patched onto the
-    baseline counts: take away the old routes of the trips that moved, add
-    their new ones, and every trip that did not move keeps counting.
+    An assignment that brought its own counts (the equilibrium model, whose
+    answer is an averaged volume) reports them. A full reroute is simply
+    counted. A targeted one is patched onto the baseline counts: take away the
+    old routes of the trips that moved, add their new ones, and every trip
+    that did not move keeps counting.
     """
+    if assignment.counts is not None:
+        return assignment.counts
     if assignment.is_full_reroute:
         return assignment.routes.edge_counts(mirror.n_edges)
 
