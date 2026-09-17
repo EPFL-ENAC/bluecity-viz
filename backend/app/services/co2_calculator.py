@@ -1,25 +1,33 @@
-"""CO2 emissions calculator for vehicle routes.
+"""How much CO2 a car emits driving one edge.
 
-Distance-based COPERT-style model for a typical European passenger car (petrol, ~1500 kg).
+A distance-based COPERT-style model for a typical European petrol car of
+about 1,500 kg. It has no engine, no gearbox and no driver: it says what a
+fleet average emits at a steady speed on a given slope, which is the right
+grain for comparing two versions of a street network.
 
-Speed-emission curve (U-shaped, minimum around 70 km/h):
-    co2_per_km(v) = IDLE_COEFF/v  +  ROLLING_COEFF  +  AERO_COEFF * v²
+Speed. The curve is U-shaped, because a car wastes fuel both crawling and
+racing:
+
+    co2_per_km(v) = IDLE_COEFF/v  +  ROLLING_COEFF  +  AERO_COEFF · v²
                     ──────────────   ───────────────    ─────────────────
-                    idle/stop-start  rolling resistance  aerodynamic drag
+                    idle, stop-start  rolling resistance  aerodynamic drag
 
-Calibrated to roughly match EU fleet average:
-    30 km/h → ~204 g/km   (city slow)
-    50 km/h → ~178 g/km   (urban)
-    70 km/h → ~168 g/km   (suburban, ~optimal)
-   100 km/h → ~182 g/km   (rural)
-   130 km/h → ~218 g/km   (motorway)
+    30 km/h → 203.6 g/km   (city, slow)
+    50 km/h → 178.0 g/km   (urban)
+    67 km/h → 173.8 g/km   (the minimum of the curve)
+   100 km/h → 184.0 g/km   (rural)
+   130 km/h → 206.1 g/km   (motorway)
 
-Grade penalty (relative, calibrated to ICCT road-grade measurements for ICE cars):
-    co2_per_km_uphill = co2_per_km_flat × (1 + grade × GRADE_CO2_SENSITIVITY)
-    grade = elevation_gain / length  (fraction, e.g. 0.10 for 10 %)
-     5 % grade → +25 %   10 % → +50 %   15 % → +75 %   20 % → +100 %
+Slope. Climbing costs extra, proportionally to the gradient:
 
-Typical range for a hilly city (flat → 15 % steep): ~170–310 g/km.
+    co2_per_km_uphill = co2_per_km_flat · (1 + grade · GRADE_CO2_SENSITIVITY)
+    grade = elevation_gain / length   (a fraction: 0.10 is a 10 % climb)
+     5 % → +25 %   10 % → +50 %   15 % → +75 %   20 % → +100 %
+
+Going down costs the same as flat, never less: an engine braking downhill
+still burns fuel, and giving a discount would let a route through the hills
+look cheaper than it is. On a hilly city this puts an edge between about 170
+and 310 g/km.
 """
 
 import logging
@@ -36,7 +44,9 @@ class CO2Calculator:
     ROLLING_COEFF: float = 120.0  # constant rolling-resistance term
     AERO_COEFF: float = 0.004  # aerodynamic drag (increases with v²)
 
-    # Fallback speed when neither speed_kph nor travel_time is available
+    # Speed assumed when the caller has neither a speed nor a travel time.
+    # The graph mirror resolves this before it gets here, so it only bites a
+    # direct caller (the CVRP solver on an edge with no data).
     DEFAULT_SPEED_KPH: float = 40.0
 
     # Grade-relative CO₂ sensitivity.
@@ -63,35 +73,32 @@ class CO2Calculator:
         elevation_gain: Optional[float] = None,
         travel_time: Optional[float] = None,
     ) -> float:
-        """Calculate CO₂ emissions (grams) for a single edge.
+        """Grams of CO2 for one vehicle over one edge.
+
+        The routing model uses `edge_co2_array` on whole arrays; this is the
+        single-edge form, for the CVRP solver and for tests.
 
         Args:
-            length:        Edge length in **metres**.
-            speed_kph:     Average speed in km/h (preferred).
-            elevation_gain: Elevation gain in metres (positive = uphill).
-            travel_time:   Travel time in seconds — used only to derive speed
-                           when speed_kph is missing.
+            length:         edge length in **metres**
+            speed_kph:      average speed in km/h (preferred)
+            elevation_gain: metres of climb, 0 or None when flat or downhill
+            travel_time:    seconds, only used to derive the speed when
+                            speed_kph is missing
         """
         if length <= 0:
             return 0.0
 
-        # Resolve speed
         speed = speed_kph if (speed_kph is not None and speed_kph > 0) else None
         if speed is None and travel_time and travel_time > 0:
             speed = (length / 1000.0) / (travel_time / 3600.0)
         if speed is None or speed <= 0:
             speed = cls.DEFAULT_SPEED_KPH
 
-        length_km = length / 1000.0
-
-        # Grade multiplier: each 1 % of slope adds GRADE_CO2_SENSITIVITY % to base CO₂/km.
-        # grade = rise / run (fraction), clamped so we never go below 1.0.
-        grade_factor = 1.0
-        if elevation_gain and elevation_gain > 0:
-            grade = elevation_gain / length  # fraction, e.g. 0.10 for 10 %
-            grade_factor = 1.0 + grade * cls.GRADE_CO2_SENSITIVITY
-
-        return cls.co2_per_km_at_speed(speed) * length_km * grade_factor
+        return float(
+            cls.edge_co2_array(
+                np.array([length]), np.array([speed]), np.array([elevation_gain or 0.0])
+            )[0]
+        )
 
     @classmethod
     def co2_per_km_at_speed_array(cls, speed_kph: np.ndarray) -> np.ndarray:
@@ -111,7 +118,7 @@ class CO2Calculator:
         speed_kph: np.ndarray,
         elevation_gain: np.ndarray,
     ) -> np.ndarray:
-        """Vectorised calculate_edge_co2 (grams per edge). Same formula, one array."""
+        """Grams of CO2 for one vehicle over each edge. The model, in one array."""
         length = np.asarray(length, dtype=np.float64)
         speed = np.asarray(speed_kph, dtype=np.float64)
         elev = np.asarray(elevation_gain, dtype=np.float64)

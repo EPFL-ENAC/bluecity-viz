@@ -25,22 +25,15 @@ import numpy as np
 
 from app.config import settings
 from app.models.route import (
-    EdgeModification,
-    ImpactStatistics,
     NodePair,
     Route,
-    TimingStats,
 )
-from app.services import bpr, routing_engine
 from app.services.betweenness import edge_betweenness
 from app.services.co2_calculator import CO2Calculator
 from app.services.graph_mirror import GraphMirror
-from app.services.impact_calculator import compute_impact_statistics_arrays
-from app.services.modifications import modifications_to_arrays
 from app.services.payload_cache import PayloadCache
 from app.services.routing_engine import PairArrays, RouteSet, route_pairs
 from app.services.usage_rows import build_edge_usage_rows
-from app.services.utils.timing import timed
 
 logger = logging.getLogger(__name__)
 
@@ -372,7 +365,7 @@ class AreaGraph:
 
     # ── Baseline ──────────────────────────────────────────────────────────────
 
-    def _traffic_co2_per_km(self, co2_g: np.ndarray, counts: np.ndarray) -> np.ndarray:
+    def traffic_co2_per_km(self, co2_g: np.ndarray, counts: np.ndarray) -> np.ndarray:
         """CO2 of the traffic per km, per (u, v) group.
 
         One vehicle over the edge times the number of routes on it, divided by
@@ -402,7 +395,7 @@ class AreaGraph:
         counts = routes.edge_counts(mirror.n_edges)
         counts_group = mirror.group_sum(counts)
         # the CO2 follows the traffic, so a smaller set has its own values
-        co2_per_km_group = self._traffic_co2_per_km(self.base_co2_g, counts)
+        co2_per_km_group = self.traffic_co2_per_km(self.base_co2_g, counts)
         small = Baseline(
             pairs=full.pairs.prefix(n),
             routes=routes,
@@ -478,7 +471,7 @@ class AreaGraph:
         counts_group = mirror.group_sum(counts)
         # Same grams as the routes, so times the length the edges add up to
         # the route totals.
-        co2_per_km_group = self._traffic_co2_per_km(self.base_co2_g, counts)
+        co2_per_km_group = self.traffic_co2_per_km(self.base_co2_g, counts)
         baseline = Baseline(
             pairs=pairs,
             routes=routes,
@@ -550,7 +543,7 @@ class AreaGraph:
         rs.compute_metrics(self.mirror, self.mirror.travel_time, self.base_co2_g)
         return rs.to_routes(self.mirror)
 
-    def _route_set_for(self, pairs) -> RouteSet:
+    def route_set_for(self, pairs) -> RouteSet:
         """RouteSet of the unmodified network for these pairs, memoised."""
         pairs = PairArrays.coerce(pairs)
         # A hash of the arrays: the pair list itself can be 76k entries long.
@@ -566,8 +559,20 @@ class AreaGraph:
             self.route_cache.popitem(last=False)
         return rs
 
+    @property
+    def seed(self) -> int:
+        """The seed this area was sampled with, reused by elastic demand."""
+        return self._seed
+
+    def betweenness_for(self, scenario) -> np.ndarray:
+        """Betweenness of a modified network, memoised by scenario.
+
+        It does not depend on the OD sample, only on the graph and the
+        scenario, so its key carries neither the pair count nor the weighting.
+        """
+        return self._betweenness(scenario.travel_time, scenario.key)
+
     def _betweenness(self, travel_time: np.ndarray, key: tuple) -> np.ndarray:
-        """Betweenness on a modified network, memoised by modification set."""
         cached = self._bc_cache.get(key)
         if cached is not None:
             self._bc_cache.move_to_end(key)
@@ -586,317 +591,11 @@ class AreaGraph:
 
     # ── Recalculation ─────────────────────────────────────────────────────────
 
-    def recalculate_with_modifications(
-        self,
-        pairs: Optional[List[NodePair]] = None,
-        edge_modifications: List[EdgeModification] = None,
-        weight: str = "travel_time",
-        use_congestion: bool = False,
-        congestion_iterations: int = 1,
-        resample_destinations: bool = False,
-        include_baseline: bool = True,
-        od_pairs: Optional[int] = None,
-        node_weighting: NodeWeighting = "uniform",
-    ) -> dict:
-        """Recalculate routes after edge modifications and return usage statistics.
+    def recalculate_with_modifications(self, **kwargs) -> dict:
+        """Run one scenario on this area. See services/recalculate.py."""
+        from app.services.recalculate import recalculate
 
-        Three strategies:
-          default            targeted reroute of the affected pairs, on
-                             betweenness-derived congested times
-          use_congestion     volume model, all pairs, iterated toward equilibrium
-          resample_destinations  elastic demand, destinations are drawn again
-
-        The graph is never modified: a removed edge is an infinite weight in
-        this request's own weight array.
-
-        `node_weighting` picks the OD sample: the pairs, the baseline they are
-        compared to and the pool elastic demand draws from.
-        """
-        if not self.mirror:
-            raise RuntimeError("Graph not loaded")
-        # Drawn on the first request that asks for it, so outside the timings.
-        # Raises when the baseline is missing, or the area has no population.
-        od = self.od_set(node_weighting)
-
-        mirror = self.mirror
-        t_total = time.perf_counter()
-        timing: dict = {}
-
-        edge_modifications = edge_modifications or []
-
-        with timed("cache_lookup", timing):
-            if pairs:
-                # The client gave its own pairs: N does not apply.
-                pairs = PairArrays.coerce(pairs)
-                n_pairs = len(pairs)
-                original = self._route_set_for(pairs)
-                base = None
-                original_counts = original.edge_counts(mirror.n_edges)
-                original_counts_group = mirror.group_sum(original_counts)
-                original_co2_per_km = self._traffic_co2_per_km(self.base_co2_g, original_counts)
-            else:
-                if od.pairs is None:
-                    raise RuntimeError("No pairs available")
-                n_pairs = min(od_pairs or settings.od_pairs, len(od.pairs))
-                base = self.baseline_for(n_pairs, node_weighting)
-                pairs = base.pairs
-                original = base.routes
-                original_counts_group = base.counts_group
-                original_co2_per_km = base.co2_per_km_group
-
-        with timed("apply_modifications", timing):
-            (
-                applied,
-                travel_time,
-                speed,
-                co2_g,
-                blocked,
-                changed_ids,
-            ) = modifications_to_arrays(
-                mirror,
-                mirror.travel_time,
-                mirror.speed_kph,
-                self.base_co2_g,
-                edge_modifications,
-            )
-            mods_key = tuple(sorted((m.u, m.v, m.action, m.speed_kph) for m in applied))
-
-        resampled = False
-        if resample_destinations and od.nodes is not None and self.sampling_config:
-            new_routes, affected_idx, delta_bc_group = self._strategy_resample(
-                pairs, od.nodes, travel_time, co2_g, timing
-            )
-            resampled = True
-        elif use_congestion:
-            new_routes, affected_idx, delta_bc_group = self._strategy_volume_model(
-                pairs,
-                travel_time,
-                speed,
-                blocked,
-                co2_g,
-                congestion_iterations,
-                changed_ids,
-                mods_key,
-                timing,
-            )
-        else:
-            new_routes, affected_idx, delta_bc_group = self._strategy_targeted_bc(
-                pairs,
-                original,
-                travel_time,
-                speed,
-                blocked,
-                co2_g,
-                changed_ids,
-                mods_key,
-                timing,
-            )
-
-        with timed("impact_stats", timing):
-            if resampled:
-                impact_stats = self._elastic_impact(original, new_routes)
-            else:
-                impact_stats = compute_impact_statistics_arrays(original, new_routes, affected_idx)
-
-        with timed("edge_usage", timing):
-            new_counts = self._new_counts(original, new_routes, affected_idx, base)
-            new_counts_group = mirror.group_sum(new_counts)
-            # co2_g is this request's array: a speed limit changes the grams of
-            # its edges, the same way it changed the routes' totals.
-            new_co2_per_km = self._traffic_co2_per_km(co2_g, new_counts)
-            total_routes = original.n_found
-
-            if not include_baseline:
-                # The baseline never changes. A client that already has it from
-                # GET /routes/baseline saves about 1 MB per request.
-                original_rows = []
-            elif base is not None:
-                original_rows = base.usage_rows
-            else:
-                original_rows = build_edge_usage_rows(
-                    mirror,
-                    original_counts_group,
-                    total_routes,
-                    original_co2_per_km,
-                    betweenness=self.baseline.bc_group,
-                )
-            new_rows = build_edge_usage_rows(
-                mirror,
-                new_counts_group,
-                total_routes,
-                new_co2_per_km,
-                original_counts=original_counts_group,
-                original_co2_per_km=original_co2_per_km,
-                betweenness=self.baseline.bc_group,
-                delta_betweenness=delta_bc_group,
-            )
-
-        timing["total"] = (time.perf_counter() - t_total) * 1000
-        ts = self._timing_stats(timing)
-        logger.debug(
-            "[TIMING] recalculate | %s",
-            " ".join(f"{k}={v:.1f}ms" for k, v in timing.items()),
-        )
-
-        return {
-            "od_pairs": n_pairs,
-            "applied_modifications": [m.model_dump() for m in applied],
-            "original_edge_usage": original_rows,
-            "new_edge_usage": new_rows,
-            "impact_statistics": impact_stats.model_dump(),
-            "timing": ts.model_dump(),
-            "_timing_raw": timing,
-        }
-
-    def _strategy_targeted_bc(
-        self,
-        pairs,
-        original: RouteSet,
-        travel_time,
-        speed,
-        blocked,
-        co2_g,
-        changed_ids,
-        mods_key,
-        timing,
-    ):
-        """Reroute only the pairs that used a modified edge.
-
-        Congested times come from the betweenness of the modified network, so
-        roads that absorb the rerouted traffic look slower and attract less.
-        """
-        mirror = self.mirror
-
-        with timed("affected_routes", timing):
-            affected_idx = original.routes_using(changed_ids)
-
-        with timed("delta_bc", timing):
-            delta_bc_group = None
-            weights = travel_time
-            if len(changed_ids) > 0:
-                bc_new = self._betweenness(travel_time, mods_key)
-                delta_bc_group = mirror.group_sum(bc_new - self.baseline.bc)
-                weights = bpr.congested_travel_time(
-                    mirror, bc_new, speed, self.sampling_config.betweenness_to_slowdown, blocked
-                )
-
-        with timed("route_calculation", timing):
-            new_routes = route_pairs(
-                mirror, routing_engine.routed_pairs_subset(pairs, affected_idx), weights
-            )
-            new_routes.compute_metrics(mirror, travel_time, co2_g)
-
-        return new_routes, affected_idx, delta_bc_group
-
-    def _strategy_volume_model(
-        self,
-        pairs,
-        travel_time,
-        speed,
-        blocked,
-        co2_g,
-        congestion_iterations,
-        changed_ids,
-        mods_key,
-        timing,
-    ):
-        """Measure the real route volumes, apply BPR, iterate toward equilibrium.
-
-        Every pair is rerouted, not only the affected ones, because congestion
-        moves load across the whole network.
-        """
-        mirror = self.mirror
-
-        with timed("delta_bc", timing):
-            delta_bc_group = None
-            if len(changed_ids) > 0:
-                bc_new = self._betweenness(travel_time, mods_key)
-                delta_bc_group = mirror.group_sum(bc_new - self.baseline.bc)
-
-        with timed("route_calculation", timing):
-            new_routes = bpr.run_congestion_routing(
-                mirror,
-                pairs,
-                travel_time,
-                speed,
-                blocked,
-                congestion_iterations,
-                self.sampling_config,
-            )
-            new_routes.compute_metrics(mirror, travel_time, co2_g)
-
-        return new_routes, np.arange(len(pairs)), delta_bc_group
-
-    def _strategy_resample(self, pairs, od_nodes, travel_time, co2_g, timing):
-        """Elastic demand: draw new destinations on the modified network."""
-        from app.services.sampling.od_sampler import resample_od_destinations
-
-        mirror = self.mirror
-        with timed("od_resampling", timing):
-            new_pairs = resample_od_destinations(
-                pairs, od_nodes, mirror, travel_time, self.sampling_config, self._seed
-            )
-
-        with timed("route_calculation", timing):
-            new_routes = route_pairs(mirror, new_pairs, travel_time)
-            new_routes.compute_metrics(mirror, travel_time, co2_g)
-
-        return new_routes, np.arange(len(new_pairs)), None
-
-    def _new_counts(
-        self,
-        original: RouteSet,
-        new_routes: RouteSet,
-        affected_idx: np.ndarray,
-        base: Optional[Baseline],
-    ) -> np.ndarray:
-        """Edge counts after the change.
-
-        When most routes were recalculated, count them directly. Otherwise
-        patch the baseline counts: remove the old paths of the rerouted pairs
-        and add the new ones.
-        """
-        mirror = self.mirror
-        if len(new_routes) >= len(original) * 0.9:
-            return new_routes.edge_counts(mirror.n_edges)
-
-        counts = (base.counts if base is not None else original.edge_counts(mirror.n_edges)).copy()
-        counts -= original.counts_for(affected_idx, mirror.n_edges)
-        counts += new_routes.edge_counts(mirror.n_edges)
-        return np.maximum(counts, 0.0)
-
-    def _elastic_impact(self, original: RouteSet, new_routes: RouteSet) -> ImpactStatistics:
-        """Aggregate comparison for elastic demand (per-route pairing is meaningless)."""
-        failed = int((~new_routes.found).sum())
-        return ImpactStatistics(
-            total_routes=original.n_found,
-            affected_routes=0,
-            failed_routes=failed,
-            total_distance_increase_km=float(
-                (new_routes.distance.sum() - original.distance.sum()) / 1000
-            ),
-            total_time_increase_minutes=float(
-                (new_routes.travel_time.sum() - original.travel_time.sum()) / 60
-            ),
-            total_co2_increase_grams=float(new_routes.co2.sum() - original.co2.sum()),
-        )
-
-    @staticmethod
-    def _timing_stats(timing: dict) -> TimingStats:
-        def ms(key):
-            return round(timing[key], 1) if key in timing else None
-
-        return TimingStats(
-            cache_lookup_ms=ms("cache_lookup") or 0.0,
-            apply_modifications_ms=ms("apply_modifications") or 0.0,
-            od_resampling_ms=ms("od_resampling"),
-            affected_routes_ms=ms("affected_routes"),
-            delta_bc_ms=ms("delta_bc"),
-            route_calculation_ms=ms("route_calculation") or 0.0,
-            impact_stats_ms=ms("impact_stats") or 0.0,
-            edge_usage_stats_ms=ms("edge_usage") or 0.0,
-            total_ms=round(timing["total"], 1),
-        )
+        return recalculate(self, **kwargs)
 
     # ── Payloads ──────────────────────────────────────────────────────────────
 

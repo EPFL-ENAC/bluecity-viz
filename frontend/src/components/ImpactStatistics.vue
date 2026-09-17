@@ -4,20 +4,24 @@ import { computed } from 'vue'
 
 export interface ImpactStats {
   total_routes: number
+  /** trips whose route changed, in either direction */
   affected_routes: number
+  /** trips that had a route and have none now; never in the totals */
   failed_routes: number
-  total_distance_increase_km: number
-  total_time_increase_minutes: number
-  avg_distance_increase_km: number
-  avg_time_increase_minutes: number
+  /** new minus old over the affected trips, so a saving reads negative */
+  total_distance_change_km: number
+  total_time_change_minutes: number
+  avg_distance_change_km: number
+  avg_time_change_minutes: number
+  avg_distance_change_percent: number
+  avg_time_change_percent: number
+  total_co2_change_grams?: number
+  avg_co2_change_grams?: number
+  avg_co2_change_percent?: number
+  /** the worst single trip, 0 when nothing got worse */
   max_distance_increase_km: number
   max_time_increase_minutes: number
-  avg_distance_increase_percent: number
-  avg_time_increase_percent: number
-  total_co2_increase_grams?: number
-  avg_co2_increase_grams?: number
   max_co2_increase_grams?: number
-  avg_co2_increase_percent?: number
 }
 
 interface Props {
@@ -34,7 +38,7 @@ const header = computed(() => {
   if (props.elasticDemand) return `Impact · ${formatCount(s.total_routes)} trips`
   const share = s.total_routes > 0 ? (s.affected_routes / s.total_routes) * 100 : 0
   const percent = share >= 10 ? share.toFixed(0) : share.toFixed(1)
-  return `Impact · ${formatCount(s.affected_routes)} of ${formatCount(s.total_routes)} affected (${percent}%)`
+  return `Impact · ${formatCount(s.affected_routes)} of ${formatCount(s.total_routes)} rerouted (${percent}%)`
 })
 
 // One row per measure, with the three columns of the design.
@@ -44,20 +48,20 @@ const rows = computed(() => {
   return [
     {
       key: 'Distance',
-      total: formatDistance(s.total_distance_increase_km),
-      avg: formatDistance(s.avg_distance_increase_km),
+      total: formatDistance(s.total_distance_change_km),
+      avg: formatDistance(s.avg_distance_change_km),
       max: formatDistance(s.max_distance_increase_km)
     },
     {
       key: 'Time',
-      total: formatTime(s.total_time_increase_minutes),
-      avg: formatTime(s.avg_time_increase_minutes),
+      total: formatTime(s.total_time_change_minutes),
+      avg: formatTime(s.avg_time_change_minutes),
       max: formatTime(s.max_time_increase_minutes)
     },
     {
       key: 'CO₂',
-      total: formatCo2(s.total_co2_increase_grams),
-      avg: formatCo2(s.avg_co2_increase_grams),
+      total: formatCo2(s.total_co2_change_grams),
+      avg: formatCo2(s.avg_co2_change_grams),
       max: formatCo2(s.max_co2_increase_grams)
     }
   ]
@@ -73,7 +77,7 @@ const rows = computed(() => {
       <span class="impact__col">Total</span>
       <template v-if="!elasticDemand">
         <span class="impact__col">Avg</span>
-        <span class="impact__col">Max</span>
+        <span class="impact__col" title="The worst single trip">Max</span>
       </template>
 
       <template v-for="row in rows" :key="row.key">

@@ -178,48 +178,49 @@ class EdgeUsageStats(BaseModel):
 
 
 class ImpactStatistics(BaseModel):
-    """Aggregate statistics about the impact of removed edges."""
+    """What the scenario did to the trips, against the untouched network.
 
-    total_routes: int = Field(..., description="Total number of routes analyzed")
-    affected_routes: int = Field(..., description="Number of routes impacted by removed edges")
-    failed_routes: int = Field(0, description="Number of routes that became impossible")
-    total_distance_increase_km: float = Field(
-        0.0, description="Total additional distance across all routes (km)"
+    Every change is new minus old and carries a sign: a closed street makes
+    trips longer, a raised speed limit makes them shorter. The averages and
+    the totals cover the affected trips only. See docs/routing-model.md.
+    """
+
+    total_routes: int = Field(..., description="Trips routed on the untouched network")
+    affected_routes: int = Field(..., description="Trips whose route changed, in either direction")
+    failed_routes: int = Field(
+        0, description="Trips that had a route and have none now; not in the totals"
     )
-    total_time_increase_minutes: float = Field(
-        0.0, description="Total additional travel time across all routes (minutes)"
+    total_distance_change_km: float = Field(
+        0.0, description="Distance of the affected trips, new minus old (km)"
     )
-    avg_distance_increase_km: float = Field(
-        0.0, description="Average additional distance per affected route (km)"
+    total_time_change_minutes: float = Field(
+        0.0, description="Travel time of the affected trips, new minus old (minutes)"
     )
-    avg_time_increase_minutes: float = Field(
-        0.0, description="Average additional travel time per affected route (minutes)"
+    total_co2_change_grams: float = Field(
+        0.0, description="CO2 of the affected trips, new minus old (grams)"
     )
+    avg_distance_change_km: float = Field(0.0, description="Distance change per affected trip (km)")
+    avg_time_change_minutes: float = Field(
+        0.0, description="Travel time change per affected trip (minutes)"
+    )
+    avg_co2_change_grams: float = Field(0.0, description="CO2 change per affected trip (grams)")
     max_distance_increase_km: float = Field(
-        0.0, description="Maximum additional distance for a single route (km)"
+        0.0, description="Largest increase on a single trip, 0 when none got longer (km)"
     )
     max_time_increase_minutes: float = Field(
-        0.0, description="Maximum additional travel time for a single route (minutes)"
-    )
-    avg_distance_increase_percent: float = Field(
-        0.0, description="Average percentage increase in distance for affected routes"
-    )
-    avg_time_increase_percent: float = Field(
-        0.0,
-        description="Average percentage increase in travel time for affected routes",
-    )
-    total_co2_increase_grams: float = Field(
-        0.0, description="Total additional CO2 emissions across all routes (grams)"
-    )
-    avg_co2_increase_grams: float = Field(
-        0.0, description="Average additional CO2 emissions per affected route (grams)"
+        0.0, description="Largest increase on a single trip, 0 when none got slower (minutes)"
     )
     max_co2_increase_grams: float = Field(
-        0.0, description="Maximum additional CO2 emissions for a single route (grams)"
+        0.0, description="Largest increase on a single trip, 0 when none emitted more (grams)"
     )
-    avg_co2_increase_percent: float = Field(
-        0.0,
-        description="Average percentage increase in CO2 emissions for affected routes",
+    avg_distance_change_percent: float = Field(
+        0.0, description="Mean relative distance change over the affected trips (%)"
+    )
+    avg_time_change_percent: float = Field(
+        0.0, description="Mean relative travel time change over the affected trips (%)"
+    )
+    avg_co2_change_percent: float = Field(
+        0.0, description="Mean relative CO2 change over the affected trips (%)"
     )
 
 

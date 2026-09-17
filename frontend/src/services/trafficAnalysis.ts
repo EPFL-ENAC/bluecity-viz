@@ -79,18 +79,27 @@ export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[
   }
 }
 
+/**
+ * What the scenario did to the trips. Every `change` is new minus old over
+ * the affected trips, so a scenario that shortens trips reads negative; every
+ * `increase` is the worst single trip, 0 when nothing got worse.
+ */
 export interface ImpactStatistics {
   total_routes: number
   affected_routes: number
   failed_routes: number
-  total_distance_increase_km: number
-  total_time_increase_minutes: number
-  avg_distance_increase_km: number
-  avg_time_increase_minutes: number
+  total_distance_change_km: number
+  total_time_change_minutes: number
+  total_co2_change_grams: number
+  avg_distance_change_km: number
+  avg_time_change_minutes: number
+  avg_co2_change_grams: number
+  avg_distance_change_percent: number
+  avg_time_change_percent: number
+  avg_co2_change_percent: number
   max_distance_increase_km: number
   max_time_increase_minutes: number
-  avg_distance_increase_percent: number
-  avg_time_increase_percent: number
+  max_co2_increase_grams: number
 }
 
 export interface EdgeModification {
