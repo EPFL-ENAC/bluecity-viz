@@ -43,6 +43,39 @@ def test_no_modification_leaves_every_count_where_it_was(area):
         assert row["delta_count"] == 0
 
 
+def test_no_modification_reports_no_impact(area):
+    """The invariant behind "both sides are routed the same way".
+
+    The baseline and a scenario run choose routes with the same cost, so a
+    scenario that changes nothing has to change no number. When the two sides
+    used different costs, an empty scenario already reported trips moving.
+    """
+    result = area.recalculate_with_modifications(edge_modifications=[])
+
+    stats = result["impact_statistics"]
+    assert stats["affected_routes"] == 0
+    assert stats["failed_routes"] == 0
+    for key, value in stats.items():
+        if key != "total_routes" and isinstance(value, (int, float)):
+            assert value == 0, f"{key} is {value}"
+
+
+def test_the_baseline_is_routed_on_the_congested_times(area):
+    """What `AreaGraph.congested_time` is for.
+
+    The demand was drawn on travel times slowed down by betweenness, so the
+    baseline is routed on them too. Routing the same pairs free-flow gives a
+    different set of routes on a real network, which is what used to be
+    compared against every scenario.
+    """
+    mirror = area.mirror
+    assert area.congested_time is not mirror.travel_time
+    assert np.all(area.congested_time >= mirror.travel_time - 1e-9)
+
+    same = route_pairs(mirror, area.baseline.pairs, area.congested_time)
+    assert np.array_equal(same.edge_counts(mirror.n_edges), area.baseline.counts)
+
+
 def test_patching_the_counts_never_loses_the_trips_that_did_not_move(area):
     """The bug this pins.
 
@@ -60,7 +93,7 @@ def test_patching_the_counts_never_loses_the_trips_that_did_not_move(area):
 
     for share in (0.1, 0.5, 0.95, 1.0):
         rerouted = np.arange(int(n * share), dtype=np.int64)
-        same = route_pairs(mirror, base.pairs.subset(rerouted), mirror.travel_time)
+        same = route_pairs(mirror, base.pairs.subset(rerouted), area.congested_time)
         counts = pipeline.counts_after(
             mirror, base, pipeline.Assignment(routes=same, rerouted=rerouted, bc=None)
         )

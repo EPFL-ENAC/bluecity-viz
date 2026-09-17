@@ -28,6 +28,7 @@ from app.models.route import (
     NodePair,
     Route,
 )
+from app.services import bpr
 from app.services.betweenness import edge_betweenness
 from app.services.co2_calculator import CO2Calculator
 from app.services.graph_mirror import GraphMirror
@@ -151,6 +152,10 @@ class AreaGraph:
         # betweenness itself, both set by the first OD draw.
         self._bc_vertices: List[int] = []
         self._sampled_bc: Optional[np.ndarray] = None
+        # Free-flow time slowed down by that betweenness. Every route of the
+        # unmodified network is chosen on it, see the `congested_time`
+        # property.
+        self._congested_time: Optional[np.ndarray] = None
 
         # Bounded caches. All three are pure memoisation: dropping an entry
         # only costs time, never correctness. The route cache is keyed by the
@@ -237,6 +242,7 @@ class AreaGraph:
             # Betweenness runs on the same junctions the demand does, so the
             # map and the sampler talk about the same network.
             self._sampled_bc = sample.betweenness
+            self._congested_time = sample.congested_time
             self._bc_vertices = [self.mirror.node_index[int(n)] for n in od.nodes.index]
 
     def od_set(self, node_weighting: NodeWeighting = "uniform") -> OdSet:
@@ -380,6 +386,20 @@ class AreaGraph:
 
     # ── Baseline ──────────────────────────────────────────────────────────────
 
+    @property
+    def congested_time(self) -> np.ndarray:
+        """The cost every route of the unmodified network is chosen on.
+
+        Free-flow time slowed down by the betweenness of the network, through
+        the BPR curve (`bpr.congested_travel_time`). The demand was drawn on
+        these times, and a scenario re-routes on the same formula applied to
+        the modified network, so the two sides of a comparison are chosen the
+        same way. Durations are still reported free-flow, on both sides.
+
+        Falls back to free-flow before the baseline is built.
+        """
+        return self._congested_time if self._congested_time is not None else self.mirror.travel_time
+
     def traffic_co2_per_km(self, co2_g: np.ndarray, counts: np.ndarray) -> np.ndarray:
         """CO2 of the traffic per km, per (u, v) group.
 
@@ -453,6 +473,9 @@ class AreaGraph:
                 mirror, mirror.travel_time, self._bc_vertices, config.daily_km_driven
             )
             logger.info("[AREA %s] betweenness in %.1f s", self.meta.id, time.perf_counter() - t0)
+            self._congested_time = bpr.congested_travel_time(
+                mirror, bc, mirror.speed_kph, config.betweenness_to_slowdown
+            )
 
         self.baseline = self._route_baseline(
             self.pairs,
@@ -474,13 +497,17 @@ class AreaGraph:
     ) -> Baseline:
         """Route `pairs` on the unmodified network.
 
+        Routes are chosen on `congested_time` and reported in free-flow time,
+        the same rule a scenario run follows, so a scenario that changes
+        nothing changes no number.
+
         The betweenness is given, not computed: it depends on the graph only,
         so every OD sample of the area shares it. The CO2 per km follows the
         traffic, so each sample has its own.
         """
         mirror = self.mirror
         t0 = time.perf_counter()
-        routes = route_pairs(mirror, pairs, mirror.travel_time)
+        routes = route_pairs(mirror, pairs, self.congested_time)
         routes.compute_metrics(mirror, mirror.travel_time, self.base_co2_g)
         logger.info(
             "[AREA %s] %d routes in %.1f s", self.meta.id, routes.n_found, time.perf_counter() - t0
@@ -571,7 +598,7 @@ class AreaGraph:
         if cached is not None:
             self.route_cache.move_to_end(key)
             return cached
-        rs = route_pairs(self.mirror, pairs, self.mirror.travel_time)
+        rs = route_pairs(self.mirror, pairs, self.congested_time)
         rs.compute_metrics(self.mirror, self.mirror.travel_time, self.base_co2_g)
         self.route_cache[key] = rs
         while len(self.route_cache) > self.route_cache_size:

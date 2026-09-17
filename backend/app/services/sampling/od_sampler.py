@@ -45,6 +45,10 @@ class OdSample:
     pairs: "PairArrays"
     nodes: pd.Series  # the junction pool, {node id: weight}
     betweenness: np.ndarray  # per igraph edge, veh/day, over that pool
+    # Free-flow time slowed down by that betweenness, per igraph edge. The
+    # destinations were drawn on these times, so the baseline routes on them
+    # too: the demand and the routing see the same network.
+    congested_time: np.ndarray
 
 
 def show_weight_info(lognorm_mu: float, lognorm_sigma: float) -> None:
@@ -136,7 +140,7 @@ def generate_research_based_pairs_mirror(
     draw to skip it.
     """
     from app.services.betweenness import edge_betweenness
-    from app.services.bpr import congested_speed
+    from app.services.bpr import congested_speed, congested_travel_time
     from app.services.sampling.config import SamplingConfig
     from app.services.sampling.node_pool import junction_pool
 
@@ -171,7 +175,9 @@ def generate_research_based_pairs_mirror(
     )
     reduction = (mirror.speed_kph - speed_bc) / mirror.speed_kph * 100
     logger.info(f"Speed reduction — Avg: {reduction.mean():.1f}%  Max: {reduction.max():.1f}%")
-    duration_bc = mirror.length / (speed_bc / 3.6)
+    duration_bc = congested_travel_time(
+        mirror, betweenness, mirror.speed_kph, config.betweenness_to_slowdown
+    )
 
     # 4. how far every junction is from every other one
     logger.info("Computing travel-time matrix...")
@@ -198,7 +204,7 @@ def generate_research_based_pairs_mirror(
 
     pairs = _flatten(od_pairs, n_pairs)
     logger.info(f"Generated {len(pairs)} OD pairs from {len(od_pairs)} distinct origins")
-    return OdSample(pairs=pairs, nodes=nodes, betweenness=betweenness)
+    return OdSample(pairs=pairs, nodes=nodes, betweenness=betweenness, congested_time=duration_bc)
 
 
 def _flatten(od_pairs: Dict[int, List[int]], n_pairs: int):
