@@ -4,10 +4,12 @@ All on the synthetic grid, so a closure can be chosen to affect almost every
 trip, which is where the counting used to go wrong.
 """
 
+import math
+
 import numpy as np
 import pytest
 
-from app.models.route import EdgeModification
+from app.models.route import EdgeModification, NodePair
 from app.services import recalculate as pipeline
 from app.services.modifications import build_scenario
 from app.services.routing_engine import route_pairs
@@ -195,3 +197,34 @@ def test_the_congestion_sensitivity_changes_the_result(area, closure):
     light = area.recalculate_with_modifications(edge_modifications=closure)
 
     assert heavy["new_edge_usage"] != light["new_edge_usage"]
+
+
+def test_a_closed_street_carries_nobody_even_when_it_was_the_only_way(area):
+    """A trip that only had a route through the closed street has none now.
+
+    igraph reads +inf as a very large cost, not as a missing edge, so without
+    a check it hands back a path through the closed street and the street
+    keeps its traffic.
+    """
+    # 1000 is a corner of the grid. Cut both streets that reach it, so the
+    # nodes behind them can only be reached through a closed edge.
+    mods = [
+        EdgeModification(u=1000, v=1001, action="remove"),
+        EdgeModification(u=1001, v=1000, action="remove"),
+        EdgeModification(u=1000, v=1004, action="remove"),
+        EdgeModification(u=1004, v=1000, action="remove"),
+    ]
+    pairs = [NodePair(origin=1000, destination=1010), NodePair(origin=1010, destination=1000)]
+    out = pipeline.recalculate(area, pairs=pairs, edge_modifications=mods)
+
+    rows = rows_by_street(out["new_edge_usage"])
+    closed = {(1000, 1001), (1001, 1000), (1000, 1004), (1004, 1000)}
+    for street in closed & rows.keys():
+        assert rows[street]["count"] == 0, f"{street} still carries traffic"
+    # Both trips start or end at the cut-off node, so both fail.
+    assert out["impact_statistics"]["failed_routes"] == 2
+    assert out["impact_statistics"]["affected_routes"] == 0
+    # And the totals stay finite, or the impact panel shows nothing.
+    for key, value in out["impact_statistics"].items():
+        if isinstance(value, float):
+            assert math.isfinite(value), f"{key} is {value}"
