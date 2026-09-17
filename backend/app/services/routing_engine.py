@@ -168,6 +168,27 @@ class RouteSet:
         )
         return np.bincount(picked, minlength=n_edges).astype(np.float64)
 
+    def drop(self, mask: np.ndarray) -> "RouteSet":
+        """The same set with the routes under `mask` marked as not found.
+
+        Their edges are taken out too, so the counts and `routes_using` do not
+        see a route the caller has just declared invalid.
+        """
+        if not mask.any():
+            return self
+        keep = ~mask[self.route_of_position()]
+        lengths = np.where(mask, 0, self.lengths)
+        offsets = np.zeros(len(self) + 1, dtype=np.int64)
+        np.cumsum(lengths, out=offsets[1:])
+        found = self.found & ~mask
+        return RouteSet(
+            origins=self.origins,
+            destinations=self.destinations,
+            edges=self.edges[keep],
+            offsets=offsets,
+            found=found,
+        )
+
     def prefix(self, n: int) -> "RouteSet":
         """The first n routes, sharing the parent arrays (no copy).
 
@@ -231,8 +252,12 @@ def route_pairs(mirror, pairs, weights: np.ndarray) -> RouteSet:
     """Shortest path for every OD pair, one Dijkstra per origin.
 
     `pairs` is a PairArrays or a list of NodePair. `weights` is a per-edge
-    array; an edge with weight +inf is never used, which is how a removed edge
-    is modelled.
+    array, +inf on a removed edge.
+
+    igraph avoids an +inf edge when there is any other way round, but it still
+    routes through one when there is none, and hands back a path costing
+    infinity. Such a trip has no real route: it is marked as not found, which
+    is what `failed` means in the impact table. See `_drop_unreachable`.
 
     Route i always describes pair i. Internally the pairs are grouped by
     origin so one igraph call serves many destinations, then the results are
@@ -293,6 +318,7 @@ def route_pairs(mirror, pairs, weights: np.ndarray) -> RouteSet:
         seq_found.append(False)
 
     rs = _reorder(pa, np.asarray(seq_index, dtype=np.int64), seq_lengths, seq_found, flat)
+    rs = _drop_unreachable(rs, weights)
 
     if missing:
         logger.warning("[ROUTING] %d pairs had a node outside the graph", missing)
@@ -304,6 +330,26 @@ def route_pairs(mirror, pairs, weights: np.ndarray) -> RouteSet:
         (time.perf_counter() - t0) * 1000,
     )
     return rs
+
+
+def _drop_unreachable(rs: RouteSet, weights: np.ndarray) -> RouteSet:
+    """Mark as not found the routes that only exist through a removed edge.
+
+    igraph treats +inf as a very large number rather than as a missing edge,
+    so a destination cut off by the scenario still comes back with a path, and
+    that path costs infinity. Counting it would leave traffic on a street the
+    user closed and make the total travel time infinite.
+
+    The check is one pass over the flat edge array, and only when the weights
+    hold an +inf at all, so an unmodified network pays nothing.
+    """
+    if not np.isinf(weights).any():
+        return rs
+    unreachable = rs.found & ~np.isfinite(rs.sum_over(weights))
+    if not unreachable.any():
+        return rs
+    logger.debug("[ROUTING] %d pairs reachable only through a removed edge", unreachable.sum())
+    return rs.drop(unreachable)
 
 
 def _reorder(
