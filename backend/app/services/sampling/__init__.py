@@ -3,6 +3,7 @@
 from app.services.sampling.config import SamplingConfig
 from app.services.sampling.node_pool import junction_pool, population_score
 from app.services.sampling.od_sampler import (
+    OdSample,
     generate_research_based_pairs_mirror,
     resample_od_destinations,
     sample_od_pairs_matrix,
@@ -10,6 +11,7 @@ from app.services.sampling.od_sampler import (
 )
 
 __all__ = [
+    "OdSample",
     "SamplingConfig",
     "generate_research_based_pairs_mirror",
     "junction_pool",

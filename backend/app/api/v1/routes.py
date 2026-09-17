@@ -291,7 +291,7 @@ def generate_random_pairs(request: RandomPairsRequest):
                 n_pairs=request.count,
                 config=config,
                 seed=request.seed or 42,
-            ).to_nodepairs()
+            ).pairs.to_nodepairs()
         else:
             pairs = _area(request.area_id).generate_random_pairs(
                 count=request.count,

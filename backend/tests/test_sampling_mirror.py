@@ -50,8 +50,8 @@ def config():
 
 def test_the_same_seed_draws_the_same_pairs(synthetic_graph, config):
     mirror = GraphMirror(synthetic_graph)
-    once = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=42)
-    twice = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=42)
+    once = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=42).pairs
+    twice = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=42).pairs
 
     assert pairs_digest(once) == pairs_digest(twice)
     # at most what we asked: an origin with no reachable destination is dropped
@@ -60,8 +60,8 @@ def test_the_same_seed_draws_the_same_pairs(synthetic_graph, config):
 
 def test_another_seed_draws_other_pairs(synthetic_graph, config):
     mirror = GraphMirror(synthetic_graph)
-    once = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=42)
-    other = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=7)
+    once = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=42).pairs
+    other = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=7).pairs
 
     assert pairs_digest(once) != pairs_digest(other)
 
@@ -74,7 +74,7 @@ def test_a_prefix_of_the_sample_spreads_over_several_origins(synthetic_graph, co
     prefix that held a single origin would be a sample of one neighbourhood.
     """
     mirror = GraphMirror(synthetic_graph)
-    pairs = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=42)
+    pairs = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=42).pairs
 
     prefix = pairs.prefix(len(pairs) // 2)
     assert prefix.n_origins > 1
@@ -83,11 +83,10 @@ def test_a_prefix_of_the_sample_spreads_over_several_origins(synthetic_graph, co
 
 def test_the_pairs_come_from_the_junction_pool(synthetic_graph, config):
     mirror = GraphMirror(synthetic_graph)
-    pairs, nodes = generate_research_based_pairs_mirror(
-        mirror, n_pairs=40, config=config, seed=42, return_nodes=True
-    )
+    sample = generate_research_based_pairs_mirror(mirror, n_pairs=40, config=config, seed=42)
+    pairs = sample.pairs
 
-    pool = set(int(n) for n in nodes.index)
+    pool = set(int(n) for n in sample.nodes.index)
     assert set(int(o) for o in pairs.origins) <= pool
     assert set(int(d) for d in pairs.destinations) <= pool
 
@@ -193,7 +192,7 @@ def test_the_lausanne_sample_does_not_move():
     mirror = GraphMirror(ox.load_graphml(str(GRAPH)))
     pairs = generate_research_based_pairs_mirror(
         mirror, n_pairs=LAUSANNE_PAIRS, config=SamplingConfig(), seed=42
-    )
+    ).pairs
 
     assert len(pairs) == LAUSANNE_PAIRS
     assert pairs_digest(pairs) == LAUSANNE_GOLDEN

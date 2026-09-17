@@ -61,11 +61,15 @@ class Assignment:
                   edge counts be patched instead of recomputed.
         bc        betweenness of the modified network, per igraph edge, or
                   None when the scenario changed nothing.
+        elastic   True when the trips drew new destinations, so trip i of
+                  `routes` is not trip i of the baseline and only totals can
+                  be compared.
     """
 
     routes: RouteSet
     rerouted: Optional[np.ndarray]
     bc: Optional[np.ndarray]
+    elastic: bool = False
 
     @property
     def is_full_reroute(self) -> bool:
@@ -124,9 +128,7 @@ def recalculate(
         assignment = _assign_targeted(area, base, scenario, timing)
 
     with timed("impact_stats", timing):
-        if resample_destinations and assignment.is_full_reroute and od.nodes is not None:
-            # Every trip has a new destination, so no pair can be compared
-            # with itself: only the totals mean anything.
+        if assignment.elastic:
             impact = elastic_impact(base.routes, assignment.routes)
         else:
             impact = compare_runs(base.routes, assignment)
@@ -278,7 +280,7 @@ def _assign_elastic(
         routes = route_pairs(mirror, new_pairs, scenario.travel_time)
         routes.compute_metrics(mirror, scenario.travel_time, scenario.co2_g)
 
-    return Assignment(routes=routes, rerouted=None, bc=bc)
+    return Assignment(routes=routes, rerouted=None, bc=bc, elastic=True)
 
 
 # ── 5. the per-street rows ────────────────────────────────────────────────────

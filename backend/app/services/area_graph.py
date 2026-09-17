@@ -142,8 +142,10 @@ class AreaGraph:
         self._od_lock = threading.Lock()
         self._seed = 42
         self.sampling_config = None
-        # The junctions betweenness is computed over, set by the OD sampler.
+        # The junctions betweenness is computed over, and the baseline
+        # betweenness itself, both set by the first OD draw.
         self._bc_vertices: List[int] = []
+        self._sampled_bc: Optional[np.ndarray] = None
 
         # Bounded caches. All three are pure memoisation: dropping an entry
         # only costs time, never correctness. The route cache is keyed by the
@@ -216,12 +218,20 @@ class AreaGraph:
             self._seed = seed
         run_config = config.model_copy(update={"node_weight_col": NODE_WEIGHT_COL[node_weighting]})
         od = self.od.setdefault(node_weighting, OdSet())
-        od.pairs, od.nodes = generate_research_based_pairs_mirror(
-            self.mirror, n_pairs=n_pairs, config=run_config, seed=seed, return_nodes=True
+        # The pool is the same for every weighting (drawn uniformly, same
+        # seed), so its betweenness is computed by the first draw and reused.
+        sample = generate_research_based_pairs_mirror(
+            self.mirror,
+            n_pairs=n_pairs,
+            config=run_config,
+            seed=seed,
+            betweenness=self._sampled_bc,
         )
-        if node_weighting == "uniform":
+        od.pairs, od.nodes = sample.pairs, sample.nodes
+        if self._sampled_bc is None:
             # Betweenness runs on the same junctions the demand does, so the
             # map and the sampler talk about the same network.
+            self._sampled_bc = sample.betweenness
             self._bc_vertices = [self.mirror.node_index[int(n)] for n in od.nodes.index]
 
     def od_set(self, node_weighting: NodeWeighting = "uniform") -> OdSet:
@@ -425,15 +435,19 @@ class AreaGraph:
         mirror = self.mirror
         self._seed = seed
 
-        if not self._bc_vertices:
+        if self._sampled_bc is not None:
+            # The OD draw already computed it, over the same junctions.
+            bc = self._sampled_bc
+        else:
             # No research sampling ran (the simple random pairs of the tests).
             rng = random.Random(seed)
             n = min(config.n_nodes_preprocess, mirror.n_nodes)
             self._bc_vertices = sorted(rng.sample(range(mirror.n_nodes), n))
-
-        t0 = time.perf_counter()
-        bc = edge_betweenness(mirror, mirror.travel_time, self._bc_vertices, config.daily_km_driven)
-        logger.info("[AREA %s] betweenness in %.1f s", self.meta.id, time.perf_counter() - t0)
+            t0 = time.perf_counter()
+            bc = edge_betweenness(
+                mirror, mirror.travel_time, self._bc_vertices, config.daily_km_driven
+            )
+            logger.info("[AREA %s] betweenness in %.1f s", self.meta.id, time.perf_counter() - t0)
 
         self.baseline = self._route_baseline(
             self.pairs,

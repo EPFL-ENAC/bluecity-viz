@@ -1,28 +1,9 @@
 <script setup lang="ts">
+import type { ImpactStatistics } from '@/services/trafficAnalysis'
 import { formatCo2, formatCount, formatDistance, formatTime } from '@/utils/impactFormat'
 import { computed } from 'vue'
 
-export interface ImpactStats {
-  total_routes: number
-  /** trips whose route changed, in either direction */
-  affected_routes: number
-  /** trips that had a route and have none now; never in the totals */
-  failed_routes: number
-  /** new minus old over the affected trips, so a saving reads negative */
-  total_distance_change_km: number
-  total_time_change_minutes: number
-  avg_distance_change_km: number
-  avg_time_change_minutes: number
-  avg_distance_change_percent: number
-  avg_time_change_percent: number
-  total_co2_change_grams?: number
-  avg_co2_change_grams?: number
-  avg_co2_change_percent?: number
-  /** the worst single trip, 0 when nothing got worse */
-  max_distance_increase_km: number
-  max_time_increase_minutes: number
-  max_co2_increase_grams?: number
-}
+export type ImpactStats = ImpactStatistics
 
 interface Props {
   statistics: ImpactStats | null
@@ -38,7 +19,7 @@ const header = computed(() => {
   if (props.elasticDemand) return `Impact · ${formatCount(s.total_routes)} trips`
   const share = s.total_routes > 0 ? (s.affected_routes / s.total_routes) * 100 : 0
   const percent = share >= 10 ? share.toFixed(0) : share.toFixed(1)
-  return `Impact · ${formatCount(s.affected_routes)} of ${formatCount(s.total_routes)} rerouted (${percent}%)`
+  return `Impact · ${formatCount(s.affected_routes)} of ${formatCount(s.total_routes)} affected (${percent}%)`
 })
 
 // One row per measure, with the three columns of the design.

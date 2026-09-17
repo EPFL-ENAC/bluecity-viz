@@ -25,13 +25,26 @@ the one at 76,400 rather than a different experiment.
 import logging
 import math
 from collections import Counter
-from typing import Dict, List
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 from scipy.stats import lognorm
 
+if TYPE_CHECKING:
+    from app.services.routing_engine import PairArrays
+
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class OdSample:
+    """What one draw produces, and what the area keeps of it."""
+
+    pairs: "PairArrays"
+    nodes: pd.Series  # the junction pool, {node id: weight}
+    betweenness: np.ndarray  # per igraph edge, veh/day, over that pool
 
 
 def show_weight_info(lognorm_mu: float, lognorm_sigma: float) -> None:
@@ -106,8 +119,8 @@ def generate_research_based_pairs_mirror(
     n_pairs: int,
     config=None,
     seed: int = 42,
-    return_nodes: bool = False,
-):
+    betweenness: Optional[np.ndarray] = None,
+) -> OdSample:
     """Draw `n_pairs` origin-destination pairs on a graph mirror.
 
     Five steps:
@@ -118,7 +131,9 @@ def generate_research_based_pairs_mirror(
       4. the travel-time matrix over the pool, on those congested times
       5. the draw itself, see the module docstring
 
-    Returns a PairArrays, and the junction pool when `return_nodes`.
+    Step 2 is the expensive one and depends on the pool only, which is the
+    same for every weighting of one area: pass `betweenness` from an earlier
+    draw to skip it.
     """
     from app.services.betweenness import edge_betweenness
     from app.services.bpr import congested_speed
@@ -144,10 +159,11 @@ def generate_research_based_pairs_mirror(
     nodes_ig = [mirror.node_index[int(n)] for n in nodes.index]
 
     # 2. how much traffic the structure of the network puts on each street
-    logger.info("Calculating betweenness centrality...")
-    betweenness = edge_betweenness(
-        mirror, mirror.travel_time, nodes_ig, config.daily_km_driven, label="sampling BC"
-    )
+    if betweenness is None:
+        logger.info("Calculating betweenness centrality...")
+        betweenness = edge_betweenness(
+            mirror, mirror.travel_time, nodes_ig, config.daily_km_driven, label="sampling BC"
+        )
 
     # 3. the travel times that traffic implies
     speed_bc = congested_speed(
@@ -182,14 +198,13 @@ def generate_research_based_pairs_mirror(
 
     pairs = _flatten(od_pairs, n_pairs)
     logger.info(f"Generated {len(pairs)} OD pairs from {len(od_pairs)} distinct origins")
-
-    if return_nodes:
-        return pairs, nodes
-    return pairs
+    return OdSample(pairs=pairs, nodes=nodes, betweenness=betweenness)
 
 
 def _flatten(od_pairs: Dict[int, List[int]], n_pairs: int):
     """{origin: [destination]} to two flat arrays, cut to n_pairs."""
+    # Lazy: models.route imports sampling.config, and routing_engine imports
+    # models.route, so a top-level import here would be circular.
     from app.services.routing_engine import PairArrays
 
     total = sum(len(d) for d in od_pairs.values())
