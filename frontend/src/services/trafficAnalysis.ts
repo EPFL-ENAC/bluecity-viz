@@ -208,25 +208,33 @@ export async function fetchGraphInfo(areaId?: string | null): Promise<GraphInfo>
 }
 
 /**
- * Edge usage of the unmodified network, free flow. It never changes while the
- * server runs, so it is served with an ETag: a plain fetch does the
- * conditional request by itself and gets a 304 on the second load.
+ * The Model state: edge usage of the unmodified network under one model. It
+ * is what the Model step draws and the left side of every run with the same
+ * options. It never changes while the server runs, so it is served with an
+ * ETag: a plain fetch does the conditional request by itself and gets a 304
+ * on the second load.
  *
- * Not the right baseline for the equilibrium model: that one re-routes every
- * trip until the volumes settle, and has to be compared with the same thing
- * run on the untouched network. `recalculateRoutes` brings it back instead.
+ * `congestionIterations` asks for the equilibrium model (null is the targeted
+ * one). The equilibrium one costs an MSA run on the server the first time.
+ * Elastic demand is not a parameter: on the untouched network it draws the
+ * same trips.
  */
 export async function fetchBaseline(
   odPairs?: number,
   areaId?: string | null,
-  nodeWeighting: NodeWeighting = 'uniform'
+  nodeWeighting: NodeWeighting = 'uniform',
+  congestionIterations: number | null = null
 ): Promise<BaselineResponse> {
   const params = new URLSearchParams()
   if (odPairs !== undefined && odPairs !== null) params.set('od_pairs', String(odPairs))
   if (areaId) params.set('area_id', areaId)
-  // uniform is the server default, left out so the URL stays the one the
-  // browser cache already knows
+  // uniform and free flow are the server defaults, left out so the URL stays
+  // the one the browser cache already knows
   if (nodeWeighting !== 'uniform') params.set('node_weighting', nodeWeighting)
+  if (congestionIterations !== null) {
+    params.set('use_congestion', 'true')
+    params.set('congestion_iterations', String(congestionIterations))
+  }
   const query = params.toString()
   const url = `${API_BASE_URL}/baseline${query ? `?${query}` : ''}`
 
@@ -267,11 +275,9 @@ export async function recalculateRoutes(
       resample_destinations: options?.elasticDemand ?? false,
       node_weighting: options?.nodeWeighting ?? 'uniform',
       od_pairs: options?.odPairs ?? null,
-      // The free-flow baseline is the same for every run, we fetch it once
-      // from GET /baseline instead of carrying it in every answer. The
-      // equilibrium model has its own baseline, which that endpoint does not
-      // know, so there we take the one the answer carries.
-      include_baseline: options?.useCongestionModel ?? false
+      // The baseline is the Model state, the same for every run with these
+      // options: GET /baseline gives it once instead of every answer.
+      include_baseline: false
     })
   })
   if (!response.ok) await throwHttpError(response, 'Failed to recalculate routes')

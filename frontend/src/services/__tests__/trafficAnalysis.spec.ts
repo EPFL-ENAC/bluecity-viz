@@ -45,7 +45,7 @@ describe('traffic analysis service', () => {
     vi.unstubAllGlobals()
   })
 
-  it('asks recalculate for a pair count, with the baseline in congestion mode', async () => {
+  it('asks recalculate for a pair count, never for the baseline', async () => {
     fetchMock().mockResolvedValue(okResponse({ od_pairs: 20000, new_edge_usage: [] }))
 
     await recalculateRoutes([{ u: 1, v: 2, action: 'remove' }], {
@@ -65,9 +65,9 @@ describe('traffic analysis service', () => {
       resample_destinations: true,
       node_weighting: 'population',
       od_pairs: 20000,
-      // The equilibrium model has its own baseline, GET /baseline does not
-      // know it, so the answer has to carry it.
-      include_baseline: true
+      // The baseline is the Model state, GET /baseline gives it for every
+      // model, the equilibrium one too.
+      include_baseline: false
     })
   })
 
@@ -153,6 +153,25 @@ describe('traffic analysis service', () => {
     expect(calledUrl(1)).toBe('/api/v1/routes/baseline?node_weighting=population')
 
     await fetchBaseline(100, null, 'uniform')
+    expect(calledUrl(2)).toBe('/api/v1/routes/baseline?od_pairs=100')
+  })
+
+  it('asks for the equilibrium Model state only when the model is on', async () => {
+    fetchMock().mockResolvedValue(okResponse({ od_pairs: 100, edge_usage: [] }))
+
+    await fetchBaseline(100, null, 'uniform', 2)
+    expect(calledUrl()).toBe(
+      '/api/v1/routes/baseline?od_pairs=100&use_congestion=true&congestion_iterations=2'
+    )
+
+    await fetchBaseline(100, 'c_7.4400_46.9500_3000', 'population', 1)
+    expect(calledUrl(1)).toBe(
+      '/api/v1/routes/baseline?od_pairs=100&area_id=c_7.4400_46.9500_3000' +
+        '&node_weighting=population&use_congestion=true&congestion_iterations=1'
+    )
+
+    // free flow keeps the URL the browser cache already knows
+    await fetchBaseline(100, null, 'uniform', null)
     expect(calledUrl(2)).toBe('/api/v1/routes/baseline?od_pairs=100')
   })
 

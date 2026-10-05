@@ -13,6 +13,10 @@ function withRouting() {
   useTrafficAnalysisStore().originalEdgeUsage = ROWS
 }
 
+function withModelState() {
+  useTrafficAnalysisStore().modelUsage = ROWS
+}
+
 function withCvrp() {
   // hasResult only asks whether there is a result object.
   useCVRPStore().lastResult = { n_routes: 2 } as never
@@ -90,17 +94,56 @@ describe('useMapView', () => {
     expect(view.step.value).toBe('scenario')
   })
 
-  it('draws no result and opens the Model step in the initial model', () => {
-    withRouting()
-    const scenario = useScenarioStore()
-    scenario.mapMode = 'result'
+  it('draws the Model state on the Model step, read only', () => {
+    useStorylineStore().phases.routing = 'init'
     const view = useMapView()
+    // nothing loaded yet: the base network, nothing to point at
+    expect(view.shown.value).toBeNull()
+    expect(view.inspectable.value).toBe(false)
+
+    withModelState()
+    expect(view.phase.value).toBe('init')
     expect(view.shown.value).toBe('routing')
+    expect(view.step.value).toBe('model')
+    expect(view.editable.value).toBe(false)
+    expect(view.inspectable.value).toBe(true)
+  })
+
+  it('draws the Model state in the initial model, whatever mapMode says', () => {
+    withRouting()
+    useScenarioStore().mapMode = 'scenario'
     // set after the rows, or the store moves the tool to simulation again
     useStorylineStore().phases.routing = 'init'
-    expect(view.phase.value).toBe('init')
+    const view = useMapView()
     expect(view.shown.value).toBeNull()
-    expect(view.step.value).toBe('model')
+
+    withModelState()
+    expect(view.shown.value).toBe('routing')
+  })
+
+  it('draws no Model state for the waste tool, nor while picking an area', () => {
+    withModelState()
+    useStorylineStore().phases.routing = 'init'
+    const scenario = useScenarioStore()
+    const view = useMapView()
+
+    scenario.activeTab = 'cvrp'
+    expect(view.shown.value).toBeNull()
+    expect(view.inspectable.value).toBe(false)
+    scenario.activeTab = 'routing'
+
+    useTrafficAnalysisStore().pickMode = true
+    expect(view.shown.value).toBeNull()
+    expect(view.inspectable.value).toBe(false)
+  })
+
+  it('keeps the Model state off the map in simulation until a run', () => {
+    withModelState()
+    const view = useMapView()
+    expect(view.phase.value).toBe('simulation')
+    expect(view.shown.value).toBeNull()
+    expect(view.step.value).toBe('scenario')
+    expect(view.inspectable.value).toBe(true)
   })
 
   it('lets the pointer edit the graph only in simulation, open and not picking', () => {

@@ -261,7 +261,7 @@ class RecalculateResponse(BaseModel):
 
 
 class BaselineResponse(BaseModel):
-    """Edge usage of the unmodified network, for a given number of OD pairs."""
+    """Edge usage of the unmodified network under one model: the "Model" state."""
 
     total_routes: int = Field(..., description="Number of routed OD pairs")
     od_pairs: int = Field(..., description="Number of OD pairs used")

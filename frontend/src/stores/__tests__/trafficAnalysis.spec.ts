@@ -50,6 +50,19 @@ function baselineRows(count: number) {
 
 type Mode = (typeof EXPECTED_SCALES.modes)[number]
 
+/** The rows of a Model state: the plain quantities, no delta. */
+function modelRows(count: number) {
+  return baselineRows(count).map((row) => ({
+    ...row,
+    co2_g_per_km: 10 + row.count,
+    betweenness_centrality: 100 + row.count
+  }))
+}
+
+function modelAnswer(count = 4, odPairs = 20000) {
+  return { total_routes: odPairs, od_pairs: odPairs, edge_usage: modelRows(count) }
+}
+
 describe('traffic analysis store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -524,6 +537,152 @@ describe('traffic analysis store', () => {
 
     expect(store.area).toBeNull()
     expect(store.pickMode).toBe(false)
+  })
+})
+
+describe('the Model state', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.mocked(fetchBaseline).mockReset()
+    vi.mocked(createArea).mockReset()
+  })
+
+  it('draws the chosen model with the plain layers only', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValue(modelAnswer())
+
+    await store.loadModelState()
+
+    expect(store.hasModelState).toBe(true)
+    expect(store.hasCalculatedRoutes).toBe(false)
+    expect(store.displayedUsage).toBe(store.modelUsage)
+    expect(store.availableVisualizations.map((m) => m.value)).toEqual([
+      'frequency',
+      'co2',
+      'betweenness'
+    ])
+    expect(store.activeVisualization).toBe('frequency')
+    expect(store.legendMode).toBe('frequency')
+  })
+
+  it('keeps one Model state per model, and elastic demand is not one', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValue(modelAnswer())
+    store.setOdPairs(20000)
+
+    await store.loadModelState()
+    store.useCongestionModel = true
+    store.congestionIterations = 2
+    await store.loadModelState()
+
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(fetchBaseline).mock.calls[0][3]).toBeNull()
+    expect(vi.mocked(fetchBaseline).mock.calls[1][3]).toBe(2)
+
+    const key = store.modelOptionsKey
+    store.elasticDemand = true
+    expect(store.modelOptionsKey).toBe(key)
+    expect(store.modelStale).toBe(false)
+
+    // back to free flow: the first one is still in the cache
+    store.useCongestionModel = false
+    expect(store.modelStale).toBe(true)
+    await store.loadModelState()
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+    expect(store.modelStale).toBe(false)
+  })
+
+  it('drops an answer that lands after the options moved', async () => {
+    const store = useTrafficAnalysisStore()
+    let release!: (value: ReturnType<typeof modelAnswer>) => void
+    vi.mocked(fetchBaseline)
+      .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+      .mockResolvedValueOnce(modelAnswer(4))
+
+    const slow = store.loadModelState()
+    await vi.waitFor(() => expect(fetchBaseline).toHaveBeenCalledTimes(1))
+    store.useCongestionModel = true
+    await expect(store.loadModelState()).resolves.not.toBeNull()
+
+    release(modelAnswer(2))
+    await expect(slow).resolves.toBeNull()
+
+    expect(store.modelUsage).toHaveLength(4)
+    expect(store.modelStale).toBe(false)
+    expect(store.modelLoading).toBe(false)
+  })
+
+  it('keeps the old rows and says why when the server fails', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValueOnce(modelAnswer(4))
+    await store.loadModelState()
+
+    vi.mocked(fetchBaseline).mockRejectedValueOnce(new Error('server down'))
+    store.useCongestionModel = true
+    await expect(store.loadModelState()).rejects.toThrow('server down')
+
+    expect(store.modelError).toBe('server down')
+    expect(store.modelLoading).toBe(false)
+    expect(store.modelUsage).toHaveLength(4)
+    expect(store.modelStale).toBe(true)
+  })
+
+  it('shows the Model state again when the result goes, in the same layer', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValue(modelAnswer())
+    await store.loadModelState()
+
+    const usage = makeUsage()
+    store.setEdgeUsage(store.modelUsage, usage)
+    expect(store.displayedUsage).toBe(usage)
+    store.setActiveVisualization('co2_delta')
+
+    store.clearResults()
+
+    expect(store.displayedUsage).toBe(store.modelUsage)
+    expect(store.activeVisualization).toBe('co2')
+    expect(store.legendMode).toBe('co2')
+    expect(store.colorScale).not.toBeNull()
+  })
+
+  it('does not draw over a result that is on screen', async () => {
+    const store = useTrafficAnalysisStore()
+    const usage = makeUsage()
+    store.setEdgeUsage(usage, usage)
+    vi.mocked(fetchBaseline).mockResolvedValue(modelAnswer())
+
+    await store.loadModelState()
+
+    expect(store.displayedUsage).toBe(usage)
+    expect(store.activeVisualization).toBe(EXPECTED_SCALES.autoSelected)
+  })
+
+  it('goes with the area', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValue(modelAnswer())
+    await store.loadModelState()
+
+    store.setArea(BERN)
+
+    expect(store.hasModelState).toBe(false)
+    expect(store.modelStale).toBe(false)
+    expect(store.activeVisualization).toBe('none')
+  })
+
+  it('keeps the eight Model states used last', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockImplementation(async (odPairs?: number) =>
+      modelAnswer(2, odPairs ?? 20000)
+    )
+
+    for (let count = 1; count <= 9; count++) await store.getBaseline(count)
+    expect(fetchBaseline).toHaveBeenCalledTimes(9)
+
+    // the first one went out to make room, the last one is still there
+    await store.getBaseline(9)
+    expect(fetchBaseline).toHaveBeenCalledTimes(9)
+    await store.getBaseline(1)
+    expect(fetchBaseline).toHaveBeenCalledTimes(10)
   })
 })
 

@@ -7,7 +7,8 @@ import { computed, ref, watch } from 'vue'
 /**
  * Where each tool is in its storyline.
  *
- * `init`: the user sets the model options, nothing on the graph can be edited.
+ * `init`: the user sets the model options, nothing on the graph can be edited,
+ * the map shows the model: the routing it gives on the untouched network.
  * `simulation`: the options are frozen, the user edits the network and runs.
  *
  * A result only ever exists in `simulation`: going back to init drops it, and

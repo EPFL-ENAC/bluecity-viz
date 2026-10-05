@@ -31,7 +31,7 @@ const scenarioStore = useScenarioStore()
 const trafficStore = useTrafficAnalysisStore()
 const cvrpStore = useCVRPStore()
 const { edges, showArea } = useGraphEdges()
-const { shown, editable } = useMapView()
+const { shown, editable, inspectable } = useMapView()
 
 const mapComponentRef = inject<Ref<{ map?: MapLibreMap } | undefined>>('mapRef')
 const map = computed(() => mapComponentRef?.value?.map)
@@ -218,13 +218,15 @@ watch(
   }
 )
 
-// Closing the workbench, or going back to the initial model, leaves the graph
-// on the map but stops pointing at it, so the cards go with it.
+// Going back to the initial model stops the editing, so the popover goes.
+// Closing the workbench stops the pointing too, so the cards go with it.
 watch(editable, (can) => {
+  if (!can) popover.value = null
+})
+watch(inspectable, (can) => {
   if (can) return
   hoverData.value = null
   routeData.value = null
-  popover.value = null
 })
 
 /** The streets the popover edits, in selection order. */

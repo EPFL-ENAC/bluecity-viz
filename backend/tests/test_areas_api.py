@@ -198,6 +198,55 @@ def test_the_population_weighting_gives_other_numbers(areas_client):
     assert result.json()["new_edge_usage"]
 
 
+def test_the_model_state_is_what_every_run_compares_with(areas_client):
+    """GET /baseline with the model options is the left side of /recalculate.
+
+    The Model step draws it, and the Results step compares with it, so the
+    two must be the same numbers. With nothing modified, and elastic demand
+    on, every delta is zero.
+    """
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    url = f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100"
+    models = {
+        "targeted": ({"use_congestion": False}, ""),
+        "equilibrium": (
+            {"use_congestion": True, "congestion_iterations": 2},
+            "&use_congestion=true&congestion_iterations=2",
+        ),
+    }
+
+    etags = set()
+    for options, query in models.values():
+        model = areas_client.get(url + query)
+        assert model.status_code == 200
+        etags.add(model.headers["etag"])
+
+        run = areas_client.post(
+            "/api/v1/routes/recalculate",
+            json={
+                "area_id": area_id,
+                "od_pairs": 100,
+                "edge_modifications": [],
+                "resample_destinations": True,
+                **options,
+            },
+        ).json()
+        assert run["original_edge_usage"] == model.json()["edge_usage"]
+        assert all(row["delta_count"] == 0 for row in run["new_edge_usage"])
+
+    assert len(etags) == 2, "the two models must not share an ETag"
+
+
+def test_the_iterations_mean_nothing_without_congestion(areas_client):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    url = f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100"
+
+    plain = areas_client.get(url)
+    with_iterations = areas_client.get(url + "&congestion_iterations=3")
+
+    assert plain.headers["etag"] == with_iterations.headers["etag"]
+
+
 def test_population_on_a_graph_without_it_is_a_422(areas_client):
     baseline = areas_client.get("/api/v1/routes/baseline?od_pairs=10&node_weighting=population")
     result = areas_client.post(

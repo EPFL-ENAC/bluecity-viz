@@ -13,24 +13,31 @@ The pipeline, in order:
 
     1. pick the trips and their baseline  (`_baseline_run`)
     2. build the scenario arrays          (`modifications.build_scenario`)
-    3. assign the trips to the modified network, one of three ways below
-    4. compare the two runs               (`impact`)
-    5. turn the counts into per-street rows (`usage_rows`)
+    3. the demand: the same trips, or with elastic demand some of them go
+       somewhere else                     (`_redraw`)
+    4. assign the trips to the modified network, one of two ways below
+    5. compare the two runs               (`impact`)
+    6. turn the counts into per-street rows (`usage_rows`)
 
-Step 3 is the modelling choice, and the three ways differ in what they let the
-traveller change:
+Steps 3 and 4 are the modelling choices. Elastic demand changes where the
+trips go:
 
-    targeted      only the trips that used a modified street pick a new route,
-                  on travel times that betweenness says are congested.
-                  Cheap, and what the tool runs by default.
+    fixed         every trip keeps its destination.
+    elastic       trips keep their origin, and a trip the scenario touched may
+                  choose a new destination: a traveller whose destination
+                  became far goes somewhere else rather than driving twice as
+                  far. On the untouched network nobody moves.
+
+The assignment changes how they get there:
+
+    targeted      only the trips that used a modified street (or got a new
+                  destination) pick a new route, on travel times that
+                  betweenness says are congested. Cheap, and the default.
     equilibrium   every trip is re-routed, repeatedly, on the travel times the
                   volumes themselves imply. Congestion moves load across the
                   whole network, so nothing can be held fixed.
-    elastic       trips keep their origin but choose a new destination: a
-                  traveller whose destination became unreachable goes
-                  somewhere else rather than driving twice as far.
 
-Every strategy returns an `Assignment`, and the rest of the pipeline does not
+Both assignments return an `Assignment`, and the rest of the pipeline does not
 care which one produced it.
 """
 
@@ -47,6 +54,7 @@ from app.services import bpr
 from app.services.impact import compare_runs, elastic_impact
 from app.services.modifications import Scenario, build_scenario
 from app.services.routing_engine import PairArrays, RouteSet, route_pairs
+from app.services.sampling.od_sampler import Redraw
 from app.services.usage_rows import build_edge_usage_rows
 from app.services.utils.timing import timed
 
@@ -65,9 +73,9 @@ class Assignment:
                   edge counts be patched instead of recomputed.
         bc        betweenness of the modified network, per igraph edge, or
                   None when the scenario changed nothing.
-        elastic   True when the trips drew new destinations, so trip i of
-                  `routes` is not trip i of the baseline and only totals can
-                  be compared.
+        elastic   True when the destinations were drawn again, so a trip
+                  that moved is not the same trip as in the baseline and
+                  only totals can be compared.
         counts    the edge counts to report, when they are not simply the
                   edges of `routes`. The equilibrium model sets it: what it
                   puts on the map is the volume averaged over its passes, not
@@ -112,6 +120,10 @@ def recalculate(
 
     `node_weighting` picks the OD sample: the trips, the baseline they are
     compared with, and the pool elastic demand draws destinations from.
+
+    Elastic demand needs that pool and the startup draw it was made with, so
+    it applies to the area's own sample only. Pairs a client sends keep their
+    destinations, and so does an area with no pool.
     """
     if not area.mirror:
         raise RuntimeError("Graph not loaded")
@@ -133,16 +145,21 @@ def recalculate(
     with timed("apply_modifications", timing):
         scenario = build_scenario(mirror, area.base_co2_g, edge_modifications or [])
 
-    if resample_destinations and od.nodes is not None and area.sampling_config:
-        assignment = _assign_elastic(area, base, od.nodes, scenario, timing)
-    elif use_congestion:
-        assignment = _assign_equilibrium(area, base, scenario, congestion_iterations, timing)
+    redraw = None
+    if resample_destinations and not pairs and od.nodes is not None and area.sampling_config:
+        with timed("od_resampling", timing):
+            redraw = _redraw(area, base, od.nodes, scenario)
+
+    if use_congestion:
+        assignment = _assign_equilibrium(
+            area, base, scenario, congestion_iterations, timing, redraw
+        )
     else:
-        assignment = _assign_targeted(area, base, scenario, timing)
+        assignment = _assign_targeted(area, base, scenario, timing, redraw)
 
     with timed("impact_stats", timing):
         if assignment.elastic:
-            impact = elastic_impact(base.routes, assignment.routes)
+            impact = elastic_impact(base.routes, assignment)
         else:
             impact = compare_runs(base.routes, assignment)
 
@@ -215,14 +232,56 @@ def _baseline_run(
     )
 
 
-# ── 3. the three ways to assign the trips ─────────────────────────────────────
+# ── 3. the demand ─────────────────────────────────────────────────────────────
 
 
-def _assign_targeted(area, base: BaselineRun, scenario: Scenario, timing: dict) -> Assignment:
+def _redraw(area, base: BaselineRun, od_nodes, scenario: Scenario) -> Redraw:
+    """Elastic demand: the trips the scenario touched may pick a new destination.
+
+    The draw is paired with the startup one (`resample_od_destinations`), so
+    on the untouched network it gives back the baseline trips exactly, and
+    the comparison stays Model against Scenario.
+
+    It runs on the times of the startup traffic estimate with the scenario on
+    top: the betweenness the startup draw used, the scenario's speeds and
+    closures. Not on the betweenness of the modified network: that one moves
+    a little everywhere, and a trip far from the change would then change its
+    destination for no reason the user could see. With these times an origin
+    the scenario does not reach has exactly the same row, and keeps every
+    destination. The routes are still chosen on the modified network.
+    """
+    from app.services.sampling import od_sampler
+
+    mirror = area.mirror
+    times = bpr.congested_travel_time(
+        mirror,
+        area.baseline.bc,
+        scenario.speed_kph,
+        area.sampling_config.betweenness_to_slowdown,
+        scenario.blocked,
+    )
+    return od_sampler.resample_od_destinations(
+        base.pairs,
+        od_nodes,
+        mirror,
+        area.congested_time,
+        times,
+        area.sampling_config,
+        area.seed,
+    )
+
+
+# ── 4. the two ways to assign the trips ───────────────────────────────────────
+
+
+def _assign_targeted(
+    area, base: BaselineRun, scenario: Scenario, timing: dict, redraw: Optional[Redraw] = None
+) -> Assignment:
     """Re-route only the trips that used a modified street.
 
     Everybody else keeps the route they had, which is what makes this cheap:
-    closing one street usually touches a small share of the trips.
+    closing one street usually touches a small share of the trips. With
+    elastic demand, a trip that got a new destination is routed again too.
 
     The new route is chosen on the betweenness of the *modified* network, put
     through the BPR curve, which is the rule the baseline was routed with on
@@ -239,6 +298,9 @@ def _assign_targeted(area, base: BaselineRun, scenario: Scenario, timing: dict) 
 
     with timed("affected_routes", timing):
         rerouted = base.routes.routes_using(scenario.changed)
+        if redraw is not None:
+            rerouted = np.union1d(rerouted, redraw.moved)
+    pairs = redraw.pairs if redraw is not None else base.pairs
 
     with timed("delta_bc", timing):
         bc = None
@@ -254,14 +316,19 @@ def _assign_targeted(area, base: BaselineRun, scenario: Scenario, timing: dict) 
             )
 
     with timed("route_calculation", timing):
-        routes = route_pairs(mirror, base.pairs.subset(rerouted), weights)
+        routes = route_pairs(mirror, pairs.subset(rerouted), weights)
         routes.compute_metrics(mirror, scenario.travel_time, scenario.co2_g)
 
-    return Assignment(routes=routes, rerouted=rerouted, bc=bc)
+    return Assignment(routes=routes, rerouted=rerouted, bc=bc, elastic=redraw is not None)
 
 
 def _assign_equilibrium(
-    area, base: BaselineRun, scenario: Scenario, iterations: int, timing: dict
+    area,
+    base: BaselineRun,
+    scenario: Scenario,
+    iterations: int,
+    timing: dict,
+    redraw: Optional[Redraw] = None,
 ) -> Assignment:
     """Re-route every trip, iterating volume -> speed -> reroute.
 
@@ -275,7 +342,8 @@ def _assign_equilibrium(
     around, which happens with or without the scenario.
 
     The map gets the averaged volumes, the impact table the routes of the last
-    pass, which is the only thing a per-trip comparison can be made on.
+    pass, which is the only thing a per-trip comparison can be made on. With
+    elastic demand the loop runs on the redrawn trips.
     """
     mirror = area.mirror
 
@@ -285,7 +353,7 @@ def _assign_equilibrium(
     with timed("route_calculation", timing):
         routes, volumes = bpr.run_congestion_routing(
             mirror,
-            base.pairs,
+            redraw.pairs if redraw is not None else base.pairs,
             scenario.travel_time,
             scenario.speed_kph,
             scenario.blocked,
@@ -294,53 +362,12 @@ def _assign_equilibrium(
         )
         routes.compute_metrics(mirror, scenario.travel_time, scenario.co2_g)
 
-    return Assignment(routes=routes, rerouted=None, bc=bc, counts=volumes)
+    return Assignment(
+        routes=routes, rerouted=None, bc=bc, elastic=redraw is not None, counts=volumes
+    )
 
 
-def _assign_elastic(
-    area, base: BaselineRun, od_nodes, scenario: Scenario, timing: dict
-) -> Assignment:
-    """Draw new destinations, then route the trips that result.
-
-    Fixed demand says a traveller drives to the same place whatever it costs.
-    Elastic demand lets the destination move: closing a road then shows up as
-    trips getting shorter, not as an implausible total travel time.
-
-    The draw and the routing both use the congested times of the modified
-    network, which is the rule the startup draw followed on the untouched one.
-    A destination is picked on how long it really takes to get there, so a
-    closed street pushes the draw away from what is behind it.
-    """
-    from app.services.sampling.od_sampler import resample_od_destinations
-
-    mirror = area.mirror
-
-    with timed("delta_bc", timing):
-        bc = None
-        weights = area.congested_time
-        if not scenario.is_empty:
-            bc = area.betweenness_for(scenario)
-            weights = bpr.congested_travel_time(
-                mirror,
-                bc,
-                scenario.speed_kph,
-                area.sampling_config.betweenness_to_slowdown,
-                scenario.blocked,
-            )
-
-    with timed("od_resampling", timing):
-        new_pairs = resample_od_destinations(
-            base.pairs, od_nodes, mirror, weights, area.sampling_config, area.seed
-        )
-
-    with timed("route_calculation", timing):
-        routes = route_pairs(mirror, new_pairs, weights)
-        routes.compute_metrics(mirror, scenario.travel_time, scenario.co2_g)
-
-    return Assignment(routes=routes, rerouted=None, bc=bc, elastic=True)
-
-
-# ── 5. the per-street rows ────────────────────────────────────────────────────
+# ── 6. the per-street rows ────────────────────────────────────────────────────
 
 
 def counts_after(mirror, base: BaselineRun, assignment: Assignment) -> np.ndarray:

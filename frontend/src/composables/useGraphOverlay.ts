@@ -106,9 +106,10 @@ export function useGraphOverlay(
   const themeStore = useThemeStore()
   const trafficStore = useTrafficAnalysisStore()
   const cvrpStore = useCVRPStore()
-  // One place says what the map draws (the lit zone of the dock), and whether
-  // the pointer may edit the graph (the tool is past its initial model).
-  const { shown, editable } = useMapView()
+  // One place says what the map draws (the lit zone of the dock), whether the
+  // pointer may edit the graph (the tool is past its initial model), and
+  // whether it may at least read a street (the Model step shows the routing).
+  const { shown, editable, inspectable } = useMapView()
 
   /** Ink treatment of the modifications: they recede once colour is on. */
   const inkMode = computed<'scenario' | 'result'>(() => (shown.value ? 'result' : 'scenario'))
@@ -423,8 +424,10 @@ export function useGraphOverlay(
     }
 
     setDataFilter(map, resultIds)
-    // A stale result answers an old question, so it is shown but faded.
-    const opacity = trafficStore.isStale ? 0.4 : 1
+    // A stale result answers an old question, so it is shown but faded. Same
+    // for a Model state while the one for the new options is on its way.
+    const faded = trafficStore.hasCalculatedRoutes ? trafficStore.isStale : trafficStore.modelStale
+    const opacity = faded ? 0.4 : 1
     map.setPaintProperty('bc-data', 'line-opacity', opacity)
     map.setPaintProperty('bc-data-casing', 'line-opacity', opacity * 0.9)
   }
@@ -685,11 +688,10 @@ export function useGraphOverlay(
       frame = 0
 
       // The workbench owns the graph. With it closed, or before the initial
-      // model is validated, the map is a picture: nothing to point at, and the
-      // card would offer a click that does nothing. Same while the user picks
-      // an area: the circle owns the pointer then, and its grab cursor must not
-      // be wiped here.
-      if (!editable.value) {
+      // model has a routing to show, the map is a picture: nothing to point
+      // at. Same while the user picks an area: the circle owns the pointer
+      // then, and its grab cursor must not be wiped here.
+      if (!inspectable.value) {
         onMouseOut()
         const idle = mapRef.value
         if (idle && !trafficStore.pickMode) idle.getCanvas().style.cursor = ''
@@ -698,7 +700,9 @@ export function useGraphOverlay(
 
       // A lasso or a brush owns the pointer. The shape says what is caught,
       // a card about one street under the cursor would only get in the way.
-      if (scenarioStore.tool !== 'pointer') {
+      // Before the model is validated there is nothing to catch, the pointer
+      // only reads a street.
+      if (editable.value && scenarioStore.tool !== 'pointer') {
         scenarioStore.hover(null)
         callbacks.onHover?.(null, { x: event.point.x, y: event.point.y })
         callbacks.onRoute?.(null, { x: event.point.x, y: event.point.y })
@@ -721,7 +725,8 @@ export function useGraphOverlay(
 
       // A badge lights the whole zone it stands for. No card: the popover it
       // opens is about several streets, one street's numbers would mislead.
-      const badge = badgeAt(event)
+      // It only opens once the graph can be edited.
+      const badge = editable.value ? badgeAt(event) : null
       if (badge) {
         scenarioStore.hover(badge)
         callbacks.onHover?.(null, { x: event.point.x, y: event.point.y })
@@ -959,10 +964,15 @@ export function useGraphOverlay(
 
   // Leaving the simulation (return to initialization, closing, picking an
   // area) drops what the pointer was on, so no accent line or popover stays.
+  // The Model step still lets the pointer read a street, so the hover only
+  // goes once nothing can be pointed at.
   watch(editable, (can) => {
     if (can) return
     scenarioStore.select(null)
-    scenarioStore.hover(null)
+    if (!inspectable.value) scenarioStore.hover(null)
+  })
+  watch(inspectable, (can) => {
+    if (!can) scenarioStore.hover(null)
   })
 
   watch([() => trafficStore.area, () => trafficStore.areaOutline], drawArea)
@@ -981,6 +991,7 @@ export function useGraphOverlay(
       trafficStore.activeVisualization,
       trafficStore.filterBusRoutes,
       trafficStore.isStale,
+      trafficStore.modelStale,
       shown.value
     ],
     applyResult
