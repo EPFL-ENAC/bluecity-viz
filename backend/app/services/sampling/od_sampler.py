@@ -225,87 +225,135 @@ def _flatten(od_pairs: Dict[int, List[int]], n_pairs: int):
     return PairArrays(origins=origins[:n_pairs], destinations=destinations[:n_pairs])
 
 
-def resample_od_destinations(pairs, nodes: pd.Series, mirror, weights, config, seed: int):
-    """Draw new destinations for the same origins, on the modified network.
+# The redraw takes its random numbers from its own stream, so they do not
+# repeat the ones the startup draw used from the same seed.
+_REDRAW_STREAM = 1
+
+
+@dataclass
+class Redraw:
+    """What elastic demand does to the trips of one scenario."""
+
+    pairs: "PairArrays"  # trip i keeps origin i, only some destinations change
+    moved: np.ndarray  # the indexes of the trips whose destination changed
+
+
+def destination_probabilities(times: np.ndarray, weights: np.ndarray, config) -> np.ndarray:
+    """P(destination | origin), one row per origin, from its travel-time row.
+
+    The rule of the startup draw: w(d) · lognorm.pdf(t_od). A row that reaches
+    nothing is all zeros.
+    """
+    p = weights * lognorm.pdf(times, s=config.lognorm_sigma, scale=np.exp(config.lognorm_mu))
+    total = p.sum(axis=1, keepdims=True)
+    return np.divide(p, total, out=np.zeros_like(p), where=total > 0)
+
+
+def resample_od_destinations(
+    pairs, nodes: pd.Series, mirror, base_weights, weights, config, seed: int
+) -> Redraw:
+    """Draw the destinations again on the modified network, trip by trip.
 
     Elastic demand: a traveller whose destination became far away does not
     drive there anyway, they go somewhere else. The origins and the number of
-    trips per origin do not change; each destination is drawn again with the
-    same rule as the initial sample, on the travel times of the modified
-    network.
+    trips per origin do not change. Each destination follows the rule of the
+    startup draw, on the times of the modified network.
+
+    The new draw is paired with the startup one, so only the trips the
+    scenario touches move. With `p` the probabilities on the times the sample
+    was drawn on and `p'` the ones on the scenario times, trip i keeps its
+    destination d when v0 < p'(d) / p(d), and else draws one from what the
+    scenario added, max(p' - p, 0). The result follows p' exactly, and it is
+    the pairing that moves the fewest trips. So:
+
+    - an origin whose times did not change keeps every destination,
+    - on the untouched network nobody moves: the redraw is the startup draw,
+    - the same request gives the same answer (v0, v1 come from the seed).
+
+    Trip i has its own two numbers, row i of one draw from the seed, so a
+    prefix of the trips gets the same numbers whatever the sample size.
 
     Args:
-        pairs: PairArrays giving the origins and how many trips each one has
-        nodes: the junction pool, {node id: weight}
+        pairs: PairArrays of the startup draw (or a prefix of it)
+        nodes: the junction pool the startup draw used, {node id: weight}
         mirror: GraphMirror of the network
-        weights: per-edge travel time of the modified network
+        base_weights: per-edge times the startup draw was made on
+        weights: per-edge times of the modified network
         config: SamplingConfig (uses lognorm_mu / lognorm_sigma)
-        seed: the area's seed, so the same request gives the same answer
+        seed: the area's seed
 
     Returns:
-        PairArrays, the same length as the input.
+        Redraw: the pairs, the same length and order as the input, and the
+        indexes of the trips that moved.
     """
     from app.services.routing_engine import PairArrays
 
     pa = PairArrays.coerce(pairs)
+    origins, destinations = pa.origins, pa.destinations.copy()
     nx_to_ig = mirror.node_index
+    no_move = Redraw(
+        pairs=PairArrays(origins=origins, destinations=destinations),
+        moved=np.empty(0, dtype=np.int64),
+    )
+    if len(origins) == 0:
+        return no_move
 
     # The candidates: the pool, minus anything not in this graph.
-    candidate_nx_ids = [n for n in nodes.index if n in nx_to_ig]
-    candidate_ig_ids = [nx_to_ig[n] for n in candidate_nx_ids]
-    candidate_weights = nodes.reindex(candidate_nx_ids).values.astype(float)
-    candidate_arr = np.asarray(candidate_nx_ids, dtype=np.int64)
+    candidates = np.asarray([n for n in nodes.index if n in nx_to_ig], dtype=np.int64)
+    candidate_ig = [nx_to_ig[int(n)] for n in candidates]
+    candidate_weights = nodes.reindex(candidates).values.astype(float)
+    column_of = {int(n): j for j, n in enumerate(candidates)}
 
-    # Trips per origin, in first-seen order (what the dict used to give).
-    uniq, first_seen, counts = np.unique(pa.origins, return_index=True, return_counts=True)
-    keep = np.argsort(first_seen)
-    uniq, counts = uniq[keep], counts[keep]
+    uniq, row_of_trip = np.unique(origins, return_inverse=True)
+    in_graph = np.asarray([int(o) in nx_to_ig for o in uniq], dtype=bool)
+    sources = [nx_to_ig[int(o)] for o in uniq[in_graph]]
+    if not sources:
+        return no_move
 
-    valid = np.asarray([int(o) in nx_to_ig for o in uniq], dtype=bool)
-    valid_origin_nx = uniq[valid]
-    valid_counts = counts[valid]
-    origin_ig_ids = [nx_to_ig[int(o)] for o in valid_origin_nx]
+    def rows_on(times) -> np.ndarray:
+        out = np.full((len(uniq), len(candidates)), np.inf)
+        out[in_graph] = np.asarray(
+            mirror.h.distances(source=sources, target=candidate_ig, weights=times), dtype=float
+        )
+        return out
 
-    t_matrix = mirror.h.distances(source=origin_ig_ids, target=candidate_ig_ids, weights=weights)
+    rows_before, rows_after = rows_on(base_weights), rows_on(weights)
+    p_before = destination_probabilities(rows_before, candidate_weights, config)
+    p_after = destination_probabilities(rows_after, candidate_weights, config)
 
-    rng = np.random.RandomState(seed)
-    out_origins: List[np.ndarray] = []
-    out_dests: List[np.ndarray] = []
-    failed_origins = []
+    v = np.random.default_rng([seed, _REDRAW_STREAM]).random((len(origins), 2))
+    column = np.asarray([column_of.get(int(d), -1) for d in destinations], dtype=np.int64)
 
-    def keep_original(origin_nx):
-        """Fallback: this origin keeps the destinations it already had."""
-        mask = pa.origins == origin_nx
-        out_origins.append(pa.origins[mask])
-        out_dests.append(pa.destinations[mask])
-
-    for i, origin_nx in enumerate(valid_origin_nx):
-        origin_nx = int(origin_nx)
-        n_dests = int(valid_counts[i])
-        times = np.array(t_matrix[i], dtype=float)
-        time_weights = lognorm.pdf(times, s=config.lognorm_sigma, scale=np.exp(config.lognorm_mu))
-        combined = candidate_weights * time_weights
-        total = combined.sum()
-
-        if total == 0 or not np.isfinite(total):
-            failed_origins.append(origin_nx)
-            keep_original(origin_nx)
+    changed = in_graph & ~(rows_before == rows_after).all(axis=1)
+    stuck = []
+    for row in np.flatnonzero(changed):
+        after = p_after[row]
+        if after.sum() == 0:
+            # Every destination is out of reach now: the trips stay as they were.
+            stuck.append(int(uniq[row]))
             continue
-
-        dest_indices = rng.choice(
-            len(candidate_nx_ids), size=n_dests, replace=True, p=combined / total
+        trips = np.flatnonzero(row_of_trip == row)
+        before = p_before[row]
+        col = column[trips]
+        known = col >= 0
+        keep_chance = np.zeros(len(trips))
+        p_d = before[col[known]]
+        keep_chance[known] = np.divide(
+            after[col[known]], p_d, out=np.zeros_like(p_d), where=p_d > 0
         )
-        out_origins.append(np.full(n_dests, origin_nx, dtype=np.int64))
-        out_dests.append(candidate_arr[dest_indices])
+        move = v[trips, 0] >= keep_chance
+        if not move.any():
+            continue
+        gain = np.maximum(after - before, 0.0)
+        if gain.sum() == 0:
+            continue
+        cdf = gain.cumsum()
+        cdf /= cdf[-1]
+        picked = cdf.searchsorted(v[trips[move], 1], side="right")
+        destinations[trips[move]] = candidates[np.minimum(picked, len(candidates) - 1)]
 
-    if failed_origins:
-        logger.warning(
-            f"resample_od_destinations: fallback to original pairs for "
-            f"{len(failed_origins)} origins"
-        )
+    if stuck:
+        logger.warning(f"resample_od_destinations: {len(stuck)} origins reach nothing, kept")
 
-    if not out_origins:
-        return PairArrays(
-            origins=np.empty(0, dtype=np.int64), destinations=np.empty(0, dtype=np.int64)
-        )
-    return PairArrays(origins=np.concatenate(out_origins), destinations=np.concatenate(out_dests))
+    moved = np.flatnonzero(destinations != pa.destinations).astype(np.int64)
+    return Redraw(pairs=PairArrays(origins=origins, destinations=destinations), moved=moved)

@@ -330,8 +330,14 @@ def _assign_elastic(
 
     with timed("od_resampling", timing):
         new_pairs = resample_od_destinations(
-            base.pairs, od_nodes, mirror, weights, area.sampling_config, area.seed
-        )
+            base.pairs,
+            od_nodes,
+            mirror,
+            area.congested_time,
+            weights,
+            area.sampling_config,
+            area.seed,
+        ).pairs
 
     with timed("route_calculation", timing):
         routes = route_pairs(mirror, new_pairs, weights)

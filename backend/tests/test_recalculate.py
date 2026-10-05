@@ -287,9 +287,9 @@ def test_the_elastic_redraw_sees_the_closed_street(research_area, monkeypatch):
     seen = {}
     real = od_sampler.resample_od_destinations
 
-    def spy(pairs, nodes, mirror, weights, config, seed):
+    def spy(pairs, nodes, mirror, base_weights, weights, config, seed):
         seen["weights"] = weights
-        return real(pairs, nodes, mirror, weights, config, seed)
+        return real(pairs, nodes, mirror, base_weights, weights, config, seed)
 
     monkeypatch.setattr(od_sampler, "resample_od_destinations", spy)
 
