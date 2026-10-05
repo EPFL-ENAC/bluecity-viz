@@ -14,6 +14,7 @@ from app.models.route import EdgeModification, NodePair
 from app.services import recalculate as pipeline
 from app.services.modifications import build_scenario
 from app.services.routing_engine import route_pairs
+from app.services.sampling.config import SamplingConfig
 
 
 @pytest.fixture
@@ -29,10 +30,17 @@ def research_area(graph_service):
     Elastic demand draws its new destinations from that pool. Without it
     `recalculate` quietly falls back to the targeted model, so the plain
     `area` fixture cannot test elastic at all.
+
+    Twenty destinations per origin, so the 200 trips start from several
+    origins and a closure can reach some of them and not the others.
     """
     old_max, old_default = settings.od_pairs_max, settings.od_pairs
     settings.od_pairs_max, settings.od_pairs = 200, 200
-    graph_service.initialize_default_routes_sync(seed=1, sampling_method="research")
+    graph_service.initialize_default_routes_sync(
+        seed=1,
+        sampling_method="research",
+        sampling_config=SamplingConfig(n_destinations_per_origin=20),
+    )
     yield graph_service.default_area
     settings.od_pairs_max, settings.od_pairs = old_max, old_default
 
@@ -272,6 +280,78 @@ def test_elastic_demand_gives_the_same_answer_twice(research_area):
 
     assert once["new_edge_usage"] == twice["new_edge_usage"]
     assert once["impact_statistics"] == twice["impact_statistics"]
+
+
+def assert_nothing_changed(result):
+    for row in result["new_edge_usage"]:
+        assert row["delta_count"] == 0, f"{row['u']}-{row['v']} moved by {row['delta_count']}"
+    for key, value in result["impact_statistics"].items():
+        if key != "total_routes" and isinstance(value, (int, float)):
+            assert value == 0, f"{key} is {value}"
+
+
+@pytest.mark.parametrize("use_congestion", [False, True])
+def test_elastic_demand_with_no_modification_changes_nothing(research_area, use_congestion):
+    """Model against Scenario, with nothing in the scenario, is zero.
+
+    The redraw on the untouched network is the startup draw itself, so the
+    trips are the same on both sides. It used to draw every destination
+    again with other random numbers, and an empty scenario moved traffic.
+    """
+    result = research_area.recalculate_with_modifications(
+        edge_modifications=[],
+        resample_destinations=True,
+        use_congestion=use_congestion,
+        congestion_iterations=2,
+    )
+
+    assert_nothing_changed(result)
+    old = rows_by_street(result["original_edge_usage"])
+    new = rows_by_street(result["new_edge_usage"])
+    assert old.keys() == new.keys()
+    assert all(new[key]["count"] == old[key]["count"] for key in old)
+
+
+def test_elastic_demand_moves_only_the_trips_the_closure_reaches(research_area, monkeypatch):
+    """An origin whose travel times did not change keeps all its destinations.
+
+    The redraw is paired with the startup draw, so a trip moves only when
+    the scenario made its destination less likely. Trips far from a closure
+    stay where they were, instead of all being drawn again.
+    """
+    from app.services.sampling import od_sampler
+
+    area = research_area
+    seen = {}
+    real = od_sampler.resample_od_destinations
+
+    def spy(pairs, nodes, mirror, base_weights, weights, config, seed):
+        seen["pairs"], seen["nodes"], seen["weights"] = pairs, nodes, weights
+        seen["redraw"] = real(pairs, nodes, mirror, base_weights, weights, config, seed)
+        return seen["redraw"]
+
+    monkeypatch.setattr(od_sampler, "resample_od_destinations", spy)
+    area.recalculate_with_modifications(
+        edge_modifications=[EdgeModification(u=1000, v=1001, action="remove")],
+        resample_destinations=True,
+    )
+
+    mirror, pairs, redraw = area.mirror, seen["pairs"], seen["redraw"]
+    targets = [mirror.node_index[int(n)] for n in seen["nodes"].index]
+
+    def row(origin, weights):
+        return mirror.h.distances(mirror.node_index[int(origin)], targets, weights=weights)
+
+    untouched = {
+        int(o)
+        for o in np.unique(pairs.origins)
+        if row(o, area.congested_time) == row(o, seen["weights"])
+    }
+    far = np.isin(pairs.origins, list(untouched))
+
+    assert far.any() and not far.all(), "the closure must reach some origins, not all"
+    assert len(redraw.moved) > 0, "the closure must move some trip"
+    np.testing.assert_array_equal(redraw.pairs.destinations[far], pairs.destinations[far])
 
 
 def test_the_elastic_redraw_sees_the_closed_street(research_area, monkeypatch):

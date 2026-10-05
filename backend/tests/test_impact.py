@@ -123,8 +123,22 @@ def test_elastic_demand_only_totals_because_the_trips_are_not_the_same_ones():
     baseline = route_set([1000, 2000], [100, 200], [200, 400])
     new = route_set([800, 900], [80, 90], [160, 180])
 
-    stats = elastic_impact(baseline, new)
+    stats = elastic_impact(baseline, Assignment(routes=new, rerouted=None, bc=None, elastic=True))
 
     assert stats.affected_routes == 0, "no trip can be paired with itself"
     assert stats.total_distance_change_km == pytest.approx((1700 - 3000) / 1000)
     assert stats.total_co2_change_grams == pytest.approx(-260)
+
+
+def test_elastic_totals_only_count_the_trips_routed_again():
+    """A trip nobody routed again is unchanged, and a lost route is a failure."""
+    baseline = route_set([1000, 2000, 3000], [100, 200, 300], [200, 400, 600])
+    new = route_set([1500, 0], [150, 0], [300, 0], found=[True, False])
+
+    stats = elastic_impact(
+        baseline, Assignment(routes=new, rerouted=np.array([0, 2]), bc=None, elastic=True)
+    )
+
+    assert stats.failed_routes == 1
+    assert stats.total_distance_change_km == pytest.approx(0.5)
+    assert stats.total_co2_change_grams == pytest.approx(100)

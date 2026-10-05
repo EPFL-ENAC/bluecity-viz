@@ -79,21 +79,32 @@ def compare_runs(baseline, assignment) -> ImpactStatistics:
     )
 
 
-def elastic_impact(baseline, new) -> ImpactStatistics:
-    """Impact when the destinations were drawn again.
+def elastic_impact(baseline, assignment) -> ImpactStatistics:
+    """Impact when some destinations were drawn again.
 
-    Trip i of the new set is not trip i of the old one, so no per-trip
-    comparison means anything. Only the totals over the whole demand do, and
-    that is what the panel shows.
+    A trip that moved is not the same trip any more, so no per-trip number
+    means anything. Only the totals over the demand do, and that is what the
+    panel shows. They are summed over the trips routed again (a trip nobody
+    routed again is unchanged) that have a route on both sides. A trip that
+    had a route and has none now is a failure, as in `compare_runs`.
     """
-    failed = int((~new.found).sum())
+    new = assignment.routes
+    idx = assignment.rerouted
+    if idx is None:
+        idx = np.arange(len(baseline))
+    had_route, has_route = baseline.found[idx], new.found
+    both = had_route & has_route
+
+    def change(old, now):
+        return float((now[both] - old[idx][both]).sum())
+
     return ImpactStatistics(
         total_routes=baseline.n_found,
         affected_routes=0,
-        failed_routes=failed,
-        total_distance_change_km=float(new.distance.sum() - baseline.distance.sum()) / 1000,
-        total_time_change_minutes=float(new.travel_time.sum() - baseline.travel_time.sum()) / 60,
-        total_co2_change_grams=float(new.co2.sum() - baseline.co2.sum()),
+        failed_routes=int((had_route & ~has_route).sum()),
+        total_distance_change_km=change(baseline.distance, new.distance) / 1000,
+        total_time_change_minutes=change(baseline.travel_time, new.travel_time) / 60,
+        total_co2_change_grams=change(baseline.co2, new.co2),
     )
 
 
