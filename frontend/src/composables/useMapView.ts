@@ -12,6 +12,10 @@
  * editing. Then `scenarioStore.mapMode` says whether the Scenario or the
  * Results step is open. Everything else here is derived, so there is one
  * place to ask "what is on the map".
+ *
+ * One more case: while the server routes the trips of a new area, there is no
+ * Model state yet, and the map shows the betweenness of its streets in any
+ * step. It goes when the area is ready.
  */
 import { useCVRPStore } from '@/stores/cvrp'
 import { useScenarioStore } from '@/stores/scenario'
@@ -19,8 +23,11 @@ import { useStorylineStore, type StoryPhase } from '@/stores/storyline'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { computed, type ComputedRef } from 'vue'
 
-/** The tool whose result is drawn, or null when the map shows the ink scenario. */
-export type ShownResult = 'routing' | 'cvrp' | null
+/**
+ * The tool whose result is drawn, the betweenness of an area still being
+ * built, or null when the map shows the ink scenario.
+ */
+export type ShownResult = 'routing' | 'cvrp' | 'betweenness' | null
 
 /** The open step of the tool's storyline. */
 export type StoryStepName = 'model' | 'scenario' | 'results'
@@ -62,12 +69,24 @@ export function useMapView(): MapView {
     if (!scenarioStore.isOpen || trafficStore.pickMode) return null
     // The Model step draws the routing of the chosen model. The waste tool
     // has no such state, its Model step stays the base network.
-    if (phase.value === 'init') {
-      return scenarioStore.activeTab === 'routing' && trafficStore.hasModelState ? 'routing' : null
-    }
-    return scenarioStore.mapMode === 'result' && activeHasResult.value
-      ? scenarioStore.activeTab
-      : null
+    const drawn =
+      phase.value === 'init'
+        ? scenarioStore.activeTab === 'routing' && trafficStore.hasModelState
+          ? 'routing'
+          : null
+        : scenarioStore.mapMode === 'result' && activeHasResult.value
+          ? scenarioStore.activeTab
+          : null
+    if (drawn) return drawn
+    // An area still building has no Model state yet, but its betweenness is
+    // there. A result restored with an investigation wins over it.
+    if (
+      scenarioStore.activeTab === 'routing' &&
+      !trafficStore.areaReady &&
+      trafficStore.areaBetweenness.length > 0
+    )
+      return 'betweenness'
+    return null
   })
 
   // The pointer may read a street without editing it: in the Model step the

@@ -112,7 +112,9 @@ export function useGraphOverlay(
   const { shown, editable, inspectable } = useMapView()
 
   /** Ink treatment of the modifications: they recede once colour is on. */
-  const inkMode = computed<'scenario' | 'result'>(() => (shown.value ? 'result' : 'scenario'))
+  const inkMode = computed<'scenario' | 'result'>(() =>
+    shown.value === 'routing' || shown.value === 'cvrp' ? 'result' : 'scenario'
+  )
 
   const colors = computed(() => (themeStore.isDark ? GRAPH_COLORS.dark : GRAPH_COLORS.light))
 
@@ -405,20 +407,25 @@ export function useGraphOverlay(
     }
     resultIds = []
 
-    const mode = trafficStore.activeVisualization
-    const show = shown.value === 'routing' && mode !== 'none'
+    // While an area builds, its betweenness, on the preview scale. The bus
+    // filter belongs to a result, so it does not apply here.
+    const preview = shown.value === 'betweenness' ? trafficStore.previewScale : null
+    const mode = preview ? 'betweenness' : trafficStore.activeVisualization
+    const show = preview !== null || shown.value === 'routing'
 
-    if (!show) {
+    if (!show || mode === 'none') {
       setDataFilter(map, [])
       return
     }
 
     // A network with no bus data would be emptied by the clip, and the chip
-    // is hidden there, so an old saved choice is ignored.
-    const onlyBus = trafficStore.filterBusRoutes && graph.value.hasBus
-    for (const row of trafficStore.resultTotals) {
+    // is hidden there, so an old saved choice is ignored. The preview has no
+    // clip at all.
+    const rows = preview ? trafficStore.previewTotals : trafficStore.resultTotals
+    const onlyBus = !preview && trafficStore.filterBusRoutes && graph.value.hasBus
+    for (const row of rows) {
       if (onlyBus && !row.bus) continue
-      const [r, g, b] = trafficStore.getColor(valueOf(row, mode))
+      const [r, g, b] = trafficStore.getColor(valueOf(row, mode), preview?.scale)
       map.setFeatureState({ source: GRAPH_SOURCE, id: row.id }, { c: `rgb(${r},${g},${b})` })
       resultIds.push(row.id)
     }
@@ -426,7 +433,9 @@ export function useGraphOverlay(
     setDataFilter(map, resultIds)
     // A stale result answers an old question, so it is shown but faded. Same
     // for a Model state while the one for the new options is on its way.
-    const faded = trafficStore.hasCalculatedRoutes ? trafficStore.isStale : trafficStore.modelStale
+    const faded =
+      !preview &&
+      (trafficStore.hasCalculatedRoutes ? trafficStore.isStale : trafficStore.modelStale)
     const opacity = faded ? 0.4 : 1
     map.setPaintProperty('bc-data', 'line-opacity', opacity)
     map.setPaintProperty('bc-data-casing', 'line-opacity', opacity * 0.9)
@@ -988,6 +997,7 @@ export function useGraphOverlay(
   watch(
     () => [
       trafficStore.resultTotals,
+      trafficStore.previewTotals,
       trafficStore.activeVisualization,
       trafficStore.filterBusRoutes,
       trafficStore.isStale,

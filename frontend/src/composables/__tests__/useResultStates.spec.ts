@@ -67,6 +67,22 @@ describe('streetTotals', () => {
     expect(rows[0].bus).toBe(true)
   })
 
+  it('takes rows with the betweenness only, from an area still being built', () => {
+    const streets = new Map([['1-2', street('1-2')]])
+    const rows = streetTotals(
+      [
+        { u: 1, v: 2, betweenness_centrality: 30 },
+        { u: 2, v: 1, betweenness_centrality: 10 }
+      ],
+      streets
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].betweenness_centrality).toBe(40)
+    expect(rows[0].frequency).toBe(0)
+    expect(rows[0].count).toBe(0)
+    expect(rows[0].delta_relative).toBe(0)
+  })
+
   it('leaves the relative change at zero when there was no traffic before', () => {
     const streets = new Map([['1-2', street('1-2')]])
     const rows = streetTotals([usage({ u: 1, v: 2, frequency: 10, delta_frequency: 10 })], streets)

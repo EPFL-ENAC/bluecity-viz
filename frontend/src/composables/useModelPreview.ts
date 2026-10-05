@@ -5,8 +5,9 @@
  * state is loaded again when one moves. The iteration slider fires fast, so a
  * change waits a moment for the next one. Only on the Model step: the
  * workbench open on the routing tool, no area being picked, the tool in its
- * initial model. In simulation the options are frozen and the run loads the
- * Model state itself.
+ * initial model, and the area ready (while the server routes its trips there
+ * is no Model state, the map shows the betweenness instead). In simulation
+ * the options are frozen and the run loads the Model state itself.
  *
  * What it costs: free flow is a slice of the startup routes on the server,
  * the equilibrium model one MSA run the first time per option set. Both are
@@ -30,6 +31,7 @@ export function useModelPreview(): void {
     scenarioStore.isOpen &&
     scenarioStore.activeTab === 'routing' &&
     !trafficStore.pickMode &&
+    trafficStore.areaReady &&
     storyline.phaseOf('routing') === 'init'
       ? trafficStore.modelOptionsKey
       : null

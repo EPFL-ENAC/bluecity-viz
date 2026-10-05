@@ -166,4 +166,22 @@ describe('useModelPreview', () => {
 
     expect(fetchBaseline).not.toHaveBeenCalled()
   })
+
+  it('waits for an area the server is still building, then loads it', async () => {
+    const store = useTrafficAnalysisStore()
+    store.area = { kind: 'circle', lon: 7.44, lat: 46.95, radiusM: 3000 }
+    store.areaId = 'c_7.4400_46.9500_3000'
+    store.areaInfo = { id: 'c_7.4400_46.9500_3000', ready: false } as never
+    scope.run(useModelPreview)
+
+    await settle()
+    // no Model state to ask for yet, and no error in the dock
+    expect(fetchBaseline).not.toHaveBeenCalled()
+    expect(store.modelError).toBeNull()
+
+    store.areaInfo = { id: 'c_7.4400_46.9500_3000', ready: true } as never
+    await settle()
+    expect(fetchBaseline).toHaveBeenCalledTimes(1)
+    expect(store.hasModelState).toBe(true)
+  })
 })
