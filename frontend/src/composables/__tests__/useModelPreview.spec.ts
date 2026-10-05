@@ -1,5 +1,12 @@
 import { MODEL_PREVIEW_DELAY_MS, useModelPreview } from '@/composables/useModelPreview'
-import { ApiError, fetchBaseline } from '@/services/trafficAnalysis'
+import {
+  ApiError,
+  areaKey,
+  createArea,
+  fetchBaseline,
+  type AreaInfo,
+  type AreaSelection
+} from '@/services/trafficAnalysis'
 import { useScenarioStore } from '@/stores/scenario'
 import { useStorylineStore } from '@/stores/storyline'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
@@ -13,7 +20,8 @@ vi.mock('@/services/trafficAnalysis', async () => ({
   ...(await vi.importActual<typeof import('@/services/trafficAnalysis')>(
     '@/services/trafficAnalysis'
   )),
-  fetchBaseline: vi.fn()
+  fetchBaseline: vi.fn(),
+  createArea: vi.fn()
 }))
 
 function answer() {
@@ -40,6 +48,11 @@ describe('useModelPreview', () => {
     vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} })
     vi.mocked(fetchBaseline).mockReset()
     vi.mocked(fetchBaseline).mockResolvedValue(answer())
+    // every area is built first, the default one too, and the server mints
+    // the same id as areaKey
+    vi.mocked(createArea).mockImplementation(
+      async (area: AreaSelection) => ({ id: areaKey(area) }) as AreaInfo
+    )
     // the Model step of the routing tool, open
     useScenarioStore().isOpen = true
     scope = effectScope()

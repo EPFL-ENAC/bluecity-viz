@@ -9,8 +9,7 @@ import { useLayersStore } from '@/stores/layers'
 import type { TrafficAreaSelection } from '@/stores/layers/types'
 import { useScenarioStore, type StreetRef } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
-import type { Map as MapLibre } from 'maplibre-gl'
-import { computed, inject, type Ref } from 'vue'
+import { computed, watch } from 'vue'
 
 /**
  * The analysis dock.
@@ -33,26 +32,17 @@ const layersStore = useLayersStore()
 const trafficStore = useTrafficAnalysisStore()
 const scenarioStore = useScenarioStore()
 const areaFeedback = useAreaFeedback()
-const mapRef = inject<Ref<{ map?: MapLibre } | undefined>>('mapRef')
 
 // The area the workbench runs on.
 // The name the picker wrote, else the one the server gave once the area is
 // built (communes picked with no local index). Areas saved before names, and
 // the styles with no labels, still show the shape itself.
-const namedAs = computed(() => trafficStore.area?.name || trafficStore.areaInfo?.name || '')
+const namedAs = computed(() => trafficStore.area.name || trafficStore.areaInfo?.name || '')
 
-const areaName = computed(() => {
-  const area = trafficStore.area
-  if (!area) return 'Lausanne (default)'
-  return namedAs.value || areaShapeOf(area)
-})
+const areaName = computed(() => namedAs.value || areaShapeOf(trafficStore.area))
 
 // The shape behind the name, so the radius or the commune count stays readable.
-const areaShape = computed(() => {
-  const area = trafficStore.area
-  if (!area || !namedAs.value) return ''
-  return areaShapeOf(area)
-})
+const areaShape = computed(() => (namedAs.value ? areaShapeOf(trafficStore.area) : ''))
 
 function areaShapeOf(area: TrafficAreaSelection): string {
   if (area.kind === 'municipalities') {
@@ -73,10 +63,20 @@ const areaStatus = computed(() => {
   return null
 })
 
-/** Open the picker on the circle we have, or on what the map is looking at. */
+// The dock needs the server's word on the area: the waste tool runs there or
+// not (areaInfo.cvrp). The map can show the streets from its cache without
+// asking, so ask here too. A failure lands in areaError, shown below.
+watch(
+  () => trafficStore.graphKey,
+  () => {
+    trafficStore.ensureArea().catch(() => {})
+  },
+  { immediate: true }
+)
+
+/** Open the picker on the area we have. */
 function changeArea(): void {
-  const centre = mapRef?.value?.map?.getCenter()
-  trafficStore.enterPickMode(centre ? { lon: centre.lng, lat: centre.lat } : undefined)
+  trafficStore.enterPickMode()
 }
 
 const title = computed(() => layersStore.activeInvestigation?.name ?? 'Road closure scenario')
@@ -129,15 +129,18 @@ const toolName = computed(() =>
       v-if="scenarioStore.activeTab === 'routing'"
       @focus="(keys, select) => emit('focus', keys, select)"
     />
-    <p v-else-if="trafficStore.area" class="bc-empty dock-section">
-      Waste collection runs on Lausanne only, it needs the bin data. Set the area back to Lausanne
-      to use it.
-    </p>
+    <!-- The server says if the waste tool runs here: it needs the Lausanne
+         bins and streets. While the area is building, the Area section above
+         already says so. -->
     <CvrpTab
-      v-else
+      v-else-if="trafficStore.areaInfo?.cvrp"
       @hover-route="(id) => emit('hover-route', id)"
       @focus="(keys, select) => emit('focus', keys, select)"
     />
+    <p v-else-if="trafficStore.areaInfo" class="bc-empty dock-section">
+      Waste collection runs on Lausanne only, it needs the bin data. Set the area back to Lausanne
+      to use it.
+    </p>
   </div>
 </template>
 

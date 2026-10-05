@@ -11,7 +11,6 @@ from pydantic import BaseModel
 from app.config import settings
 from app.models.route import (
     BaselineResponse,
-    GraphData,
     NodePair,
     RandomPairsRequest,
     RecalculateRequest,
@@ -32,8 +31,8 @@ router = APIRouter(prefix="/routes", tags=["routes"])
 # Initialize graph service (will be properly initialized with graph data)
 graph_service = GraphService()
 
-# Payloads of the NetworkX graph: built once, then served from bytes with an
-# ETag. That graph never changes while the process runs. Payloads that belong
+# Payloads of the NetworkX graph (the habitat layer): built once, then served
+# from bytes with an ETag. That graph never changes while the process runs. Payloads that belong
 # to an area live on the area, so evicting it frees them too.
 _payload_cache = PayloadCache()
 STATIC_CACHE_CONTROL = "public, max-age=86400"
@@ -252,26 +251,6 @@ def get_baseline(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get(
-    "/graph",
-    response_model=None,
-    responses={200: {"model": GraphData}},
-    deprecated=True,
-)
-def get_graph(request: Request):
-    """
-    Get complete graph data for visualization.
-
-    Deprecated: the frontend loads /geodata/lausanne.geojson instead. Kept for
-    scripts and notebooks. Served from a cached payload with an ETag.
-    """
-    try:
-        data, etag = _cached_json("graph", graph_service.get_graph_data)
-        return _json_or_304(request, data, etag, STATIC_CACHE_CONTROL)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.post("/random-pairs", response_model=List[NodePair])
 def generate_random_pairs(request: RandomPairsRequest):
     """
@@ -335,36 +314,6 @@ def clear_cache(
         return {"status": "ok", "message": "Cache cleared"}
     except AreaNotLoaded:
         raise HTTPException(status_code=404, detail={"code": "area_not_loaded"}) from None
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-class EdgeGeometry(BaseModel):
-    """Edge geometry for frontend visualization."""
-
-    u: int
-    v: int
-    coordinates: List[List[float]]
-    travel_time: Optional[float] = None
-    length: Optional[float] = None
-    name: Optional[str] = None
-    highway: Optional[str] = None
-
-
-@router.get("/edge-geometries", deprecated=True)
-def get_edge_geometries(request: Request, limit: Optional[int] = None):
-    """
-    Get all edge geometries from the graph for Deck.gl visualization.
-
-    Deprecated: the frontend loads /geodata/lausanne.geojson instead. The full
-    payload is built once and served from bytes with an ETag. A `limit` is only
-    for quick tests, so it is built on the fly and not cached.
-    """
-    try:
-        if limit is not None:
-            return ORJSONResponse(graph_service.get_edge_geometries(limit=limit))
-        data, etag = _cached_json("edge-geometries", graph_service.get_edge_geometries)
-        return _json_or_304(request, data, etag, STATIC_CACHE_CONTROL)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

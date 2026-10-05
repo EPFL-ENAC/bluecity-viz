@@ -39,8 +39,8 @@ the three scenario modes.
 - `POST /api/v1/routes/calculate` - Calculate shortest paths
 - `POST /api/v1/routes/recalculate` - Recalculate paths with network modifications
 - `POST /api/v1/routes/random-pairs` - Generate random OD pairs (simple or research-based)
-- `GET /api/v1/routes/graph` - Get complete graph data
-- `GET /api/v1/routes/edge-geometries` - Get edge geometries for visualization
+- `POST /api/v1/areas` - Build an area (a circle or communes) from the Swiss store
+- `GET /api/v1/areas/{area_id}/edges` - The streets of an area, for the map
 
 ## Usage Examples
 

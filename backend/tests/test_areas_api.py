@@ -1,9 +1,9 @@
 """The /areas endpoints: create a circle, run the workbench on it, lose it."""
 
+import numpy as np
 import pytest
 
 from app.config import settings
-from app.services.area_graph import DEFAULT_AREA_ID
 
 CENTRE = {"lon": 7.106, "lat": 46.108}
 
@@ -130,11 +130,80 @@ def test_the_edges_of_an_area_come_back_with_an_etag(areas_client):
     assert again.status_code == 304
 
 
-def test_the_default_area_still_serves_its_own_geometry(areas_client, graph_service):
-    response = areas_client.get(f"/api/v1/areas/{DEFAULT_AREA_ID}/edges")
+# ── The default area ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def default_from_store(areas_client, graph_service, swiss_store, monkeypatch):
+    """The default area built the way startup builds it, on the lattice."""
+    monkeypatch.setattr(settings, "default_area_lon", CENTRE["lon"])
+    monkeypatch.setattr(settings, "default_area_lat", CENTRE["lat"])
+    monkeypatch.setattr(settings, "default_area_radius_m", 2000.0)
+    return graph_service.load_default_area(swiss_store)
+
+
+def test_the_default_area_is_a_circle_from_the_store(default_from_store, graph_service):
+    area = default_from_store
+
+    assert graph_service.default_area_id == area.meta.id == "c_7.1060_46.1080_2000"
+    assert area.meta.name == "Lausanne"
+    assert area.mirror.has_population
+    # pinned, and with the bigger caches the default always had
+    assert area.meta.id in graph_service.registry.pinned
+    assert not area.dynamic
+
+
+def test_a_request_with_no_area_runs_on_the_default_circle(areas_client, default_from_store):
+    info = areas_client.get("/api/v1/routes/graph-info").json()
+
+    assert info["area_id"] == default_from_store.meta.id
+
+
+def test_population_weighting_works_on_the_default_area(areas_client, default_from_store):
+    response = areas_client.post(
+        "/api/v1/routes/recalculate",
+        json={"edge_modifications": [], "node_weighting": "population", "od_pairs": 100},
+    )
+
+    assert response.status_code == 200, response.text
+
+
+def test_creating_the_default_circle_answers_from_memory(areas_client, default_from_store):
+    response = areas_client.post("/api/v1/areas", json=body())
+
+    assert response.json()["id"] == default_from_store.meta.id
+    assert response.json()["name"] == "Lausanne"
+
+
+def test_the_default_area_serves_its_edges_like_any_area(areas_client, default_from_store):
+    response = areas_client.get(f"/api/v1/areas/{default_from_store.meta.id}/edges")
 
     assert response.status_code == 200
-    assert len(response.json()) == len(graph_service.graph.edges)
+    assert len(response.json()) > 0
+
+
+# ── The waste tool flag ───────────────────────────────────────────────────────
+
+
+def test_an_area_off_the_cvrp_graph_has_no_waste_tool(areas_client):
+    # The lattice and the synthetic CVRP grid share no node id.
+    assert areas_client.post("/api/v1/areas", json=body()).json()["cvrp"] is False
+
+
+def test_an_area_on_the_cvrp_graph_has_the_waste_tool(areas_client, graph_service):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    ids = graph_service.registry.get(area_id).mirror.node_ids
+    # Most of the area in the CVRP graph: on. A third of it: off.
+    graph_service.cvrp_node_ids = np.sort(ids[: int(len(ids) * 0.6)])
+    assert areas_client.post("/api/v1/areas", json=body()).json()["cvrp"] is True
+
+    graph_service.cvrp_node_ids = np.sort(ids[: len(ids) // 3])
+    assert areas_client.post("/api/v1/areas", json=body()).json()["cvrp"] is False
+
+
+def test_no_cvrp_graph_means_no_waste_tool(areas_client, graph_service):
+    graph_service.cvrp_node_ids = None
+    assert areas_client.post("/api/v1/areas", json=body()).json()["cvrp"] is False
 
 
 # ── Using an area ─────────────────────────────────────────────────────────────
@@ -280,20 +349,19 @@ def test_an_evicted_area_is_a_404_and_can_be_created_again(areas_client, graph_s
 
 
 def test_the_default_area_is_never_evicted(areas_client, graph_service):
-    assert not graph_service.registry.evict(DEFAULT_AREA_ID)
-    assert (
-        areas_client.get(f"/api/v1/routes/graph-info?area_id={DEFAULT_AREA_ID}").status_code == 200
-    )
+    default_id = graph_service.default_area_id
+    assert not graph_service.registry.evict(default_id)
+    assert areas_client.get(f"/api/v1/routes/graph-info?area_id={default_id}").status_code == 200
 
 
 def test_the_budget_drops_the_oldest_area(areas_client, graph_service, monkeypatch):
-    monkeypatch.setattr(graph_service.registry, "max_count", 2)  # lausanne + one
+    monkeypatch.setattr(graph_service.registry, "max_count", 2)  # the default + one
 
     first = areas_client.post("/api/v1/areas", json=body()).json()["id"]
     second = areas_client.post("/api/v1/areas", json=body(radius_m=2500)).json()["id"]
 
     loaded = [a.meta.id for a in graph_service.registry.loaded()]
-    assert DEFAULT_AREA_ID in loaded
+    assert graph_service.default_area_id in loaded
     assert second in loaded
     assert first not in loaded
 

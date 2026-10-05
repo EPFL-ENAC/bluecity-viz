@@ -206,14 +206,12 @@ export function useGraphOverlay(
             : undefined
         map.addLayer(areaRingLayer(colors.value), under)
       }
-      // The default city is not an area the user drew, so it has no ring. The
-      // outline of a set of communes comes with the area, a moment after it.
+      // Every area has its ring, the default circle too. The outline of a set
+      // of communes comes with the area, a moment after it.
       const features =
-        area?.kind === 'circle'
+        area.kind === 'circle'
           ? areaFeatures(area, true)
-          : area?.kind === 'municipalities'
-            ? outlineFeatures(trafficStore.areaOutline, true)
-            : emptyArea()
+          : outlineFeatures(trafficStore.areaOutline, true)
       setData(map, AREA_SOURCE, features)
     } catch {
       retryLater(map)
@@ -415,7 +413,9 @@ export function useGraphOverlay(
       return
     }
 
-    const onlyBus = trafficStore.filterBusRoutes
+    // A network with no bus data would be emptied by the clip, and the chip
+    // is hidden there, so an old saved choice is ignored.
+    const onlyBus = trafficStore.filterBusRoutes && graph.value.hasBus
     for (const row of trafficStore.resultTotals) {
       if (onlyBus && !row.bus) continue
       const [r, g, b] = trafficStore.getColor(valueOf(row, mode))

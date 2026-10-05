@@ -53,7 +53,7 @@ export interface TrafficAnalysisInputs {
   filterBusRoutes: boolean
   /** how many OD pairs to route, null for the server default */
   odPairs: number | null
-  /** the area the scenario runs on, null for the default city */
+  /** the area the scenario runs on. null (saved before v0.6) opens on the default circle */
   area: TrafficAreaSelection | null
 }
 

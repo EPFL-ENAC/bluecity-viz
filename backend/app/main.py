@@ -6,6 +6,7 @@ import logging.config
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import anyio.to_thread
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -57,8 +58,8 @@ def _resolve(path_setting: str) -> Path:
 def _open_swiss_store() -> None:
     """Open the Swiss graph store, when this deployment ships one.
 
-    Without it the app still runs: it answers on the city it loaded and the
-    /areas endpoints say so with a 503.
+    Without it the app still runs, but with no routing at all: the /areas
+    endpoints say so with a 503, and only the waste tool works.
     """
     from app.services.graph_store import GraphStore
 
@@ -104,32 +105,35 @@ def _open_municipalities() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    # Startup: Load the graph
-    full_path = _resolve(settings.graph_path)
-
-    # The country store stands on its own: a deployment can ship it without the
-    # GraphML of the default city.
+    # Every routing area is cut from the country store, the default one too.
     _open_swiss_store()
     _open_municipalities()
 
+    # The GraphML is only the waste tool's graph (and the habitat layer).
+    full_path = _resolve(settings.graph_path)
     if full_path.exists():
-        logger.info("Loading graph from: %s", full_path)
+        logger.info("Loading the CVRP graph from: %s", full_path)
         routes.graph_service.load_graph(str(full_path))
-        logger.info("Graph loaded successfully")
+    else:
+        logger.warning("Graph file not found at %s, the waste tool will fail", full_path)
 
-        # Generate default OD pairs using research-based sampling
-        logger.info("Initializing default routes with research-based sampling...")
-        await routes.graph_service.initialize_default_routes(seed=42)
-        logger.info("Default routes initialized")
+    store = areas_router.graph_store
+    if store is not None:
+        logger.info("Building the default area from the store...")
+        await anyio.to_thread.run_sync(routes.graph_service.load_default_area, store)
+        logger.info("Default area ready: %s", routes.graph_service.default_area_id)
+    else:
+        logger.error("No graph store: routing requests will answer 404")
 
-        # The NetworkX graph and the default area live until the process ends.
-        # Freezing them out of the garbage collector removes a gen-2 scan of
-        # millions of objects, which used to freeze every request for 300 ms.
-        # Only here: an area created later can be evicted, and a frozen object
-        # is never collected.
-        gc.collect()
-        gc.freeze()
+    # The NetworkX graph and the default area live until the process ends.
+    # Freezing them out of the garbage collector removes a gen-2 scan of
+    # millions of objects, which used to freeze every request for 300 ms.
+    # Only here: an area created later can be evicted, and a frozen object
+    # is never collected.
+    gc.collect()
+    gc.freeze()
 
+    if routes.graph_service.graph is not None:
         # Initialize CVRP service with waste centroid CSVs
         centroids_full_path = _resolve(settings.cvrp_centroids_dir)
 
@@ -141,9 +145,6 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning("Centroids directory not found at %s", centroids_full_path)
             logger.warning("CVRP endpoints will return errors until centroids are available")
-    else:
-        logger.warning("Graph file not found at %s", full_path)
-        logger.warning("API will be available but route endpoints will fail")
 
     yield
 

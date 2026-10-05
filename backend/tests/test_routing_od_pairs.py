@@ -3,7 +3,8 @@
 N pairs are the first N of the set sampled at startup, so the baseline for N
 must be exactly what routing those first N pairs gives.
 
-The graph is the real one, but OD_PAIRS_MAX is lowered so the test stays fast.
+The area is the real default one, cut from the store the way startup cuts it,
+but OD_PAIRS_MAX is lowered so the test stays fast.
 """
 
 from pathlib import Path
@@ -14,10 +15,11 @@ import pytest
 from app.config import settings
 from app.models.route import EdgeModification, RecalculateRequest
 from app.services.graph_service import GraphService
+from app.services.graph_store import GraphStore
 from app.services.routing_engine import route_pairs
 
 # Resolved from this file, so the suite runs from the repo root too.
-GRAPH = Path(__file__).resolve().parents[1] / "data" / "lausanne.graphml"
+STORE = Path(__file__).resolve().parents[1] / "data" / "swiss_graph"
 MAX_PAIRS = 2000
 DEFAULT_PAIRS = 600
 
@@ -25,13 +27,12 @@ DEFAULT_PAIRS = 600
 @pytest.fixture(scope="module")
 def service():
     """A service with a small OD sample, so the module runs in a few seconds."""
+    if not (STORE / "index.json").exists():
+        pytest.skip(f"graph store not found: {STORE}")
     old_max, old_default = settings.od_pairs_max, settings.od_pairs
     settings.od_pairs_max, settings.od_pairs = MAX_PAIRS, DEFAULT_PAIRS
-    if not GRAPH.exists():
-        pytest.skip(f"graph not found: {GRAPH}")
     svc = GraphService()
-    svc.load_graph(str(GRAPH))
-    svc.initialize_default_routes_sync(seed=42, sampling_method="research")
+    svc.load_default_area(GraphStore.open(STORE), seed=42)
     yield svc
     settings.od_pairs_max, settings.od_pairs = old_max, old_default
 

@@ -2,12 +2,12 @@
 
 An AreaGraph is the unit the app caches and evicts: the igraph mirror, the OD
 pairs, the baseline, the memoised route sets and the serialised payloads of
-one area. Lausanne is one of them, built from the GraphML file and pinned, so
-the default experience is an area like any other.
+one area. The default one (a circle on Lausanne) is cut from the store like
+any other, and pinned.
 
-Nothing here touches NetworkX. The mirror comes either from a NetworkX graph
-(Lausanne) or from plain arrays (an area cut out of the Swiss graph store),
-and everything after that is numpy and igraph.
+Nothing here touches NetworkX. The mirror comes from plain arrays (an area cut
+out of the Swiss graph store), or from a NetworkX graph in the tests, and
+everything after that is numpy and igraph.
 
 A request never mutates an area: it builds its own weight arrays from the base
 ones, so two requests on the same area cannot corrupt each other.
@@ -37,9 +37,6 @@ from app.services.routing_engine import PairArrays, RouteSet, route_pairs
 from app.services.usage_rows import build_edge_usage_rows
 
 logger = logging.getLogger(__name__)
-
-# The area every request falls back to, and the only one built from GraphML.
-DEFAULT_AREA_ID = "lausanne"
 
 # Route sets are a few hundred MB each at 76,400 pairs, so keep very few.
 ROUTE_CACHE_SIZE = 3
@@ -79,8 +76,8 @@ class NoPopulationData(ValueError):
 
 @dataclass
 class AreaMeta:
-    """What the API says about an area. The geometry stays empty for the
-    default area, which is a whole GraphML file, not a shape."""
+    """What the API says about an area. The geometry stays empty for an area
+    made from a whole NetworkX graph (the tests do that)."""
 
     id: str
     name: str = ""
@@ -175,8 +172,12 @@ class AreaGraph:
     # ── Construction ──────────────────────────────────────────────────────────
 
     @classmethod
-    def from_networkx(cls, graph, area_id: str = DEFAULT_AREA_ID, name: str = "") -> "AreaGraph":
-        """The area of a whole NetworkX graph, which is how Lausanne is loaded."""
+    def from_networkx(cls, graph, area_id: str = "graph", name: str = "") -> "AreaGraph":
+        """The area of a whole NetworkX graph.
+
+        The app does not call this any more: every area comes from the store.
+        The unit tests use it on their small synthetic grid.
+        """
         return cls(AreaMeta(id=area_id, name=name or area_id), GraphMirror(graph))
 
     # The uniform sample under its old names: the startup code, the areas API

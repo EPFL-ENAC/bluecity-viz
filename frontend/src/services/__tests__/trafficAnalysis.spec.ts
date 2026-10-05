@@ -227,7 +227,8 @@ describe('traffic analysis service', () => {
     expect(areaKey({ kind: 'circle', lon: 7.44001, lat: 46.95, radiusM: 3000.4 })).toBe(
       'c_7.4400_46.9500_3000'
     )
-    expect(areaKey(null)).toBe('lausanne')
+    // a project saved with no area opens on the default circle
+    expect(areaKey(null)).toBe('c_6.6330_46.5200_6000')
   })
 
   it('posts the municipalities sorted and without repeats', async () => {

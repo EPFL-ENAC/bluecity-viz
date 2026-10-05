@@ -16,7 +16,7 @@ from app.models.area import (
 )
 from app.services import area_builder
 from app.services.area_builder import AreaRejected, AreaSpec, CircleSpec, MunicipalitySpec
-from app.services.area_graph import DEFAULT_AREA_ID, AreaGraph
+from app.services.area_graph import AreaGraph
 from app.services.area_registry import AreaNotLoaded
 from app.services.sampling.config import SamplingConfig
 
@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/areas", tags=["areas"])
 
-# Set by main.py when the Swiss store is on disk. None means the app runs on
-# the default city only, and every endpoint here answers 503.
+# Set by main.py when the Swiss store is on disk. None means no routing at
+# all (not even the default area), and every endpoint here answers 503.
 graph_store = None
 # Set by main.py when the municipalities file is on disk. None means only the
 # circle works.
@@ -88,6 +88,7 @@ def _info(area: AreaGraph) -> dict:
         "od_pairs": len(area.pairs) if area.pairs else 0,
         "od_pairs_default": settings.od_pairs,
         "od_pairs_max": settings.od_pairs_max,
+        "cvrp": _service().runs_cvrp(area),
     }
 
 
@@ -168,14 +169,11 @@ def get_area_edges(area_id: str, request: Request):
         ) from exc
 
     def missing():
-        # Every drawn area gets its rows at build time, so reaching this is a
-        # bug and an empty network on screen would hide it.
+        # Every area gets its rows at build time, the default one too, so
+        # reaching this is a bug and an empty network on screen would hide it.
         raise HTTPException(status_code=500, detail=f"area {area_id!r} has no edge payload")
 
-    # The default city has no store behind it: its geometry still comes from
-    # the NetworkX graph.
-    build = service.get_edge_geometries if area.meta.id == DEFAULT_AREA_ID else missing
-    data, etag = area.payloads.get_or_build("edges", build)
+    data, etag = area.payloads.get_or_build("edges", missing)
     return _json_or_304(request, data, etag, "public, max-age=86400")
 
 

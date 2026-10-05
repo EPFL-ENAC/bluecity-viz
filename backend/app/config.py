@@ -33,9 +33,16 @@ class Settings(BaseSettings):
     area_memory_budget_mb: int = 1024
     area_max_count: int = 20
 
-    # The Swiss road graph, cut in cells. Empty or missing means the /areas
-    # endpoints answer 503 and only the default city works.
+    # The Swiss road graph, cut in cells. Every routing area is cut from it,
+    # the default one too. Missing means no routing at all, only CVRP.
     swiss_graph_dir: str = "data/swiss_graph"
+    # The default area: a circle on Lausanne, built and pinned at startup, and
+    # what a request with no area_id runs on. 6 km holds 75 % of the old
+    # city graph and 90 to 100 % of the waste points. The frontend has the
+    # same circle (DEFAULT_AREA in services/trafficAnalysis.ts).
+    default_area_lon: float = 6.633
+    default_area_lat: float = 46.52
+    default_area_radius_m: float = 6000.0
     # The Swiss municipalities (swissBOUNDARIES3D, simplified). Missing means
     # an area can only be a circle.
     municipalities_path: str = "data/swiss_communes.parquet"
