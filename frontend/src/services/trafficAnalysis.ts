@@ -189,10 +189,19 @@ export async function fetchBaseline(
 }
 
 /**
- * How the OD sampler weighs the nodes: every junction the same, or by the
- * residents and jobs around it (federal statistics, per area percentiles).
+ * How the OD sampler weighs the nodes (federal statistics, per area
+ * percentiles). `uniform` is every junction the same. `population` is the
+ * "Daily average": residents and jobs at both ends of a trip. The weekday
+ * ones put residents at one end and jobs at the other: from home to work in
+ * the morning, back in the evening. See docs/routing-model.md.
  */
-export type NodeWeighting = 'uniform' | 'population'
+export const NODE_WEIGHTINGS = [
+  'uniform',
+  'population',
+  'weekday_morning',
+  'weekday_evening'
+] as const
+export type NodeWeighting = (typeof NODE_WEIGHTINGS)[number]
 
 export async function recalculateRoutes(
   edgeModifications: EdgeModification[],

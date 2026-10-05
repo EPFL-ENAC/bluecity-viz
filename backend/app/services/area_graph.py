@@ -19,13 +19,14 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Optional, get_args
 
 import numpy as np
 
 from app.config import settings
 from app.models.route import (
     NodePair,
+    NodeWeighting,
     Route,
 )
 from app.services import bpr
@@ -60,12 +61,16 @@ DYNAMIC_EQUILIBRIUM_CACHE_SIZE = 1
 # Rough cost of one usage row (a small dict of 9 numbers) in CPython.
 USAGE_ROW_BYTES = 300
 
-# How the OD sampler weighs the nodes. "uniform" is every junction alike,
-# "population" follows the residents and jobs of the graph store.
-NodeWeighting = Literal["uniform", "population"]
-NODE_WEIGHTINGS = ("uniform", "population")
+# How the OD sampler weighs the nodes, see NodeWeighting. Every one but
+# "uniform" follows the residents and jobs of the graph store.
+NODE_WEIGHTINGS = get_args(NodeWeighting)
 # The SamplingConfig.node_weight_col each weighting runs with.
-NODE_WEIGHT_COL = {"uniform": "dummy", "population": "population"}
+NODE_WEIGHT_COL = {
+    "uniform": "dummy",
+    "population": "population",
+    "weekday_morning": "weekday_morning",
+    "weekday_evening": "weekday_evening",
+}
 
 
 class NoPopulationData(ValueError):
@@ -127,7 +132,7 @@ class OdSet:
     """
 
     pairs: Optional[PairArrays] = None
-    nodes: object = None  # pd.Series {node id: weight}, pool for resampling
+    nodes: object = None  # pd.DataFrame, origin and destination weight per node id
     baseline: Optional[Baseline] = None
     by_n: "OrderedDict[int, Baseline]" = field(default_factory=OrderedDict)
     # The equilibrium model needs its own baseline, keyed by (pairs,
@@ -159,7 +164,7 @@ class AreaGraph:
         )
 
         # One OD sample per node weighting. The uniform one is built with the
-        # area, the population one on the first request that asks for it.
+        # area, the others on the first request that asks for them.
         self.od: Dict[str, OdSet] = {"uniform": OdSet()}
         self._od_lock = threading.Lock()
         self._seed = 42
@@ -249,7 +254,7 @@ class AreaGraph:
 
         if node_weighting not in NODE_WEIGHTINGS:
             raise ValueError(f"node_weighting must be one of {NODE_WEIGHTINGS}")
-        if node_weighting == "population" and not self.mirror.has_population:
+        if node_weighting != "uniform" and not self.mirror.has_population:
             raise NoPopulationData(f"area {self.meta.id} has no residents and no jobs")
 
         if node_weighting == "uniform":
@@ -314,9 +319,9 @@ class AreaGraph:
     def od_set(self, node_weighting: NodeWeighting = "uniform") -> OdSet:
         """The OD sample of this weighting, drawn and routed on first use.
 
-        The population sample costs one sampling run and one routing of the
-        pairs, a few seconds on a large area. Its betweenness is the uniform
-        baseline's: it depends on the graph, not on the pairs.
+        A weighted sample costs one sampling run and one routing of the
+        pairs, 0.5 to 2 s on a store area, and 15 to 25 MB. Its betweenness
+        is the uniform baseline's: it depends on the graph, not on the pairs.
         """
         if node_weighting not in NODE_WEIGHTINGS:
             raise ValueError(f"node_weighting must be one of {NODE_WEIGHTINGS}")

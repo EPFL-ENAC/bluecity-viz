@@ -27,9 +27,11 @@ class Settings(BaseSettings):
 
     # Areas kept in memory at the same time. One area is its mirror, its OD
     # pairs, its baseline and its payloads: about 25 MB at 76,400 pairs on a
-    # Lausanne-sized graph. The budget counts what an area holds; the process
-    # RSS runs higher because the allocator keeps the routing buffers, so
-    # leave headroom. The default area (Lausanne) is pinned and never dropped.
+    # Lausanne-sized graph. Each node weighting a user asks for adds its own
+    # sample and baseline, 15 to 25 MB more, so all four come near 100 MB.
+    # The budget counts what an area holds; the process RSS runs higher
+    # because the allocator keeps the routing buffers, so leave headroom.
+    # The default area (Lausanne) is pinned and never dropped.
     area_memory_budget_mb: int = 1024
     area_max_count: int = 20
 

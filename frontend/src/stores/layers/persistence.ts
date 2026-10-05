@@ -1,4 +1,4 @@
-import { normaliseIds } from '@/services/trafficAnalysis'
+import { NODE_WEIGHTINGS, normaliseIds } from '@/services/trafficAnalysis'
 import type {
   CircleArea,
   Investigation,
@@ -162,8 +162,9 @@ export function pickTrafficInputs(raw: any): TrafficAnalysisInputs {
     useCongestionModel: !!raw.useCongestionModel,
     congestionIterations: Number(raw.congestionIterations) || 1,
     elasticDemand: !!raw.elasticDemand,
-    // missing (older saves) or unknown reads back as uniform
-    nodeWeighting: raw.nodeWeighting === 'population' ? 'population' : 'uniform',
+    // missing (older saves) or unknown reads back as uniform. "population" is
+    // the daily average, the same id since before the weekday ones.
+    nodeWeighting: NODE_WEIGHTINGS.includes(raw.nodeWeighting) ? raw.nodeWeighting : 'uniform',
     filterBusRoutes: !!raw.filterBusRoutes,
     // missing (v2 and older) or broken reads back as null, the server default
     odPairs: Number.isInteger(raw.odPairs) && raw.odPairs > 0 ? raw.odPairs : null,

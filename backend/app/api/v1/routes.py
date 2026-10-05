@@ -2,7 +2,7 @@
 
 import logging
 import traceback
-from typing import Callable, List, Literal, Optional
+from typing import Callable, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import ORJSONResponse
@@ -12,6 +12,7 @@ from app.config import settings
 from app.models.route import (
     BaselineResponse,
     NodePair,
+    NodeWeighting,
     RandomPairsRequest,
     RecalculateRequest,
     RecalculateResponse,
@@ -83,8 +84,9 @@ def _no_population(exc: NoPopulationData) -> HTTPException:
         detail={
             "code": exc.code,
             "message": (
-                f"{exc}. The population weighting needs the graph store residents "
-                "and jobs; use node_weighting=uniform here."
+                f"{exc}. The population, weekday_morning and weekday_evening "
+                "weightings need the graph store residents and jobs; use "
+                "node_weighting=uniform here."
             ),
         },
     )
@@ -218,9 +220,12 @@ def get_baseline(
     area_id: Optional[str] = Query(
         None, description="Which area to read. None means the default one."
     ),
-    node_weighting: Literal["uniform", "population"] = Query(
+    node_weighting: NodeWeighting = Query(
         "uniform",
-        description="Which OD sample: uniform, or weighted by residents and jobs.",
+        description=(
+            "Which OD sample: uniform, population (daily average, residents and jobs "
+            "at both ends), weekday_morning or weekday_evening."
+        ),
     ),
     use_congestion: bool = Query(
         False, description="The equilibrium model (MSA with BPR) instead of the targeted one."

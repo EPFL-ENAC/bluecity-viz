@@ -12,7 +12,12 @@ import { useDeltaBars } from '@/composables/useDeltaBars'
 import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useMapView } from '@/composables/useMapView'
 import { useModelPreview } from '@/composables/useModelPreview'
-import { ApiError, recalculateRoutes, type NodeWeighting } from '@/services/trafficAnalysis'
+import {
+  ApiError,
+  NODE_WEIGHTINGS,
+  recalculateRoutes,
+  type NodeWeighting
+} from '@/services/trafficAnalysis'
 import { useScenarioStore, type StreetRef } from '@/stores/scenario'
 import { useStorylineStore } from '@/stores/storyline'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
@@ -69,11 +74,18 @@ function formatTrips(count: number): string {
   return count.toLocaleString('en-US')
 }
 
-// The two choices, hidden until we know the numbers.
-const nodeWeightingOptions = [
-  { value: 'uniform', label: 'Uniform' },
-  { value: 'population', label: 'Population + jobs' }
-]
+// How the trips start and end. "population" is the daily average, the id is
+// older than its label.
+const nodeWeightingLabels: Record<NodeWeighting, string> = {
+  uniform: 'Uniform',
+  population: 'Daily average',
+  weekday_morning: 'Weekday morning',
+  weekday_evening: 'Weekday evening'
+}
+const nodeWeightingOptions = NODE_WEIGHTINGS.map((value) => ({
+  value,
+  label: nodeWeightingLabels[value]
+}))
 // BcSeg speaks plain strings
 const nodeWeighting = computed({
   get: () => trafficStore.nodeWeighting,
@@ -122,7 +134,9 @@ const modelSummary = computed(() => {
       : 'static betweenness'
   )
   if (trafficStore.elasticDemand) parts.push('elastic demand')
-  if (trafficStore.nodeWeighting === 'population') parts.push('population + jobs')
+  if (trafficStore.nodeWeighting !== 'uniform') {
+    parts.push(nodeWeightingLabels[trafficStore.nodeWeighting].toLowerCase())
+  }
   return parts.join(' · ')
 })
 
@@ -320,7 +334,7 @@ async function calculateRoutes() {
 
       <div class="trips">
         <div class="bc-micro trips__label">Node weights</div>
-        <BcSeg v-model="nodeWeighting" :options="nodeWeightingOptions" equal />
+        <BcSeg v-model="nodeWeighting" :options="nodeWeightingOptions" equal :columns="2" />
       </div>
 
       <div v-if="tripsOptions.length > 0" class="trips">

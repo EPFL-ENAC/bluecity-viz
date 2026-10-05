@@ -49,7 +49,7 @@ def closed(mirror, base, *streets):
 def redraw(sample, mirror, config, times, pairs=None):
     return resample_od_destinations(
         pairs if pairs is not None else sample.pairs,
-        sample.nodes,
+        sample.nodes["destination"],
         mirror,
         sample.congested_time,
         times,
@@ -137,7 +137,7 @@ def test_the_new_destinations_follow_the_scenario_times(sample, mirror, config):
     scenario times: the share of each destination must be the scenario one.
     """
     origin = 1000
-    nodes = sample.nodes
+    nodes = sample.nodes["destination"]
     candidates = np.asarray(nodes.index, dtype=np.int64)
     weights = nodes.values.astype(float)
     targets = [mirror.node_index[int(n)] for n in candidates]

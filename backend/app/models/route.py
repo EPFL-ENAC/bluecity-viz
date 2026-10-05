@@ -7,6 +7,13 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.config import settings
 from app.services.sampling.config import SamplingConfig
 
+# How the OD sampler weighs the junctions, see docs/routing-model.md.
+# "uniform" is every junction alike. The three others read the residents and
+# jobs of the graph store: "population" (the "Daily average" of the UI) weighs
+# both ends the same, the weekday ones put residents at one end and jobs at
+# the other.
+NodeWeighting = Literal["uniform", "population", "weekday_morning", "weekday_evening"]
+
 
 class NodePair(BaseModel):
     """Origin-destination node pair."""
@@ -133,13 +140,15 @@ class RecalculateRequest(BaseModel):
             "Resample trip destinations using travel times on the modified graph (elastic demand)"
         ),
     )
-    node_weighting: Literal["uniform", "population"] = Field(
+    node_weighting: NodeWeighting = Field(
         default="uniform",
         description=(
             "How the OD pairs are drawn. 'uniform': every junction alike. "
-            "'population': junctions weighted by their residents and jobs "
-            "(422 no_population_data on an area without them). Each weighting "
-            "has its own OD sample and baseline."
+            "'population' (daily average): both ends weighted by residents and jobs. "
+            "'weekday_morning': origins by residents, destinations by jobs. "
+            "'weekday_evening': origins by jobs, destinations by residents. "
+            "The last three answer 422 no_population_data on an area without "
+            "residents and jobs. Each weighting has its own OD sample and baseline."
         ),
     )
 

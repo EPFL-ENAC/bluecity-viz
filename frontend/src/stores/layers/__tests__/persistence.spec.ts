@@ -28,8 +28,14 @@ describe('reading a saved area', () => {
 })
 
 describe('reading the node weighting', () => {
-  it('keeps population', () => {
+  it('keeps population, the daily average of the projects saved before the weekday ones', () => {
     expect(pickTrafficInputs({ nodeWeighting: 'population' }).nodeWeighting).toBe('population')
+  })
+
+  it('keeps the two weekday weightings', () => {
+    for (const weighting of ['weekday_morning', 'weekday_evening']) {
+      expect(pickTrafficInputs({ nodeWeighting: weighting }).nodeWeighting).toBe(weighting)
+    }
   })
 
   it('reads an old save or an unknown value as uniform', () => {

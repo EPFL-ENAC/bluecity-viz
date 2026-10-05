@@ -148,7 +148,8 @@ def recalculate(
     redraw = None
     if resample_destinations and not pairs and od.nodes is not None and area.sampling_config:
         with timed("od_resampling", timing):
-            redraw = _redraw(area, base, od.nodes, scenario)
+            # the new destinations follow the destination weight of the sample
+            redraw = _redraw(area, base, od.nodes["destination"], scenario)
 
     if use_congestion:
         assignment = _assign_equilibrium(
@@ -235,7 +236,7 @@ def _baseline_run(
 # ── 3. the demand ─────────────────────────────────────────────────────────────
 
 
-def _redraw(area, base: BaselineRun, od_nodes, scenario: Scenario) -> Redraw:
+def _redraw(area, base: BaselineRun, destination_weights, scenario: Scenario) -> Redraw:
     """Elastic demand: the trips the scenario touched may pick a new destination.
 
     The draw is paired with the startup one (`resample_od_destinations`), so
@@ -262,7 +263,7 @@ def _redraw(area, base: BaselineRun, od_nodes, scenario: Scenario) -> Redraw:
     )
     return od_sampler.resample_od_destinations(
         base.pairs,
-        od_nodes,
+        destination_weights,
         mirror,
         area.congested_time,
         times,
