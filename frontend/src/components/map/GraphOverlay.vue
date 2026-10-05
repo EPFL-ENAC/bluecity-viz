@@ -5,6 +5,7 @@ import RouteHoverCard, { type RouteCardData } from '@/components/map/RouteHoverC
 import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useGraphOverlay, type EdgeHover, type RouteHover } from '@/composables/useGraphOverlay'
 import { useMapView } from '@/composables/useMapView'
+import { valueOf } from '@/composables/useResultStates'
 import { useSelectTools } from '@/composables/useSelectTools'
 import { useCVRPStore } from '@/stores/cvrp'
 import {
@@ -18,6 +19,7 @@ import { collectPlaces } from '@/utils/areaName'
 import { routeSummaries } from '@/utils/cvrpSource'
 import { buildGraphSource, type GraphSource } from '@/utils/graphSource'
 import { groupName, type NamedLine } from '@/utils/groupName'
+import { hoverStat } from '@/utils/hoverStat'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { computed, inject, onUnmounted, ref, shallowRef, watch, type Ref } from 'vue'
 
@@ -83,17 +85,20 @@ const totalsByStreet = computed(() => {
   return map
 })
 
-function usageFor(key: string) {
+/**
+ * The number of the layer on the map for one street, in the colour the map
+ * gives it. valueOf is the value the overlay colours the street with, so the
+ * card and the map cannot disagree.
+ */
+function statFor(key: string): HoverCardData['stat'] {
   // The card reads the map: no routing colours on screen, no routing numbers.
-  if (shown.value !== 'routing') return null
+  if (shown.value !== 'routing') return undefined
+  const mode = trafficStore.activeVisualization
+  if (mode === 'none') return undefined
   const row = totalsByStreet.value.get(key)
-  if (!row) return null
-  return {
-    vehicles: row.count,
-    delta: row.delta_count,
-    deltaRelative: row.delta_relative || undefined,
-    co2Delta: row.delta_co2_g_per_km || undefined
-  }
+  if (!row) return undefined
+  const scale = trafficStore.colorScale
+  return { ...hoverStat(row, mode), color: scale ? scale(valueOf(row, mode)) : undefined }
 }
 
 function onHover(hover: EdgeHover | null, point: { x: number; y: number }) {
@@ -102,24 +107,14 @@ function onHover(hover: EdgeHover | null, point: { x: number; y: number }) {
     return
   }
 
-  const usage = usageFor(hover.key)
   hoverData.value = {
     name: hover.name,
     highway: hover.highway,
     speed: hover.speed,
     oneway: hover.oneway,
-    vehicles: usage?.vehicles,
-    delta: usage?.delta,
-    deltaRelative: usage?.deltaRelative,
-    co2Delta: usage?.co2Delta,
-    deltaColor: usage?.delta !== undefined ? deltaColor(usage.delta) : undefined
+    stat: statFor(hover.key)
   }
   hoverCard.value?.move(point.x, point.y)
-}
-
-function deltaColor(delta: number): string | undefined {
-  const scale = trafficStore.colorScale
-  return scale ? scale(delta) : undefined
 }
 
 // Where the popover sits. What it edits is the selection in the store.
