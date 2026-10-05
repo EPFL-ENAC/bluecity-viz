@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/areas", tags=["areas"])
 
-# Set by main.py when the Swiss store is on disk. None means the app runs on
-# the default city only, and every endpoint here answers 503.
+# Set by main.py when the Swiss store is on disk. None means no routing at
+# all (not even the default area), and every endpoint here answers 503.
 graph_store = None
 # Set by main.py when the municipalities file is on disk. None means only the
 # circle works.

@@ -136,9 +136,15 @@ follows the basemap.
 
 ### Backend (`backend/app/`)
 
-The backend loads a **GraphML road network** (Lausanne) at startup via osmnx, then:
-1. Pre-generates 500 research-sampled OD pairs (betweenness-centrality-weighted, lognormal distance distribution)
-2. Serves routing and impact analysis via `/api/v1/routes/`
+Every routing request runs on an **area**: a circle or a set of communes cut
+from the Swiss road graph store (`data/swiss_graph`, parquet tiles). At
+startup the backend builds the default area, a 6 km circle on Lausanne
+(`default_area_*` in `config.py`), and pins it. A request with no `area_id`
+runs on it. The frontend asks for it like any picked area.
+
+The Lausanne GraphML (`data/lausanne.graphml`) is still loaded, but only for
+the waste tool (CVRP) and the habitat layer. `AreaInfo.cvrp` says if the waste
+tool runs on an area: at least half of its nodes are in that graph.
 
 **Service layer**, one file per step of the model. `docs/routing-model.md` is
 the reference: the formulas, what each number means and what the model does
@@ -160,15 +166,16 @@ changes nothing changes no number. Each mode has the baseline that matches it
 (the equilibrium model gets its own MSA run on the untouched network).
 - `services/usage_rows.py` — the per-street rows the API returns
 - `services/area_graph.py` — one area: its OD samples, baselines and caches
-- `services/graph_service.py` — the NetworkX graph (CVRP and legacy endpoints) and the area registry
+- `services/area_builder.py` — cuts an area out of the store and builds it
+- `services/graph_service.py` — the default area, the NetworkX graph (CVRP only) and the area registry
 
-**Key API endpoints** (`/api/v1/routes/`):
-- `GET /graph` — full graph
-- `GET /edge-geometries` — edge coordinates + travel time (GZip compressed)
-- `GET /baseline` — the Model state: the chosen model (free flow, or the
+**Key API endpoints**:
+- `POST /api/v1/areas` — build an area (the default one answers at once), `GET /api/v1/areas/{id}/edges` — its streets
+- `GET /api/v1/routes/graph-info` — node, edge and OD pair counts of an area
+- `GET /api/v1/routes/baseline` — the Model state: the chosen model (free flow, or the
   equilibrium with `use_congestion` and `congestion_iterations`) on the
   untouched network, one ETag per model
-- `POST /recalculate` — apply edge modifications (remove/speed-limit) and re-route all OD pairs, returning per-edge usage stats with delta, CO₂/km, and betweenness centrality
+- `POST /api/v1/routes/recalculate` — apply edge modifications (remove/speed-limit) and re-route all OD pairs, returning per-edge usage stats with delta, CO₂/km, and betweenness centrality
 
 ### Data Flow for Traffic Analysis
 
@@ -189,7 +196,8 @@ Python notebooks and scripts using GeoPandas/uv for converting raw datasets (sha
 ## Configuration
 
 Backend settings are in `backend/app/config.py` (pydantic-settings, reads `.env`):
-- `GRAPH_PATH` — path to GraphML file (default: `data/lausanne.graphml`)
+- `GRAPH_PATH` — the Lausanne GraphML, for the waste tool only (default: `data/lausanne.graphml`)
+- `SWISS_GRAPH_DIR` — the Swiss road graph store every area is cut from (default: `data/swiss_graph`)
 - `CORS_ORIGINS` — JSON list of allowed browser origins (default: the local dev ones)
 - `API_KEY` — shared key checked on `/api/v1/*` via `X-API-Key` (empty = no auth)
 

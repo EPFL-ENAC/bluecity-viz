@@ -37,6 +37,14 @@ Speed and time are derived together, so the three of them are one consistent
 triple: a route that sums `travel_time` and an emission model that reads
 `speed_kph` describe the same drive.
 
+**Where the network comes from.** Every area is cut from one store of the
+Swiss road graph (`backend/data/swiss_graph`), the default one too: a 6 km
+circle around 6.633 / 46.52, built and pinned at startup (`default_area_*` in
+`config.py`). The climb `elev_gain` comes from swissALTIRegio at 40 m. Before,
+the default was the Lausanne GraphML: the city outline, 4,771 nodes, with
+swissALTI3D at 2 m. So the numbers on the default area changed with it. The
+GraphML is still loaded for the waste tool, it routes nothing here.
+
 **Streets and edges.** A two-way street is two directed edges. OSM also splits
 one street into several parallel edges between the same two junctions. The
 model computes on directed edges and groups them back into (u, v) *streets*
