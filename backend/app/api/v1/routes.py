@@ -18,7 +18,7 @@ from app.models.route import (
     RouteRequest,
     RouteResponse,
 )
-from app.services.area_graph import NoPopulationData
+from app.services.area_graph import AreaNotReady, NoPopulationData
 from app.services.area_registry import AreaNotLoaded
 from app.services.graph_export import habitat_geojson
 from app.services.graph_service import GraphService
@@ -58,6 +58,22 @@ def _area(area_id: Optional[str]):
                 ),
             },
         ) from exc
+
+
+def _not_ready(exc: AreaNotReady) -> HTTPException:
+    """The area still routes its baseline. Answered at once, never waited on.
+
+    409 and not 503: the server is fine, the request comes too early for this
+    area. GET /api/v1/areas/{id} says when it is ready.
+    """
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": exc.code,
+            "message": f"{exc}. Try again when GET /api/v1/areas/{{id}} says ready.",
+        },
+        headers={"Retry-After": "1"},
+    )
 
 
 def _no_population(exc: NoPopulationData) -> HTTPException:
@@ -178,6 +194,8 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
         return ORJSONResponse(result, headers=headers)
     except HTTPException:
         raise
+    except AreaNotReady as e:
+        raise _not_ready(e) from e
     except NoPopulationData as e:
         raise _no_population(e) from e
     except Exception as e:
@@ -245,6 +263,8 @@ def get_baseline(
         return _json_or_304(request, data, etag, "no-cache")
     except HTTPException:
         raise
+    except AreaNotReady as e:
+        raise _not_ready(e) from e
     except NoPopulationData as e:
         raise _no_population(e) from e
     except Exception as e:

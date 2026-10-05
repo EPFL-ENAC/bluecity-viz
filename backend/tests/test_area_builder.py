@@ -12,7 +12,7 @@ from app.services.area_builder import (
     giant_component,
     select,
 )
-from app.services.area_graph import NoPopulationData
+from app.services.area_graph import AreaGraph, AreaNotReady, NoPopulationData
 from app.services.graph_store import distance_m
 from app.services.sampling.config import SamplingConfig
 
@@ -233,6 +233,70 @@ def test_the_edge_payload_is_ready_right_after_the_build(swiss_store, small_area
     assert etag
     assert b'"coordinates"' in data
     assert b'"speed_kph"' in data
+
+
+# ── Two phases ────────────────────────────────────────────────────────────────
+
+
+def test_the_first_phase_gives_streets_and_betweenness_but_no_trips(swiss_store, small_area_limits):
+    area = area_builder.start(swiss_store, circle(2000), SamplingConfig(n_nodes_preprocess=100))
+
+    assert area.ready is False
+    assert area.pairs is None
+    data, _ = area.payloads.get_or_build("edges", lambda: [])
+    assert b'"coordinates"' in data
+    data, _ = area.payloads.get_or_build("betweenness", lambda: [])
+    assert b'"betweenness_centrality"' in data
+    with pytest.raises(AreaNotReady):
+        area.recalculate_with_modifications(edge_modifications=[], od_pairs=10)
+
+
+def test_the_second_phase_makes_it_ready(swiss_store, small_area_limits):
+    config = SamplingConfig(n_nodes_preprocess=100)
+    area = area_builder.start(swiss_store, circle(2000), config)
+
+    area_builder.finish(area, config)
+
+    assert area.ready is True
+    assert len(area.pairs) == settings.od_pairs_max
+    assert area.recalculate_with_modifications(edge_modifications=[], od_pairs=10)
+
+
+def test_two_phases_give_the_same_area_as_the_sampler_alone(swiss_store, small_area_limits):
+    """The betweenness of phase 1 is the one the sampler would compute.
+
+    The reference is the path without phase 1: the OD draw computes the
+    betweenness itself, as it did before the two phases. Same pool, same
+    trips, same congested times, same baseline rows.
+    """
+    config = SamplingConfig(n_nodes_preprocess=100)
+    two = area_builder.start(swiss_store, circle(2000), config)
+    area_builder.finish(two, config)
+
+    one = AreaGraph(two.meta, two.mirror, dynamic=True)
+    scaled = area_builder._scaled_config(config, one.mirror)
+    one.sample_research_pairs(settings.od_pairs_max, scaled, 42)
+    one.build_baseline(scaled, 42)
+
+    assert one._bc_vertices == two._bc_vertices
+    np.testing.assert_array_equal(one._sampled_bc, two._sampled_bc)
+    np.testing.assert_array_equal(one._congested_time, two._congested_time)
+    np.testing.assert_array_equal(one.pairs.origins, two.pairs.origins)
+    np.testing.assert_array_equal(one.pairs.destinations, two.pairs.destinations)
+    assert one.baseline.usage_rows == two.baseline.usage_rows
+
+
+def test_the_betweenness_rows_cover_every_street_with_traffic(swiss_store, small_area_limits):
+    area = area_builder.build(swiss_store, circle(2000), SamplingConfig(n_nodes_preprocess=100))
+
+    rows = area.betweenness_rows()
+    by_street = {(r["u"], r["v"]): r["betweenness_centrality"] for r in rows}
+
+    assert rows and all(r["betweenness_centrality"] > 0 for r in rows)
+    # the same values the baseline rows carry, on the streets they share
+    for row in area.baseline.usage_rows:
+        if row.get("betweenness_centrality", 0) > 0:
+            assert by_street[(row["u"], row["v"])] == row["betweenness_centrality"]
 
 
 def test_a_disconnected_area_keeps_only_the_main_network(

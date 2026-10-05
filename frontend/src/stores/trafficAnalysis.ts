@@ -1,12 +1,15 @@
-import { streetTotals, type StreetTotals } from '@/composables/useResultStates'
+import { streetTotals, type StreetTotals, type UsageRow } from '@/composables/useResultStates'
 import {
   ApiError,
   areaKey,
   createArea,
   DEFAULT_AREA,
+  fetchArea,
+  fetchAreaBetweenness,
   fetchAreaLimits,
   fetchBaseline,
   fetchGraphInfo,
+  type AreaBetweennessRow,
   type AreaInfo,
   type AreaLimits,
   type AreaOutline,
@@ -27,6 +30,8 @@ import { computed, markRaw, ref, shallowRef } from 'vue'
 // when the caller knows it.
 const DEFAULT_CENTRE = { lon: 6.6323, lat: 46.5197 }
 const DEFAULT_RADIUS_M = 3000
+// How often we ask the server if an area it builds is ready, in ms.
+export const AREA_POLL_MS = 1000
 
 /** A copy the picker can change without touching the area behind it. */
 function copyArea(area: AreaSelection): AreaSelection {
@@ -148,6 +153,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const areaInfo = shallowRef<AreaInfo | null>(null)
   const isBuildingArea = ref(false)
   const areaError = shallowRef<{ code?: string; message: string } | null>(null)
+  // The betweenness of an area the server is still building, shown until its
+  // trips are routed. Never saved, it comes back with the area.
+  const areaBetweenness = shallowRef<AreaBetweennessRow[]>([])
   // The outline of a set of communes, for the ring on the map. Never saved:
   // the picker hands over the one it previewed, and the server gives it back
   // when the area is built, so a shared link draws it too.
@@ -200,6 +208,13 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   const baselinePending = new Map<string, Promise<BaselineResult>>()
   const graphInfoPromises = new Map<string, Promise<void>>()
   let areaPromise: Promise<string | null> | null = null
+  // The area whose build we follow, and the poll that asks if it is done.
+  let followedId: string | null = null
+  let pollTimer: ReturnType<typeof setTimeout> | null = null
+  // An area can vanish while it builds (an error, a restart). We build it
+  // again once, a second loss is an error, so a build that always fails does
+  // not loop.
+  let rebuiltOnce = false
 
   // Visualization state. Only the active scale is reactive; the per-mode scales
   // live in a plain object because switching mode only reads one of them.
@@ -248,6 +263,25 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   /** What the map and the layers show: the result, or else the Model state. */
   const displayedUsage = computed(() =>
     hasCalculatedRoutes.value ? newEdgeUsage.value : modelUsage.value
+  )
+
+  /**
+   * False while the server routes the trips of the area. The streets and their
+   * betweenness are there, a routing request is not possible yet. An answer
+   * without the flag (an older server) means ready.
+   */
+  const areaReady = computed(() => areaInfo.value?.ready !== false)
+
+  /** The betweenness shown while the area builds, per street like a result. */
+  const previewTotals = computed<StreetTotals[]>(() => {
+    const streets = useScenarioStore().streets
+    if (areaBetweenness.value.length === 0 || streets.size === 0) return []
+    return streetTotals(areaBetweenness.value, streets)
+  })
+
+  /** The same scale as the betweenness mode of a result, so the colours match. */
+  const previewScale = computed<ModeScale | null>(
+    () => buildScales(areaBetweenness.value).betweenness
   )
 
   /**
@@ -337,7 +371,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
    * modes need. The old code walked the array about ten times and used
    * Math.max(...values), which spreads 10k arguments onto the stack.
    */
-  function buildScales(usage: EdgeUsageStats[]): ModeScales {
+  function buildScales(usage: readonly UsageRow[]): ModeScales {
     const built = emptyScales()
     if (usage.length === 0) return built
 
@@ -354,7 +388,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     let hasBCDelta = false
 
     for (const stat of usage) {
-      const frequency = stat.frequency
+      const frequency = stat.frequency ?? 0
       if (frequency > maxFreq) maxFreq = frequency
 
       const co2 = stat.co2_g_per_km ?? 0
@@ -623,6 +657,10 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
    * is for options nobody asked for any more, and the rows already on screen
    * stay until the right ones land. The error goes to `modelError` and is
    * thrown again for the caller.
+   *
+   * Null too while the server still routes the trips of the area: there is
+   * no Model state to ask for yet, and asking would only get a 409. The
+   * Model step loads it once the area is ready.
    */
   async function loadModelState(): Promise<BaselineResult | null> {
     const key = modelOptionsKey.value
@@ -633,6 +671,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       // The area is built on the server first, the Model state is on it.
       await ensureArea()
       if (request !== modelRequest || key !== modelOptionsKey.value) return null
+      if (!areaReady.value) return null
       const result = await getBaseline(odPairs.value ?? odPairsDefault.value ?? undefined)
       if (request !== modelRequest || key !== modelOptionsKey.value) return null
 
@@ -679,6 +718,8 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     }
 
     forgetArea(graphKey.value)
+    stopFollowing()
+    rebuiltOnce = false
     area.value = selection
     areaId.value = null
     areaInfo.value = null
@@ -721,6 +762,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         areaId.value = info.id
         areaInfo.value = info
         areaOutline.value = info.outline ?? null
+        if (info.ready === false) followBuild(info.id)
         return info.id
       })
       .catch((error: unknown) => {
@@ -738,6 +780,84 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
     areaPromise = request
     return request
+  }
+
+  function stopFollowing() {
+    if (pollTimer !== null) clearTimeout(pollTimer)
+    pollTimer = null
+    followedId = null
+    areaBetweenness.value = []
+  }
+
+  /** Still the area we follow, and still the one on screen. */
+  function following(id: string): boolean {
+    return followedId === id && areaId.value === id
+  }
+
+  /**
+   * Follow an area the server is still building: show its betweenness, and
+   * ask every second if its trips are routed.
+   */
+  function followBuild(id: string) {
+    if (followedId === id) return
+    stopFollowing()
+    followedId = id
+    fetchAreaBetweenness(id)
+      .then((rows) => {
+        if (following(id)) areaBetweenness.value = markRaw(rows)
+      })
+      .catch((error) => {
+        // the map stays grey until the area is ready, nothing else breaks
+        console.warn('Failed to fetch the area betweenness:', error)
+      })
+    pollTimer = setTimeout(() => pollArea(id), AREA_POLL_MS)
+  }
+
+  async function pollArea(id: string) {
+    pollTimer = null
+    if (!following(id)) return
+
+    let info: AreaInfo
+    try {
+      info = await fetchArea(id)
+    } catch (error) {
+      if (!following(id)) return
+      if (error instanceof ApiError && error.status === 404) {
+        areaLost(error)
+      } else {
+        // a network hiccup, the build goes on: ask again
+        pollTimer = setTimeout(() => pollArea(id), AREA_POLL_MS)
+      }
+      return
+    }
+    if (!following(id)) return
+
+    areaInfo.value = info
+    if (info.ready === false) {
+      pollTimer = setTimeout(() => pollArea(id), AREA_POLL_MS)
+      return
+    }
+
+    stopFollowing()
+    rebuiltOnce = false
+    // graph-info said 0 trips while the area was building, ask again. The
+    // cache is per area shape, and following(id) says it is still this one.
+    graphInfoPromises.delete(graphKey.value)
+    loadGraphInfo().catch((error) => console.warn('Failed to load the graph info:', error))
+  }
+
+  /** The server dropped the area while it was building it. */
+  function areaLost(error: ApiError) {
+    forgetAreaId()
+    if (rebuiltOnce) {
+      // no state saying "building" is left, so the button is not stuck
+      areaInfo.value = null
+      areaError.value = { code: error.code, message: error.message }
+      return
+    }
+    rebuiltOnce = true
+    // ensureArea writes areaError itself when it fails
+    ensureArea().catch(() => undefined)
   }
 
   /** A circle to start from: the last one, or a fresh one where the map looks. */
@@ -868,12 +988,13 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   /** The area is gone from the server: build it again on the next call. */
   function forgetAreaId() {
     forgetArea(graphKey.value)
+    stopFollowing()
     areaId.value = null
     areaPromise = null
   }
 
-  function getColor(value: number): [number, number, number] {
-    const scale = colorScale.value
+  /** The colour of a value on the active scale, or on the one given. */
+  function getColor(value: number, scale: ColorScale = colorScale.value): [number, number, number] {
     if (!scale) return [136, 136, 136] // Gray fallback
 
     if (scale !== colorCacheScale) {
@@ -943,6 +1064,8 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       const next = state.area ?? copyArea(DEFAULT_AREA)
       if (areaKey(next) !== areaKey(area.value)) {
         forgetArea(graphKey.value)
+        stopFollowing()
+        rebuiltOnce = false
         area.value = next
         areaId.value = null
         areaInfo.value = null
@@ -1024,6 +1147,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     graphKey,
     isBuildingArea,
     areaError,
+    areaBetweenness,
     pickMode,
     pickTool,
     draftArea,
@@ -1042,6 +1166,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     modelOptionsKey,
     modelStale,
     displayedUsage,
+    areaReady,
+    previewTotals,
+    previewScale,
     resultTotals,
     resultScenarioHash,
     isStale,

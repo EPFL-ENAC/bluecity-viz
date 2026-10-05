@@ -272,6 +272,17 @@ export interface AreaInfo {
   od_pairs_max: number
   /** the waste tool runs here; missing from an older server */
   cvrp?: boolean
+  // False while the server draws and routes the trips of the area: the
+  // streets and their betweenness are there, a routing request answers 409.
+  // Missing from an older server, which only answers once the area is ready.
+  ready?: boolean
+}
+
+/** The betweenness of one street, served before the area has any trip. */
+export interface AreaBetweennessRow {
+  u: number
+  v: number
+  betweenness_centrality: number
 }
 
 export type AreaRejectionCode =
@@ -361,6 +372,20 @@ export async function createArea(area: AreaSelection): Promise<AreaInfo> {
     body: areaBody(area)
   })
   if (!response.ok) await throwHttpError(response, 'Failed to create the area')
+  return response.json()
+}
+
+/** One loaded area. Polled until `ready`, a 404 means it was evicted. */
+export async function fetchArea(areaId: string): Promise<AreaInfo> {
+  const response = await fetch(`${AREAS_BASE_URL}/${encodeURIComponent(areaId)}`)
+  if (!response.ok) await throwHttpError(response, 'Failed to fetch the area')
+  return response.json()
+}
+
+/** The betweenness of every street of an area, there before its trips. */
+export async function fetchAreaBetweenness(areaId: string): Promise<AreaBetweennessRow[]> {
+  const response = await fetch(`${AREAS_BASE_URL}/${encodeURIComponent(areaId)}/betweenness`)
+  if (!response.ok) await throwHttpError(response, 'Failed to fetch the area betweenness')
   return response.json()
 }
 

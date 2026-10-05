@@ -177,6 +177,13 @@ changes nothing changes no number. Each mode has the baseline that matches it
   untouched network, one ETag per model
 - `POST /api/v1/routes/recalculate` — apply edge modifications (remove/speed-limit) and re-route all OD pairs, returning per-edge usage stats with delta, CO₂/km, and betweenness centrality
 
+**Area endpoints** (`/api/v1/areas/`): `POST ""` builds an area in two phases
+and answers after the first one (the streets and the betweenness) with
+`ready: false`. The trips are drawn and routed in the background. `GET /{id}`
+says when it is `ready`, `GET /{id}/betweenness` gives the per street
+betweenness meanwhile, and `/recalculate` or `/baseline` on an area that is
+not ready answer 409 `area_not_ready`.
+
 ### Data Flow for Traffic Analysis
 
 0. In the Model step, `useModelPreview` loads the Model state (`GET /baseline`)

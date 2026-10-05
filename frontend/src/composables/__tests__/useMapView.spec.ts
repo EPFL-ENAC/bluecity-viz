@@ -17,6 +17,14 @@ function withModelState() {
   useTrafficAnalysisStore().modelUsage = ROWS
 }
 
+/** A drawn area the server is still routing, with its betweenness in. */
+function withBuildingArea() {
+  const store = useTrafficAnalysisStore()
+  store.area = { kind: 'circle', lon: 7.44, lat: 46.95, radiusM: 3000 }
+  store.areaInfo = { id: 'c_7.4400_46.9500_3000', ready: false } as never
+  store.areaBetweenness = [{ u: 1, v: 2, betweenness_centrality: 5 }]
+}
+
 function withCvrp() {
   // hasResult only asks whether there is a result object.
   useCVRPStore().lastResult = { n_routes: 2 } as never
@@ -170,5 +178,64 @@ describe('useMapView', () => {
     useScenarioStore().activeTab = 'cvrp'
     expect(view.phase.value).toBe('init')
     expect(view.editable.value).toBe(false)
+  })
+
+  it('draws the betweenness of an area still building, in any step and phase', () => {
+    withBuildingArea()
+    const view = useMapView()
+    expect(view.shown.value).toBe('betweenness')
+    // the step and the pointer do not change for it
+    expect(view.step.value).toBe('scenario')
+    expect(view.editable.value).toBe(true)
+
+    useStorylineStore().phases.routing = 'init'
+    expect(view.shown.value).toBe('betweenness')
+    expect(view.step.value).toBe('model')
+  })
+
+  it('stops drawing the betweenness once the area is ready', () => {
+    withBuildingArea()
+    const view = useMapView()
+    const store = useTrafficAnalysisStore()
+    store.areaInfo = { id: 'c_7.4400_46.9500_3000', ready: true } as never
+    expect(view.shown.value).toBeNull()
+  })
+
+  it('needs the rows, an open workbench, no picker and the routing tab', () => {
+    withBuildingArea()
+    const view = useMapView()
+    const store = useTrafficAnalysisStore()
+    const scenario = useScenarioStore()
+
+    store.pickMode = true
+    expect(view.shown.value).toBeNull()
+    store.pickMode = false
+
+    scenario.isOpen = false
+    expect(view.shown.value).toBeNull()
+    scenario.isOpen = true
+
+    scenario.activeTab = 'cvrp'
+    expect(view.shown.value).toBeNull()
+    scenario.activeTab = 'routing'
+
+    store.areaBetweenness = []
+    expect(view.shown.value).toBeNull()
+  })
+
+  it('lets the Model state win over the betweenness on the Model step', () => {
+    withBuildingArea()
+    useStorylineStore().phases.routing = 'init'
+    const view = useMapView()
+    expect(view.shown.value).toBe('betweenness')
+    withModelState()
+    expect(view.shown.value).toBe('routing')
+  })
+
+  it('lets a restored result win over the betweenness', () => {
+    withBuildingArea()
+    withRouting()
+    useScenarioStore().mapMode = 'result'
+    expect(useMapView().shown.value).toBe('routing')
   })
 })

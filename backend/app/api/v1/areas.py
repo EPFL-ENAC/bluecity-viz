@@ -16,7 +16,7 @@ from app.models.area import (
 )
 from app.services import area_builder
 from app.services.area_builder import AreaRejected, AreaSpec, CircleSpec, MunicipalitySpec
-from app.services.area_graph import AreaGraph
+from app.services.area_graph import AreaGraph, AreaNotReady
 from app.services.area_registry import AreaNotLoaded
 from app.services.sampling.config import SamplingConfig
 
@@ -89,7 +89,19 @@ def _info(area: AreaGraph) -> dict:
         "od_pairs_default": settings.od_pairs,
         "od_pairs_max": settings.od_pairs_max,
         "cvrp": _service().runs_cvrp(area),
+        "ready": area.ready,
     }
+
+
+def _loaded(area_id: str) -> AreaGraph:
+    """The area, or the 404 the frontend answers by creating it again."""
+    try:
+        return _service().area(area_id)
+    except AreaNotLoaded as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "area_not_loaded", "message": f"area {area_id!r} is not in memory"},
+        ) from exc
 
 
 @router.get("/limits", response_model=AreaLimits)
@@ -122,6 +134,10 @@ async def create_area(request: AreaCreateRequest):
     The id comes from the geometry (or the sorted municipality numbers), so
     asking twice for the same spot gives the same area and the second call is
     free.
+
+    The answer comes after the first build phase: the streets and their
+    betweenness. The trips are drawn and routed after, in the background, and
+    the area says `ready: false` until then (poll GET /areas/{id}).
     """
     store = _store()
     spec = _spec(request)
@@ -131,11 +147,20 @@ async def create_area(request: AreaCreateRequest):
     if existing is not None:
         return _info(existing)
 
-    def build():
-        return area_builder.build(store, spec, SamplingConfig())
+    # One config for both phases: the trips must be drawn on the pool the
+    # betweenness was computed on.
+    config = SamplingConfig()
+
+    def start():
+        return area_builder.start(store, spec, config)
+
+    def finish(area: AreaGraph):
+        return area_builder.finish(area, config)
 
     try:
-        area = await anyio.to_thread.run_sync(lambda: service.registry.get_or_build(spec.id, build))
+        area = await anyio.to_thread.run_sync(
+            lambda: service.registry.get_or_build(spec.id, start, finish)
+        )
     except AreaRejected as rejected:
         raise HTTPException(
             status_code=422,
@@ -151,6 +176,31 @@ async def create_area(request: AreaCreateRequest):
     return _info(area)
 
 
+@router.get("/{area_id}", response_model=AreaInfo)
+def get_area(area_id: str):
+    """One loaded area. The frontend polls it until `ready` is true."""
+    return _info(_loaded(area_id))
+
+
+@router.get("/{area_id}/betweenness")
+def get_area_betweenness(area_id: str, request: Request):
+    """The betweenness of every street, `{u, v, betweenness_centrality}` rows.
+
+    There as soon as the area is created, before its trips. Served from bytes
+    with an ETag. It never changes for one area, but the same id can come back
+    after an eviction, so the browser asks again each time.
+    """
+    from app.api.v1.routes import _json_or_304, _not_ready
+
+    area = _loaded(area_id)
+    try:
+        data, etag = area.payloads.get_or_build("betweenness", area.betweenness_rows)
+    except AreaNotReady as exc:
+        # an area made from a whole graph (the tests), before its baseline
+        raise _not_ready(exc) from exc
+    return _json_or_304(request, data, etag, "no-cache")
+
+
 @router.get("/{area_id}/edges")
 def get_area_edges(area_id: str, request: Request):
     """The area's streets, in the shape the map already reads.
@@ -159,14 +209,7 @@ def get_area_edges(area_id: str, request: Request):
     """
     from app.api.v1.routes import _json_or_304
 
-    service = _service()
-    try:
-        area = service.area(area_id)
-    except AreaNotLoaded as exc:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "area_not_loaded", "message": f"area {area_id!r} is not in memory"},
-        ) from exc
+    area = _loaded(area_id)
 
     def missing():
         # Every area gets its rows at build time, the default one too, so

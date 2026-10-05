@@ -52,6 +52,8 @@ function focus(key: string): void {
 }
 
 const loadingMessage = ref('')
+// Why the last run did not go through, when the user can do something about it.
+const calculateError = ref<string | null>(null)
 
 // The pair counts come from the server, not from a constant here. Each area
 // has its own, so we ask again when the area changes.
@@ -184,6 +186,7 @@ async function calculateRoutes() {
 
   trafficStore.isCalculating = true
   loadingMessage.value = baseMessage
+  calculateError.value = null
   try {
     // A picked area may not be on the server any more (restart, eviction). This
     // builds it back before we ask anything about it. The default one is
@@ -223,7 +226,13 @@ async function calculateRoutes() {
       scenarioStore.hash
     )
   } catch (error) {
-    console.error('Failed to calculate routes:', error)
+    // The area answered but its trips are not routed yet: the button waits
+    // for it now, say so instead of failing quietly.
+    if (error instanceof ApiError && error.code === 'area_not_ready') {
+      calculateError.value = 'This area is still routing its trips. Calculate again in a moment.'
+    } else {
+      console.error('Failed to calculate routes:', error)
+    }
   } finally {
     trafficStore.isCalculating = false
   }
@@ -359,7 +368,7 @@ async function calculateRoutes() {
 
       <button
         class="bc-btn bc-btn--primary calculate"
-        :disabled="trafficStore.isCalculating"
+        :disabled="trafficStore.isCalculating || !trafficStore.areaReady"
         @click="calculateRoutes"
       >
         {{ trafficStore.isCalculating ? 'Calculating…' : 'Calculate routes' }}
@@ -369,6 +378,12 @@ async function calculateRoutes() {
       </div>
       <div v-if="trafficStore.isCalculating" class="bc-empty calculate__msg">
         {{ loadingMessage }}
+      </div>
+      <div v-else-if="!trafficStore.areaReady" class="bc-empty calculate__msg">
+        The server is still routing the trips of this area. You can calculate once it is done.
+      </div>
+      <div v-else-if="calculateError" class="bc-empty calculate__msg">
+        {{ calculateError }}
       </div>
     </div>
   </StoryStep>

@@ -60,6 +60,8 @@ const areaStatus = computed(() => {
   if (trafficStore.areaError) return null
   if (trafficStore.isBuildingArea) return 'Building the network for this area…'
   if (graphEdges.value.length === 0) return 'Loading the streets…'
+  if (!trafficStore.areaReady)
+    return 'Routing the trips of this area. The map shows the betweenness of its streets meanwhile.'
   return null
 })
 

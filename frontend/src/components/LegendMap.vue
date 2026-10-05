@@ -36,7 +36,7 @@ const scale = useMapScale(computed(() => mapComponentRef?.value?.map))
 const graphRows = computed(() => {
   if (!scenarioStore.isOpen) return []
   return graphLegendRows({
-    mode: shown.value ? 'result' : 'scenario',
+    mode: shown.value === 'routing' || shown.value === 'cvrp' ? 'result' : 'scenario',
     hasModifications: scenarioStore.hasModifications
   })
 })
@@ -49,6 +49,15 @@ const generatedLayersWithColors = computed(() => {
 
 // Generate traffic analysis legend
 const trafficLegend = computed(() => {
+  // An area still building: the betweenness of its streets, on its own scale.
+  if (shown.value === 'betweenness') {
+    const preview = trafficStore.previewScale
+    if (!preview) return null
+    return buildTrafficLegend('betweenness', preview.min, preview.max, (value) =>
+      trafficStore.getColor(value, preview.scale)
+    )
+  }
+
   // Read these so the computed tracks them
   const mode = trafficStore.activeVisualization
   const scale = trafficStore.colorScale

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from app.config import settings
+from tests.conftest import start_routing
 
 CENTRE = {"lon": 7.106, "lat": 46.108}
 
@@ -332,6 +333,116 @@ def test_an_unknown_weighting_is_refused(areas_client):
     answer = areas_client.get("/api/v1/routes/baseline?od_pairs=10&node_weighting=cats")
 
     assert answer.status_code == 422
+
+
+# ── Two phases: the betweenness first, the trips after ───────────────────────
+
+
+@pytest.fixture
+def held(graph_service):
+    """Keep the second build phase of every new area until the test runs it."""
+    jobs = []
+    graph_service.registry.spawn = jobs.append
+    return jobs
+
+
+def recalculate(client, area_id):
+    return client.post(
+        "/api/v1/routes/recalculate",
+        json={"area_id": area_id, "od_pairs": 100, "edge_modifications": []},
+    )
+
+
+def test_an_area_answers_with_its_betweenness_before_its_trips(areas_client, held):
+    created = areas_client.post("/api/v1/areas", json=body())
+
+    assert created.status_code == 201
+    info = created.json()
+    area_id = info["id"]
+    assert info["ready"] is False
+    assert info["od_pairs"] == 0
+    assert areas_client.get(f"/api/v1/areas/{area_id}").json()["ready"] is False
+
+    edges = areas_client.get(f"/api/v1/areas/{area_id}/edges")
+    assert edges.status_code == 200 and edges.json()
+
+    bc = areas_client.get(f"/api/v1/areas/{area_id}/betweenness")
+    assert bc.status_code == 200
+    rows = bc.json()
+    assert rows and set(rows[0]) == {"u", "v", "betweenness_centrality"}
+    again = areas_client.get(
+        f"/api/v1/areas/{area_id}/betweenness", headers={"If-None-Match": bc.headers["etag"]}
+    )
+    assert again.status_code == 304
+
+
+def test_routing_on_an_area_that_is_not_ready_is_a_409(areas_client, held):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+
+    too_early = recalculate(areas_client, area_id)
+    baseline = areas_client.get(f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100")
+
+    for answer in (too_early, baseline):
+        assert answer.status_code == 409
+        assert answer.json()["detail"]["code"] == "area_not_ready"
+        assert answer.headers["retry-after"] == "1"
+
+
+def test_the_area_is_ready_once_its_trips_are_routed(areas_client, held):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    assert len(held) == 1
+
+    held.pop()()
+
+    info = areas_client.get(f"/api/v1/areas/{area_id}").json()
+    assert info["ready"] is True
+    assert info["od_pairs"] == settings.od_pairs_max
+    assert recalculate(areas_client, area_id).status_code == 200
+    # the betweenness did not move
+    assert areas_client.get(f"/api/v1/areas/{area_id}/betweenness").status_code == 200
+
+
+def test_asking_again_while_it_builds_does_not_build_twice(areas_client, held):
+    first = areas_client.post("/api/v1/areas", json=body()).json()
+    second = areas_client.post("/api/v1/areas", json=body()).json()
+
+    assert second["id"] == first["id"]
+    assert second["ready"] is False
+    assert len(held) == 1
+
+
+def test_an_area_that_is_not_ready_is_not_evicted(areas_client, graph_service, held, monkeypatch):
+    monkeypatch.setattr(graph_service.registry, "max_count", 2)  # the default area + one
+
+    first = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    second = areas_client.post("/api/v1/areas", json=body(radius_m=2500)).json()["id"]
+
+    assert not graph_service.registry.evict(first)
+    assert areas_client.get(f"/api/v1/areas/{first}").status_code == 200
+
+    # once both are ready, the older one can go again
+    for job in held:
+        job()
+    loaded = [a.meta.id for a in graph_service.registry.loaded()]
+    assert second in loaded
+    assert first not in loaded
+
+
+def test_the_status_of_an_unknown_area_is_a_404(areas_client):
+    for path in ("/api/v1/areas/c_nowhere", "/api/v1/areas/c_nowhere/betweenness"):
+        answer = areas_client.get(path)
+        assert answer.status_code == 404
+        assert answer.json()["detail"]["code"] == "area_not_loaded"
+
+
+def test_the_default_area_has_its_betweenness_too(client, graph_service):
+    area_id = start_routing(graph_service, sampling_method="random", count=60, seed=1).meta.id
+
+    info = client.get(f"/api/v1/areas/{area_id}").json()
+    rows = client.get(f"/api/v1/areas/{area_id}/betweenness").json()
+
+    assert info["ready"] is True
+    assert rows and all(r["betweenness_centrality"] > 0 for r in rows)
 
 
 # ── Losing an area ────────────────────────────────────────────────────────────

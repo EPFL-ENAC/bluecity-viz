@@ -47,4 +47,4 @@ class PayloadCache:
             self._items.clear()
 
     def nbytes(self) -> int:
-        return sum(len(data) for data, _etag in self._items.values())
+        return sum(len(data) for data, _etag in list(self._items.values()))

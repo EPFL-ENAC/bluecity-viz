@@ -127,6 +127,10 @@ def graph_service(graph_path) -> GraphService:
     service = GraphService()
     service.load_graph(str(graph_path))
     service.set_default_area(AreaGraph.from_networkx(service.graph, area_id="grid", name="Grid"))
+    # The second build phase of an area runs inline, so a test that creates
+    # an area gets it ready, as before the two phases. A test of the phases
+    # swaps it again.
+    service.registry.spawn = lambda job: job()
     return service
 
 
