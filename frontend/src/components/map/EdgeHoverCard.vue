@@ -7,14 +7,13 @@ export interface HoverCardData {
   highway?: string
   speed?: number
   oneway: boolean
-  /** vehicles a day on the street, both directions summed */
-  vehicles?: number
-  delta?: number
-  deltaRelative?: number
-  /** change of the traffic CO2, g/km, both directions summed */
-  co2Delta?: number
-  /** the ramp colour of the change, so the number matches the map */
-  deltaColor?: string
+  /** the value of the layer on the map, both directions summed */
+  stat?: {
+    label: string
+    value: string
+    /** the ramp colour of the value, so the card matches the map */
+    color?: string
+  }
 }
 
 const props = defineProps<{ data: HoverCardData | null }>()
@@ -53,31 +52,6 @@ const meta = computed(() => {
   parts.push(data.oneway ? '→ 1 EDGE' : '↔ 2 EDGES')
   return parts.join(' · ')
 })
-
-function number(value?: number): string {
-  if (value === undefined || value === null) return '—'
-  // fr-CH groups with a narrow no-break space; use a plain one
-  return Math.round(value)
-    .toLocaleString('fr-CH')
-    .replace(/[\u202f\u00a0\u2009]/g, ' ')
-}
-
-const change = computed(() => {
-  const data = props.data
-  if (!data || data.delta === undefined) return null
-  const sign = data.delta > 0 ? '+' : ''
-  const relative =
-    data.deltaRelative === undefined ? '' : ` · ${sign}${data.deltaRelative.toFixed(1)}%`
-  return `${sign}${number(data.delta)}${relative}`
-})
-
-const co2 = computed(() => {
-  const value = props.data?.co2Delta
-  if (value === undefined) return null
-  const sign = value > 0 ? '+' : ''
-  if (Math.abs(value) < 1000) return `${sign}${value.toFixed(0)} g/km`
-  return `${sign}${(value / 1000).toFixed(1)} kg/km`
-})
 </script>
 
 <template>
@@ -88,21 +62,18 @@ const co2 = computed(() => {
         <div class="hover-card__meta">{{ meta }}</div>
       </div>
 
-      <div v-if="props.data.vehicles !== undefined || change" class="hover-card__stats">
-        <template v-if="props.data.vehicles !== undefined">
-          <span class="hover-card__label">Vehicles / day</span>
-          <span class="hover-card__value">{{ number(props.data.vehicles) }}</span>
-        </template>
-        <template v-if="change">
-          <span class="hover-card__label">Change</span>
-          <span class="hover-card__value" :style="{ color: props.data.deltaColor }">
-            {{ change }}
-          </span>
-        </template>
-        <template v-if="co2">
-          <span class="hover-card__label">CO₂ change</span>
-          <span class="hover-card__value">{{ co2 }}</span>
-        </template>
+      <div v-if="props.data.stat" class="hover-card__stats">
+        <span class="hover-card__label">{{ props.data.stat.label }}</span>
+        <span class="hover-card__value">
+          <!-- The ramp colour as a swatch, not on the text: the middle of a
+               diverging ramp is a pale yellow you cannot read on paper. -->
+          <span
+            v-if="props.data.stat.color"
+            class="hover-card__swatch"
+            :style="{ background: props.data.stat.color }"
+          ></span>
+          {{ props.data.stat.value }}
+        </span>
       </div>
 
       <div class="hover-card__foot bc-micro">
@@ -157,7 +128,16 @@ const co2 = computed(() => {
 }
 
 .hover-card__value {
-  text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.hover-card__swatch {
+  width: 8px;
+  height: 8px;
+  flex: none;
 }
 
 .hover-card__foot {
