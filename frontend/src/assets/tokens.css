@@ -246,7 +246,7 @@ a:hover {
 }
 .bc-seg > [data-on='true'] {
   background: var(--bc-ink);
-  color: #fff;
+  color: var(--bc-ground);
 }
 
 /* MapLibre chrome — square, hairline, mono */
