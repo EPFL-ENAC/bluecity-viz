@@ -1,18 +1,17 @@
 import {
-  DEFAULT_AREA_ID,
+  areaKey,
+  DEFAULT_AREA,
   fetchAreaEdges,
-  fetchEdgeGeometries,
   type EdgeGeometry
 } from '@/services/trafficAnalysis'
-import { shallowRef } from 'vue'
+import { computed, shallowRef } from 'vue'
 
 /**
  * The road network geometry of the area on screen.
  *
- * The default city comes from a static file of about 6 MB, an area the user
- * drew comes from the backend. Both are kept in module scope, so closing a
- * tool and opening it again does not fetch anything a second time, and going
- * back to an area seen before is instant.
+ * Every area comes from the backend, the default one too. The networks are
+ * kept in module scope, so closing a tool and opening it again does not fetch
+ * anything a second time, and going back to an area seen before is instant.
  *
  * Both refs are shallow: deep reactivity over 10k edges would cost more than
  * everything else on this page.
@@ -30,24 +29,27 @@ const pending = new Map<string, Promise<void>>()
 
 const edges = shallowRef<EdgeGeometry[]>([])
 const edgeMap = shallowRef<Map<string, EdgeGeometry>>(new Map())
-const currentAreaId = shallowRef<string>(DEFAULT_AREA_ID)
+// The store has no bus lines yet, so a network may have none at all. Then the
+// "Bus routes" clip has nothing to keep and is hidden.
+const hasBus = computed(() => edges.value.some((edge) => (edge.bus_route_count ?? 0) > 0))
+const DEFAULT_KEY = areaKey(DEFAULT_AREA)
+const currentAreaId = shallowRef<string>(DEFAULT_KEY)
 
 // The area the map is going to. Building and fetching take time, and the user
 // can pick another one meanwhile, so every step checks this before it draws:
 // the last area asked for is the one that ends up on screen.
-let wanted: string = DEFAULT_AREA_ID
+let wanted: string = DEFAULT_KEY
 
 export function edgeKey(u: number, v: number): string {
   return `${u}-${v}`
 }
 
 function areaOf(areaId: string | null | undefined): string {
-  return areaId || DEFAULT_AREA_ID
+  return areaId || DEFAULT_KEY
 }
 
 async function load(areaId: string): Promise<void> {
-  const loaded =
-    areaId === DEFAULT_AREA_ID ? await fetchEdgeGeometries() : await fetchAreaEdges(areaId)
+  const loaded = await fetchAreaEdges(areaId)
 
   const map = new Map<string, EdgeGeometry>()
   for (const edge of loaded) {
@@ -106,7 +108,7 @@ export function useGraphEdges() {
    *
    * The circle names the network, so this is the one road from "the user
    * picked here" to "these streets are on the map". The server only keeps a
-   * drawn area for a while, so a network that is gone after a build is asked
+   * picked area for a while, so a network that is gone after a build is asked
    * for once more with a fresh id.
    *
    * `build` mints the area and gives back its id (the store's `ensureArea`),
@@ -128,11 +130,6 @@ export function useGraphEdges() {
 
     // Nothing cached, so this empties the map while we go and get it.
     show(id)
-    if (id === DEFAULT_AREA_ID) {
-      await fetchInto(id)
-      if (wanted === id) show(id)
-      return
-    }
 
     for (let attempt = 0; attempt < 2; attempt++) {
       // The server answers from its own cache when it still has the circle,
@@ -165,7 +162,7 @@ export function useGraphEdges() {
     return edgeMap.value.get(edgeKey(v, u))
   }
 
-  return { edges, edgeMap, currentAreaId, showArea, getEdge, getReverseEdge }
+  return { edges, edgeMap, hasBus, currentAreaId, showArea, getEdge, getReverseEdge }
 }
 
 /** Tests only: forget every network so the next call fetches again. */
@@ -174,6 +171,6 @@ export function resetGraphEdges(): void {
   pending.clear()
   edges.value = []
   edgeMap.value = new Map()
-  currentAreaId.value = DEFAULT_AREA_ID
-  wanted = DEFAULT_AREA_ID
+  currentAreaId.value = DEFAULT_KEY
+  wanted = DEFAULT_KEY
 }

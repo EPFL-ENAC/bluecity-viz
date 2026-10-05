@@ -56,8 +56,8 @@ watch(
 )
 
 // The circle and the streets under it are one thing, so they read one key.
-// The default city comes from a static file, an area the user drew is built
-// by the server and then fetched. Both are cached, so going back is instant.
+// Every area, the default one too, is built by the server and then fetched.
+// The networks are cached, so going back is instant.
 watch(
   () => trafficStore.graphKey,
   (key) => {

@@ -3,7 +3,7 @@ import { useAreaFeedback } from '@/composables/useAreaFeedback'
 import { useCirclePick, type PickMode } from '@/composables/useCirclePick'
 import { useMunicipalityPick } from '@/composables/useMunicipalityPick'
 import { swissNetworkLayer, swissNetworkStyle } from '@/config/toolLayers'
-import { areaKey, type AreaSelection } from '@/services/trafficAnalysis'
+import { areaKey, DEFAULT_AREA, type AreaSelection } from '@/services/trafficAnalysis'
 import { useApiKeyStore } from '@/stores/apiKey'
 import { useThemeStore } from '@/stores/theme'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
@@ -264,6 +264,19 @@ function fitArea(current: MapLibreMap, area: AreaSelection, room = 1) {
 
 watch([() => trafficStore.draftArea, canUse, lastOutline], draw, { deep: true })
 
+// "Lausanne (default)" in the dock put the draft back on the default circle:
+// look at it, it may be far from where the user was.
+const DEFAULT_KEY = areaKey(DEFAULT_AREA)
+watch(
+  () => (trafficStore.draftArea ? areaKey(trafficStore.draftArea) : null),
+  (key, previous) => {
+    const current = map.value
+    const draft = trafficStore.draftArea
+    if (!current || !draft || key !== DEFAULT_KEY || previous === null) return
+    fitArea(current, draft, PICK_ROOM)
+  }
+)
+
 // The dock switched between the circle and the communes: swap the pointer,
 // and look at the new draft when there is one to look at.
 watch(
@@ -319,10 +332,9 @@ function detach(current: MapLibreMap): void {
   mountedOn = null
 
   // A new area: look at it, its streets are on their way. Same one, or
-  // cancelled: back where we were. Going back to the default city moves
-  // nothing here, the overlay takes the camera there when it lands.
+  // cancelled: back where we were.
   const area = trafficStore.area
-  if (area && areaKey(area) !== savedKey) fitArea(current, area)
+  if (areaKey(area) !== savedKey) fitArea(current, area)
   else if (savedCamera) {
     current.easeTo({ center: savedCamera.center, zoom: savedCamera.zoom, duration: 600 })
   }

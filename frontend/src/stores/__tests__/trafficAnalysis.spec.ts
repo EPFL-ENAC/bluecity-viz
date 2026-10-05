@@ -1,4 +1,12 @@
-import { ApiError, createArea, fetchBaseline, fetchGraphInfo } from '@/services/trafficAnalysis'
+import {
+  ApiError,
+  areaKey,
+  createArea,
+  DEFAULT_AREA,
+  fetchBaseline,
+  fetchGraphInfo,
+  type AreaSelection
+} from '@/services/trafficAnalysis'
 import {
   EXPECTED_PUBLIC_KEYS,
   EXPECTED_SCALES,
@@ -24,6 +32,7 @@ vi.mock('@/services/trafficAnalysis', async () => ({
 
 const BERN = { kind: 'circle' as const, lon: 7.44, lat: 46.95, radiusM: 3000 }
 const BERN_ID = 'c_7.4400_46.9500_3000'
+const DEFAULT_ID = 'c_6.6330_46.5200_6000'
 
 function areaInfo(id: string) {
   return {
@@ -37,6 +46,11 @@ function areaInfo(id: string) {
     od_pairs_default: 20000,
     od_pairs_max: 40000
   }
+}
+
+/** The server mints the same id as areaKey, the default area included. */
+function serverMintsAreaKey() {
+  vi.mocked(createArea).mockImplementation(async (area: AreaSelection) => areaInfo(areaKey(area)))
 }
 
 function baselineRows(count: number) {
@@ -70,6 +84,7 @@ describe('traffic analysis store', () => {
     vi.mocked(fetchGraphInfo).mockReset()
 
     vi.mocked(createArea).mockReset()
+    serverMintsAreaKey()
   })
 
   it('offers the same modes and picks delta when the routes moved', () => {
@@ -306,7 +321,7 @@ describe('traffic analysis store', () => {
   it('reads the pair counts from the server once', async () => {
     const store = useTrafficAnalysisStore()
     vi.mocked(fetchGraphInfo).mockResolvedValue({
-      area_id: 'lausanne',
+      area_id: DEFAULT_ID,
       bbox: null,
       scc_fraction: 1,
       node_count: 1,
@@ -320,6 +335,8 @@ describe('traffic analysis store', () => {
     await store.loadGraphInfo()
 
     expect(fetchGraphInfo).toHaveBeenCalledTimes(1)
+    // asked about the default circle by its id, like any area
+    expect(fetchGraphInfo).toHaveBeenCalledWith(DEFAULT_ID)
     expect(store.odPairsDefault).toBe(20000)
     expect(store.odPairsMax).toBe(76400)
     // the full choice sends what was really sampled, the server clamps anyway
@@ -460,10 +477,24 @@ describe('traffic analysis store', () => {
     expect(store.areaError).toBeNull()
   })
 
-  it('needs no area for the default city', async () => {
+  it('opens on the default circle and builds it like any area', async () => {
     const store = useTrafficAnalysisStore()
-    expect(await store.ensureArea()).toBeNull()
-    expect(createArea).not.toHaveBeenCalled()
+    expect(store.area).toEqual(DEFAULT_AREA)
+    expect(store.graphKey).toBe(DEFAULT_ID)
+
+    expect(await store.ensureArea()).toBe(DEFAULT_ID)
+    expect(createArea).toHaveBeenCalledWith(DEFAULT_AREA)
+  })
+
+  it('opens a project saved with no area on the default circle', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+
+    store.restoreState({ isOpen: true, activeVisualization: 'none', area: null })
+
+    expect(store.area).toEqual(DEFAULT_AREA)
+    // a copy, the default itself stays frozen
+    expect(store.area).not.toBe(DEFAULT_AREA)
   })
 
   it('restores an area without dropping the restored results', () => {
@@ -494,15 +525,6 @@ describe('traffic analysis store', () => {
     expect(store.draftArea).not.toBe(store.area)
   })
 
-  it('opens the picker where the map looks when there is no circle yet', () => {
-    const store = useTrafficAnalysisStore()
-
-    store.enterPickMode({ lon: 8.54, lat: 47.37 })
-
-    expect(store.draftArea).toEqual({ kind: 'circle', lon: 8.54, lat: 47.37, radiusM: 3000 })
-    expect(store.area).toBeNull()
-  })
-
   it('keeps the draft out of the scenario until it is confirmed', () => {
     const store = useTrafficAnalysisStore()
     store.enterPickMode()
@@ -513,7 +535,7 @@ describe('traffic analysis store', () => {
 
     expect(store.pickMode).toBe(false)
     expect(store.draftArea).toBeNull()
-    expect(store.area).toBeNull()
+    expect(store.area).toEqual(DEFAULT_AREA)
   })
 
   it('makes the draft the area when it is confirmed', () => {
@@ -525,18 +547,23 @@ describe('traffic analysis store', () => {
     store.exitPickMode(true)
 
     expect(store.pickMode).toBe(false)
-    expect(store.area).toEqual(BERN)
+    // the name the draft had is the picker's job, it renames on every drag
+    expect(store.area).toMatchObject(BERN)
   })
 
-  it('goes back to the default city and closes the picker', () => {
+  it('puts the draft back on the default circle, the user confirms it', () => {
     const store = useTrafficAnalysisStore()
     store.setArea(BERN)
     store.enterPickMode()
 
     store.useDefaultArea()
 
-    expect(store.area).toBeNull()
-    expect(store.pickMode).toBe(false)
+    expect(store.draftArea).toEqual(DEFAULT_AREA)
+    expect(store.pickMode).toBe(true)
+    expect(store.area).toEqual(BERN)
+
+    store.exitPickMode(true)
+    expect(store.area).toEqual(DEFAULT_AREA)
   })
 })
 
@@ -545,6 +572,7 @@ describe('the Model state', () => {
     setActivePinia(createPinia())
     vi.mocked(fetchBaseline).mockReset()
     vi.mocked(createArea).mockReset()
+    serverMintsAreaKey()
   })
 
   it('draws the chosen model with the plain layers only', async () => {

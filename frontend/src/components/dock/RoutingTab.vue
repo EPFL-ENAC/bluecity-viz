@@ -9,6 +9,7 @@ import BcRow from '@/components/ui/BcRow.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
 import { useDeltaBars } from '@/composables/useDeltaBars'
+import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useMapView } from '@/composables/useMapView'
 import { useModelPreview } from '@/composables/useModelPreview'
 import { ApiError, recalculateRoutes, type NodeWeighting } from '@/services/trafficAnalysis'
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 }>()
 
 const trafficStore = useTrafficAnalysisStore()
+const { hasBus } = useGraphEdges()
 const scenarioStore = useScenarioStore()
 const storyline = useStorylineStore()
 const { absorbers, barWidth, deltaText } = useDeltaBars()
@@ -183,9 +185,10 @@ async function calculateRoutes() {
   trafficStore.isCalculating = true
   loadingMessage.value = baseMessage
   try {
-    // A custom area may not be on the server any more (restart, eviction). This
-    // builds it back before we ask anything about it.
-    if (trafficStore.area) loadingMessage.value = 'Building the network for this area…'
+    // A picked area may not be on the server any more (restart, eviction). This
+    // builds it back before we ask anything about it. The default one is
+    // always there, so this is one quick round trip.
+    if (!trafficStore.areaId) loadingMessage.value = 'Building the network for this area…'
     await trafficStore.ensureArea()
     loadingMessage.value = baseMessage
 
@@ -399,7 +402,7 @@ async function calculateRoutes() {
       </div>
       <LayerRows />
 
-      <div class="clip">
+      <div v-if="hasBus" class="clip">
         <span class="clip__label">Clip to</span>
         <span
           class="clip__chip"

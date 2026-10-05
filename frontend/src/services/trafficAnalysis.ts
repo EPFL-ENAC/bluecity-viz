@@ -1,29 +1,13 @@
-import { baseUrl } from '@/config/layerTypes'
-import { useApiKeyStore } from '@/stores/apiKey'
 import type { EdgeUsageStats } from '@/stores/trafficAnalysis'
-
-const isDev = import.meta.env.DEV
 
 // Relative in dev too: vite proxies /api to this checkout's own backend, whose
 // port changes per git worktree (wtx writes the ports in .env.worktree).
 const API_BASE_URL = '/api/v1/routes'
 const AREAS_BASE_URL = '/api/v1/areas'
 
-/** The default area: the city the server loaded at startup. */
-export const DEFAULT_AREA_ID = 'lausanne'
-
 /** `null` means the default area, so the query stays out of the URL. */
 function areaQuery(areaId?: string | null, separator = '?'): string {
   return areaId ? `${separator}area_id=${encodeURIComponent(areaId)}` : ''
-}
-
-function getGeojsonUrl(): string {
-  const url = `${baseUrl}/lausanne.geojson`
-  if (!isDev) {
-    const apiKeyStore = useApiKeyStore()
-    return `${url}?apikey=${apiKeyStore.apiKey}`
-  }
-  return url
 }
 
 export interface EdgeGeometry {
@@ -38,45 +22,6 @@ export interface EdgeGeometry {
   speed_kph?: number
   bus_route_count?: number
   bus_route_refs?: string
-}
-
-/**
- * Fetch edge geometries from pre-generated GeoJSON file
- */
-export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[]> {
-  try {
-    const response = await fetch(getGeojsonUrl())
-
-    if (!response.ok) {
-      console.warn('GeoJSON file not available, using empty dataset')
-      return []
-    }
-
-    const geojson = await response.json()
-
-    // Convert GeoJSON features to EdgeGeometry format
-    const edges: EdgeGeometry[] = geojson.features.map((feature: any) => ({
-      u: feature.properties.u,
-      v: feature.properties.v,
-      coordinates: feature.geometry.coordinates,
-      travel_time: feature.properties.travel_time,
-      length: feature.properties.length,
-      name: feature.properties.name,
-      highway: feature.properties.highway,
-      speed_kph: feature.properties.speed_kph,
-      bus_route_count: feature.properties.bus_route_count ?? 0,
-      bus_route_refs: feature.properties.bus_route_refs ?? ''
-    }))
-
-    if (limit) {
-      edges.splice(limit)
-    }
-
-    return edges
-  } catch (error) {
-    console.warn('Failed to fetch edge geometries:', error)
-    return []
-  }
 }
 
 /**
@@ -291,6 +236,19 @@ export async function recalculateRoutes(
 import type { TrafficAreaSelection as AreaSelection } from '@/stores/layers/types'
 export type { AreaSelection }
 
+/**
+ * The area the app opens on: a circle on Lausanne. The server builds the same
+ * one at startup and keeps it (default_area_* in config.py), so asking for it
+ * costs nothing. If the two ever differ, this is just one more circle.
+ */
+export const DEFAULT_AREA: Readonly<AreaSelection> = Object.freeze({
+  kind: 'circle',
+  lon: 6.633,
+  lat: 46.52,
+  radiusM: 6000,
+  name: 'Lausanne'
+})
+
 /** Where a set of communes is, as the server gives it. EPSG:4326. */
 export type AreaOutline =
   | { type: 'Polygon'; coordinates: number[][][] }
@@ -312,6 +270,8 @@ export interface AreaInfo {
   od_pairs: number
   od_pairs_default: number
   od_pairs_max: number
+  /** the waste tool runs here; missing from an older server */
+  cvrp?: boolean
 }
 
 export type AreaRejectionCode =
@@ -370,7 +330,8 @@ function areaBody(area: AreaSelection): string {
  * ask for an area by its shape without keeping a server id around.
  */
 export function areaKey(area: AreaSelection | null): string {
-  if (!area) return DEFAULT_AREA_ID
+  // A project saved before the default was a circle has no area.
+  if (!area) return areaKey(DEFAULT_AREA)
   if (area.kind === 'municipalities') return municipalityKey(area.ofsIds)
   return `c_${area.lon.toFixed(4)}_${area.lat.toFixed(4)}_${Math.round(area.radiusM)}`
 }
@@ -403,7 +364,7 @@ export async function createArea(area: AreaSelection): Promise<AreaInfo> {
   return response.json()
 }
 
-/** The streets of an area, same shape as the static city file. */
+/** The streets of an area. */
 export async function fetchAreaEdges(areaId: string): Promise<EdgeGeometry[]> {
   const response = await fetch(`${AREAS_BASE_URL}/${encodeURIComponent(areaId)}/edges`)
   if (!response.ok) await throwHttpError(response, 'Failed to fetch the area streets')
