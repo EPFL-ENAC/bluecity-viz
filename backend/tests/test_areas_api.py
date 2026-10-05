@@ -317,11 +317,36 @@ def test_the_iterations_mean_nothing_without_congestion(areas_client):
     assert plain.headers["etag"] == with_iterations.headers["etag"]
 
 
-def test_population_on_a_graph_without_it_is_a_422(areas_client):
-    baseline = areas_client.get("/api/v1/routes/baseline?od_pairs=10&node_weighting=population")
+def test_the_four_weightings_give_four_baselines(areas_client):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    url = f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100"
+    weightings = ["uniform", "population", "weekday_morning", "weekday_evening"]
+
+    answers = [areas_client.get(f"{url}&node_weighting={w}") for w in weightings]
+
+    assert [a.status_code for a in answers] == [200] * 4
+    assert len({a.headers["etag"] for a in answers}) == 4
+
+    for weighting in ("weekday_morning", "weekday_evening"):
+        result = areas_client.post(
+            "/api/v1/routes/recalculate",
+            json={
+                "area_id": area_id,
+                "od_pairs": 100,
+                "edge_modifications": [],
+                "node_weighting": weighting,
+            },
+        )
+        assert result.status_code == 200
+        assert result.json()["new_edge_usage"]
+
+
+@pytest.mark.parametrize("weighting", ["population", "weekday_morning", "weekday_evening"])
+def test_population_on_a_graph_without_it_is_a_422(areas_client, weighting):
+    baseline = areas_client.get(f"/api/v1/routes/baseline?od_pairs=10&node_weighting={weighting}")
     result = areas_client.post(
         "/api/v1/routes/recalculate",
-        json={"edge_modifications": [], "od_pairs": 10, "node_weighting": "population"},
+        json={"edge_modifications": [], "od_pairs": 10, "node_weighting": weighting},
     )
 
     for answer in (baseline, result):
@@ -386,6 +411,19 @@ def test_routing_on_an_area_that_is_not_ready_is_a_409(areas_client, held):
         assert answer.status_code == 409
         assert answer.json()["detail"]["code"] == "area_not_ready"
         assert answer.headers["retry-after"] == "1"
+
+
+def test_a_weekday_sample_waits_for_the_area_too(areas_client, held):
+    """A weekday sample routes on the uniform baseline, so it waits for it."""
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    url = f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100&node_weighting=weekday_morning"
+
+    too_early = areas_client.get(url)
+    assert too_early.status_code == 409
+    assert too_early.json()["detail"]["code"] == "area_not_ready"
+
+    held.pop()()
+    assert areas_client.get(url).status_code == 200
 
 
 def test_the_area_is_ready_once_its_trips_are_routed(areas_client, held):

@@ -5,14 +5,16 @@ a fixed set of trips, drawn once, reused by every scenario. Two scenarios are
 comparable because they move the same trips over a different network.
 
 The draw, in one sentence: junctions are picked as origins in proportion to
-their weight, and each origin picks its destinations in proportion to how
-plausible a trip of that length is, on a network that already carries traffic.
+their origin weight, and each origin picks its destinations in proportion to
+their destination weight and to how plausible a trip of that length is, on a
+network that already carries traffic.
 
-    origin      ~ w(o)
-    destination ~ w(d) · lognorm.pdf(t_od ; sigma, exp(mu))
+    origin      ~ w_o(o)
+    destination ~ w_d(d) · lognorm.pdf(t_od ; sigma, exp(mu))
 
-where `w` is the junction weight (uniform, or residents and jobs) and `t_od`
-is the travel time under congestion. The lognormal is the trip-length
+where `w_o` and `w_d` are the junction weights at each end (see
+`node_pool`: uniform, residents and jobs, or residents at one end and jobs at
+the other) and `t_od` is the travel time under congestion. The lognormal is the trip-length
 distribution of the Swiss travel survey: few very short trips, a peak around
 eight minutes, a long tail.
 
@@ -43,7 +45,7 @@ class OdSample:
     """What one draw produces, and what the area keeps of it."""
 
     pairs: "PairArrays"
-    nodes: pd.Series  # the junction pool, {node id: weight}
+    nodes: pd.DataFrame  # the junction pool: origin and destination weight per node id
     betweenness: np.ndarray  # per igraph edge, veh/day, over that pool
     # Free-flow time slowed down by that betweenness, per igraph edge. The
     # destinations were drawn on these times, so the baseline routes on them
@@ -66,7 +68,7 @@ def show_weight_info(lognorm_mu: float, lognorm_sigma: float) -> None:
 
 
 def sample_od_pairs_matrix(
-    nodes: pd.Series,
+    nodes: pd.DataFrame,
     rng: np.random.RandomState,
     n_origins: int,
     n_destinations: int,
@@ -81,7 +83,8 @@ def sample_od_pairs_matrix(
     trips: an origin drawn twice gets twice as many destinations.
 
     Args:
-        nodes: junction weights, indexed by node id
+        nodes: junction weights, indexed by node id, columns ``origin`` and
+            ``destination``
         n_origins: number of origin draws
         n_destinations: destinations per origin draw
         t_matrix: (N, N) travel times, rows and columns in ``nodes.index`` order
@@ -90,7 +93,10 @@ def sample_od_pairs_matrix(
     Returns:
         {origin: [destination, ...]}, in the order the origins were first drawn.
     """
-    origins = list(nodes.sample(n_origins, random_state=rng, replace=True, weights=nodes).index)
+    w_origin, w_destination = nodes["origin"], nodes["destination"]
+    origins = list(
+        w_origin.sample(n_origins, random_state=rng, replace=True, weights=w_origin).index
+    )
 
     od_pairs: Dict[int, List[int]] = {}
     failed_origins = []
@@ -98,11 +104,11 @@ def sample_od_pairs_matrix(
     for origin, draws in Counter(origins).items():
         times = t_matrix[row_of[origin]]
         time_weights = lognorm.pdf(times, s=lognorm_sigma, scale=np.exp(lognorm_mu))
-        weights = nodes * time_weights
+        weights = w_destination * time_weights
 
         try:
             od_pairs[origin] = list(
-                nodes.sample(
+                w_destination.sample(
                     n_destinations * draws, random_state=rng, replace=True, weights=weights
                 ).index
             )
@@ -286,7 +292,8 @@ def resample_od_destinations(
 
     Args:
         pairs: PairArrays of the startup draw (or a prefix of it)
-        nodes: the junction pool the startup draw used, {node id: weight}
+        nodes: the destination weight of each junction of the pool,
+            {node id: weight}, the same one the startup draw used
         mirror: GraphMirror of the network
         base_weights: per-edge times the startup draw was made on
         weights: per-edge times of the modified network

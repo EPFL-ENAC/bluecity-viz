@@ -85,6 +85,14 @@ describe('traffic analysis service', () => {
     expect(body.node_weighting).toBe('uniform')
   })
 
+  it('sends a weekday weighting as it is', async () => {
+    fetchMock().mockResolvedValue(okResponse({ od_pairs: 20000, new_edge_usage: [] }))
+
+    await recalculateRoutes([], { nodeWeighting: 'weekday_evening' })
+
+    expect(calledBody().node_weighting).toBe('weekday_evening')
+  })
+
   it('puts the pair count in the baseline query, and omits it when there is none', async () => {
     fetchMock().mockResolvedValue(okResponse({ total_routes: 10, od_pairs: 20000, edge_usage: [] }))
 
@@ -156,6 +164,9 @@ describe('traffic analysis service', () => {
 
     await fetchBaseline(100, null, 'uniform')
     expect(calledUrl(2)).toBe('/api/v1/routes/baseline?od_pairs=100')
+
+    await fetchBaseline(100, null, 'weekday_morning')
+    expect(calledUrl(3)).toBe('/api/v1/routes/baseline?od_pairs=100&node_weighting=weekday_morning')
   })
 
   it('asks for the equilibrium Model state only when the model is on', async () => {

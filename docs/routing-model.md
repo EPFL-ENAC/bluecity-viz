@@ -72,14 +72,35 @@ dead ends and the nodes OSM leaves in the middle of a street. Capped at
 uniformly, whatever the weighting: the pool only decides which junctions are
 *considered*, the weight is applied once later.
 
-Each junction carries a weight, how likely a trip is to start or end there:
+Each junction carries two weights: how likely a trip is to start there
+(`w_o`) and how likely it is to end there (`w_d`). Apart from uniform, both
+come from one score, with a share `a` for the residents:
 
-- **uniform** — every junction alike.
-- **population** — `100 · (rank(residents) + rank(jobs)) / 2`, so a junction
-  at the 75th percentile of residents and the 85th of jobs scores 80. The
-  ranks are over this area only: the score says "busy for this town", not
-  "busy for Switzerland". A junction with nobody scores 1 rather than 0, so
-  the edge of a village stays possible but rare.
+```
+score(a) = max(1, 100 · (a · rank(residents) + (1 − a) · rank(jobs)))
+```
+
+| weighting | API id | origin `w_o` | destination `w_d` |
+|---|---|---|---|
+| Uniform | `uniform` | 1 | 1 |
+| Daily average | `population` | `score(0.5)` | `score(0.5)` |
+| Weekday morning | `weekday_morning` | `score(1)`, residents | `score(0)`, jobs |
+| Weekday evening | `weekday_evening` | `score(0)`, jobs | `score(1)`, residents |
+
+- **Daily average** weighs both ends the same, so a junction at the 75th
+  percentile of residents and the 85th of jobs scores 80 at both ends. Its id
+  stays `population`, the name it had before the weekday ones.
+- **Weekday morning** goes from home to work: trips start where people live
+  and end where they work. **Weekday evening** is the way back. The daily
+  average is the mean of the two ranks.
+
+Residents are STATPOP, jobs are full-time equivalents from STATENT, both per
+hectare and snapped to the nearest node. The ranks are over this area only:
+the score says "busy for this town", not "busy for Switzerland". A count of 0
+ranks 0. A junction that scores nothing still weighs 1 rather than 0, so the
+edge of a village stays possible but rare; in the morning, a junction with no
+resident can still be an origin, about 100 times less often than the busiest
+one. The shares live in one table, `RESIDENT_SHARE` in `node_pool.py`.
 
 **Step 2 — betweenness.** How much traffic the *shape* of the network puts on
 each street (section 5), in veh/day.
@@ -95,14 +116,15 @@ every other, on those congested times.
 **Step 5 — the draw.**
 
 ```
-origin      ~ w(o)
-destination ~ w(d) · lognorm.pdf(t_od ; sigma, exp(mu))
+origin      ~ w_o(o)
+destination ~ w_d(d) · lognorm.pdf(t_od ; sigma, exp(mu))
 ```
 
 Origins are drawn **with replacement**, so a heavy junction gets more trips;
 drawn twice, it gets twice as many destinations. Each origin then draws
 `n_destinations_per_origin` (200) destinations, weighted both by how
-attractive the destination is and by how plausible a trip of that length is.
+attractive the destination is (its destination weight) and by how plausible
+a trip of that length is.
 
 The trip-length term is a lognormal over travel time, fitted to the Swiss
 Mobility and Transport Microcensus. With `mu = 6.85`, `sigma = 0.83`:
@@ -126,7 +148,22 @@ street frequency correlates 0.96 with the full set and shares 85 of the top
 100 streets, for a run about four times faster.
 
 Each node weighting has its own sample and its own baseline. Switching
-weighting changes the trips, so the numbers are not comparable across the two.
+weighting changes the trips, so the numbers are not comparable across
+weightings. All of them draw from the same junction pool (the cap is drawn
+uniformly, with the same seed), so they share the betweenness.
+
+Uniform is drawn with the area. The three others are drawn and routed on the
+first request that asks for them, once per area. Measured on areas of the
+store at 76,400 pairs, one more weighting costs:
+
+| area | the area, uniform only | one more weighting | first request |
+|---|---|---|---|
+| Chur, 3 km | 15 MB | +14 MB | 0.5 s |
+| Lausanne, 3 km | 19 MB | +17 MB | 0.9 s |
+| Zurich, 5 km | 27 MB | +22 MB | 1.5 to 1.9 s |
+
+So an area with all four comes near 100 MB (94 MB for Zurich, 5 km). The area registry counts every
+sample in its memory budget.
 
 ---
 
@@ -331,9 +368,10 @@ the loop runs on the redrawn trips.
 ### Elastic demand
 
 Trips keep their origin, and a trip the scenario touched may draw a **new
-destination**, with the rule of the initial sample (section 2) on the times of
-the modified network. A destination behind a closed street is far away now, so
-the draw moves off it.
+destination**, with the rule of the initial sample (section 2, the same
+destination weight `w_d`) on the times of the modified network. A destination
+behind a closed street is far away now, so the draw moves off it. A weekday
+morning trip still goes to a place of work.
 
 Fixed demand assumes a traveller drives to the same place whatever it costs,
 so a closure shows up as an implausible total travel time. Here it shows up as
@@ -443,9 +481,33 @@ destinations, even when the closure moved traffic, and so congestion, near
 them. This second order effect is left out on purpose: without it, an empty
 scenario is exactly zero and a far trip never moves for no visible reason.
 
-**Only cars.** No buses, bikes, pedestrians or trains; no time of day, no peak
-hour; no traffic lights, no junction delay, no turn restrictions beyond what
-the OSM graph encodes.
+**Only cars.** No buses, bikes, pedestrians or trains; no traffic lights, no
+junction delay, no turn restrictions beyond what the OSM graph encodes.
+
+**The weekday weightings only move where trips start and end.** They are not
+a peak-hour model: the number of trips, `daily_km_driven`, the congestion
+curve and the trip-length curve are the same as for the daily average. The
+morning is the daily traffic with residents at the start and jobs at the
+end, not the traffic of 7 to 9 am.
+
+And the effect is small. Ranks are a soft scale, and the busy junctions of a
+town tend to have both residents and jobs. On areas of the store at 76,400
+pairs, mean of three seeds, Pearson r of the per-street counts. The noise
+floor is the same area built with two seeds, so its junction pool is drawn
+again too:
+
+| | Lausanne, 6 km | Chur, 3 km |
+|---|---|---|
+| daily average, two seeds, one direction per street (noise) | 0.958 | 0.984 |
+| daily average, two seeds, both directions summed (noise) | 0.970 | 0.992 |
+| morning against evening, one direction per street | 0.960 | 0.953 |
+| morning against evening, both directions summed | 0.985 | 0.985 |
+
+In a small town (Chur) the morning and the evening differ by more than the
+noise in one direction, so a one-way closure or a speed limit in one direction
+reads differently. In a big area (Lausanne, 6 km) the difference is about the
+size of the noise. The map sums both directions, and there the two pictures
+are nearly the same everywhere.
 
 **A street is modified in both its parallel edges at once.** The API names a
 street by `(u, v)`; when OSM splits it, all of its edges get the change.

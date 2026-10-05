@@ -216,12 +216,48 @@ def test_a_population_recalculate_uses_its_own_pairs(swiss_store, small_area_lim
     assert counts(uniform) != counts(population)
 
 
-def test_an_area_without_population_says_so(make_store, small_area_limits):
+def test_the_weekday_samples_are_their_own(swiss_store, small_area_limits):
+    area = area_builder.build(swiss_store, circle(2000), SamplingConfig(n_nodes_preprocess=100))
+
+    daily = area.od_set("population")
+    morning = area.od_set("weekday_morning")
+    evening = area.od_set("weekday_evening")
+
+    assert len(morning.pairs) == len(evening.pairs) == len(area.pairs)
+    assert not np.array_equal(morning.pairs.origins, daily.pairs.origins)
+    assert not np.array_equal(morning.pairs.origins, evening.pairs.origins)
+    # the same junctions, the weights swapped between the two ends
+    assert list(morning.nodes.index) == list(evening.nodes.index)
+    assert np.allclose(morning.nodes["origin"], evening.nodes["destination"])
+    # the betweenness does not depend on the pairs, it is shared
+    assert morning.baseline.bc is evening.baseline.bc is area.baseline.bc
+    assert area.od_set("weekday_morning") is morning
+
+
+def test_a_weekday_elastic_recalculate_runs(swiss_store, small_area_limits):
+    from app.models.route import EdgeModification
+
+    area = area_builder.build(swiss_store, circle(2000), SamplingConfig(n_nodes_preprocess=100))
+    busiest = max(area.baseline.usage_rows, key=lambda r: r["count"])
+
+    result = area.recalculate_with_modifications(
+        edge_modifications=[EdgeModification(u=busiest["u"], v=busiest["v"], action="remove")],
+        od_pairs=100,
+        node_weighting="weekday_morning",
+        resample_destinations=True,
+    )
+
+    assert result["od_pairs"] == 100
+    assert result["new_edge_usage"]
+
+
+@pytest.mark.parametrize("weighting", ["population", "weekday_morning", "weekday_evening"])
+def test_an_area_without_population_says_so(make_store, small_area_limits, weighting):
     store = make_store(population=False)
     area = area_builder.build(store, circle(2000), SamplingConfig(n_nodes_preprocess=100))
 
     with pytest.raises(NoPopulationData):
-        area.od_set("population")
+        area.od_set(weighting)
     # the uniform workbench still runs
     assert area.od_set("uniform").baseline is not None
 

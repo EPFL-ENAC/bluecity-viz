@@ -17,6 +17,7 @@ from app.services.graph_mirror import GraphMirror
 from app.services.sampling.config import SamplingConfig
 from app.services.sampling.node_pool import (
     POPULATION_SCORE_FLOOR,
+    RESIDENT_SHARE,
     junction_pool,
     population_score,
 )
@@ -107,7 +108,8 @@ def test_the_pool_keeps_junctions_only(synthetic_graph):
 
     keep = mirror.street_count >= 3
     assert list(pool.index) == list(mirror.node_ids[keep])
-    assert set(pool.values) == {1}
+    assert list(pool.columns) == ["origin", "destination"]
+    assert set(pool.values.ravel()) == {1}
 
 
 def test_node_pool_refuses_a_column_the_mirror_does_not_have(synthetic_graph):
@@ -144,6 +146,22 @@ def test_a_node_with_nobody_keeps_the_floor():
     assert score[3] == pytest.approx(100.0)
 
 
+def test_the_resident_share_moves_the_score_from_jobs_to_residents():
+    residents = np.array([0, 10, 0, 50])
+    jobs = np.array([0, 0, 5, 20])
+
+    homes = population_score(residents, jobs, resident_share=1.0)
+    work = population_score(residents, jobs, resident_share=0.0)
+
+    # the residents rank alone, then the jobs rank alone
+    assert homes == pytest.approx([POPULATION_SCORE_FLOOR, 75.0, POPULATION_SCORE_FLOOR, 100.0])
+    assert work == pytest.approx([POPULATION_SCORE_FLOOR, POPULATION_SCORE_FLOOR, 75.0, 100.0])
+    # the daily average is the mean of the two ranks, and it is the default
+    assert population_score(residents, jobs) == pytest.approx(
+        [POPULATION_SCORE_FLOOR, 37.5, 37.5, 100.0]
+    )
+
+
 def test_the_population_pool_carries_the_score(synthetic_graph):
     graph = synthetic_graph.copy()
     for i, node in enumerate(graph.nodes):
@@ -155,8 +173,61 @@ def test_the_population_pool_carries_the_score(synthetic_graph):
 
     keep = mirror.street_count >= 3
     assert list(pool.index) == list(mirror.node_ids[keep])
-    assert np.allclose(pool.values, population_score(mirror.residents[keep], mirror.jobs_fte[keep]))
+    score = population_score(mirror.residents[keep], mirror.jobs_fte[keep])
+    # the daily average weighs both ends the same
+    assert np.allclose(pool["origin"], score)
+    assert np.allclose(pool["destination"], score)
     assert mirror.has_population
+
+
+def homes_and_offices(synthetic_graph) -> GraphMirror:
+    """Residents on the even nodes, jobs on the odd ones, nobody does both."""
+    graph = synthetic_graph.copy()
+    for i, node in enumerate(graph.nodes):
+        graph.nodes[node]["residents"] = 0 if i % 2 else 10 * (i + 1)
+        graph.nodes[node]["jobs_fte"] = float(10 * (i + 1)) if i % 2 else 0.0
+    return GraphMirror(graph)
+
+
+def test_the_weekday_pools_put_residents_and_jobs_at_opposite_ends(synthetic_graph):
+    mirror = homes_and_offices(synthetic_graph)
+    keep = mirror.street_count >= 3
+    residents, jobs = mirror.residents[keep], mirror.jobs_fte[keep]
+
+    morning = junction_pool(mirror, np.random.RandomState(42), 100, "weekday_morning")
+    evening = junction_pool(mirror, np.random.RandomState(42), 100, "weekday_evening")
+
+    assert RESIDENT_SHARE["weekday_morning"] == (1.0, 0.0)
+    # morning: from home to work
+    assert np.allclose(morning["origin"], population_score(residents, jobs, 1.0))
+    assert np.allclose(morning["destination"], population_score(residents, jobs, 0.0))
+    # evening: the way back
+    assert np.allclose(evening["origin"], morning["destination"])
+    assert np.allclose(evening["destination"], morning["origin"])
+    # the same junctions: the pool draw does not look at the weights
+    assert list(morning.index) == list(evening.index)
+
+
+def test_a_morning_sample_goes_from_homes_to_offices(synthetic_graph):
+    mirror = homes_and_offices(synthetic_graph)
+    config = SamplingConfig(n_nodes_preprocess=100, n_destinations_per_origin=5)
+    homes = set(int(n) for n in mirror.node_ids[mirror.residents > 0])
+
+    def share_at_home(nodes):
+        return np.mean([int(n) in homes for n in nodes])
+
+    morning = generate_research_based_pairs_mirror(
+        mirror, n_pairs=400, config=config.model_copy(update={"node_weight_col": "weekday_morning"})
+    ).pairs
+    evening = generate_research_based_pairs_mirror(
+        mirror, n_pairs=400, config=config.model_copy(update={"node_weight_col": "weekday_evening"})
+    ).pairs
+
+    # a node with nobody keeps the floor of 1 against up to 100, so it is rare
+    assert share_at_home(morning.origins) > 0.9
+    assert share_at_home(morning.destinations) < 0.1
+    assert share_at_home(evening.origins) < 0.1
+    assert share_at_home(evening.destinations) > 0.9
 
 
 def test_a_skewed_population_still_draws_a_small_pool(synthetic_graph):
@@ -174,7 +245,7 @@ def test_a_skewed_population_still_draws_a_small_pool(synthetic_graph):
     pool = junction_pool(mirror, np.random.RandomState(42), 5, "population")
 
     assert len(pool) == 5
-    assert np.allclose(pool.values, score[pool.index].values)
+    assert np.allclose(pool["origin"], score[pool.index].values)
 
 
 def test_a_graph_without_population_says_so(synthetic_graph):

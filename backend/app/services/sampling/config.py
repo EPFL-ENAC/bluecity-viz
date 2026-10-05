@@ -42,8 +42,9 @@ class SamplingConfig(BaseModel):
     node_weight_col: str = Field(
         default="dummy",
         description=(
-            "Node attribute for static weights ('dummy' = uniform, "
-            "'population' = residents and jobs score on the graph mirror)"
+            "Node weights, see node_pool.NODE_WEIGHTS ('dummy' = uniform, "
+            "'population' = residents and jobs at both ends, 'weekday_morning' "
+            "and 'weekday_evening' = residents at one end, jobs at the other)"
         ),
     )
     lognorm_mu: float = Field(
