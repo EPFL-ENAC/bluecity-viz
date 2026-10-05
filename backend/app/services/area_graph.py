@@ -731,12 +731,23 @@ class AreaGraph:
     # ── Payloads ──────────────────────────────────────────────────────────────
 
     def baseline_payload(
-        self, od_pairs: Optional[int] = None, node_weighting: NodeWeighting = "uniform"
+        self,
+        od_pairs: Optional[int] = None,
+        node_weighting: NodeWeighting = "uniform",
+        equilibrium_iterations: Optional[int] = None,
     ) -> dict:
-        """The unmodified edge usage for N pairs, as served by GET /routes/baseline."""
+        """The Model state for N pairs, as served by GET /routes/baseline.
+
+        The unmodified edge usage under the targeted model, or under the
+        equilibrium one when `equilibrium_iterations` is given. The same
+        baseline `recalculate` compares a scenario with.
+        """
         od = self.od_set(node_weighting)
         n = min(od_pairs or settings.od_pairs, len(od.baseline.pairs))
-        base = self.baseline_for(n, node_weighting)
+        if equilibrium_iterations is not None:
+            base = self.equilibrium_baseline_for(n, equilibrium_iterations, node_weighting)
+        else:
+            base = self.baseline_for(n, node_weighting)
         return {
             "total_routes": base.routes.n_found,
             "od_pairs": len(base.pairs),

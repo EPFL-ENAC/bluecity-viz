@@ -205,13 +205,24 @@ def get_baseline(
         "uniform",
         description="Which OD sample: uniform, or weighted by residents and jobs.",
     ),
+    use_congestion: bool = Query(
+        False, description="The equilibrium model (MSA with BPR) instead of the targeted one."
+    ),
+    congestion_iterations: int = Query(
+        1, ge=1, le=3, description="MSA iterations, read only with use_congestion."
+    ),
 ):
     """
-    Edge usage of the unmodified network, for a given number of OD pairs.
+    Edge usage of the unmodified network under a model: the "Model" state.
+
+    It is the left side of every /recalculate with the same options, so a
+    scenario that changes nothing gives these numbers back. Elastic demand is
+    not a parameter: on the untouched network it draws the same trips.
 
     It does not change until the server restarts, so it is served with an
-    ETag, one per pair count. Fetch it once, then call /recalculate with the
-    same od_pairs and include_baseline=false.
+    ETag, one per option set. The equilibrium model costs one MSA run the
+    first time (`iterations + 1` routings), then it is cached. Fetch it once,
+    then call /recalculate with the same options and include_baseline=false.
     """
     if od_pairs is not None and od_pairs > settings.od_pairs_max:
         raise HTTPException(
@@ -224,11 +235,13 @@ def get_baseline(
     try:
         area = _area(area_id)
         n = min(od_pairs or settings.od_pairs, settings.od_pairs_max)
+        iterations = congestion_iterations if use_congestion else None
+        model = f"eq{iterations}" if iterations else "ff"
         # The cache lives on the area, so two areas never share an ETag and
         # evicting an area frees its payloads.
         data, etag = area.payloads.get_or_build(
-            f"baseline:{node_weighting}:{n}",
-            lambda: area.baseline_payload(n, node_weighting),
+            f"baseline:{node_weighting}:{n}:{model}",
+            lambda: area.baseline_payload(n, node_weighting, iterations),
         )
         return _json_or_304(request, data, etag, "no-cache")
     except HTTPException:

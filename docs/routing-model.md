@@ -133,9 +133,10 @@ and CO₂ along the path.
 **The rule that makes the comparison mean something.** The baseline and the
 scenario are built the same way, in every mode: routes are **chosen** on
 congested travel times (section 4), distances, durations and CO₂ are
-**reported** free flow, and the trips are the same ones. So a scenario that
-changes nothing changes no number. That was not true before, when the baseline
-was routed free flow and a scenario chose on congested times.
+**reported** free flow, and the trips are the same ones (with elastic demand,
+the same ones as long as the scenario does not reach them, section 7). So a
+scenario that changes nothing changes no number. That was not true before,
+when the baseline was routed free flow and a scenario chose on congested times.
 
 **A closed street is a travel time of `+inf`**, and igraph reads that as a very
 large cost, not as a missing edge: with no other way through it still hands
@@ -260,10 +261,17 @@ gives back the total CO₂ of all the trips, which is what
 
 ---
 
-## 7. The three scenario models
+## 7. The scenario models
 
-`recalculate.py`. All three route the same trips on the modified network; they
-differ in what the traveller is allowed to change.
+`recalculate.py`. Two choices, and they combine: how the trips are assigned to
+the network (targeted or equilibrium), and whether their destinations can move
+(elastic demand).
+
+Each set of options has its **Model state**: the same model run on the
+untouched network. It is what the Model step of the tool draws, what
+`GET /routes/baseline` serves (with `use_congestion` and
+`congestion_iterations`), and the left side of every comparison. A scenario
+that changes nothing gives it back exactly, whatever the options.
 
 ### Targeted reroute (the default)
 
@@ -275,7 +283,8 @@ modified network, which is the rule the baseline was routed with on the
 untouched one. Without congestion in the cost, every displaced trip would pile
 onto the one next-fastest street.
 
-Cheap, because closing a street usually touches a minority of trips.
+Cheap, because closing a street usually touches a minority of trips. With
+elastic demand, the trips that got a new destination are routed again too.
 
 ### Equilibrium (BPR iterations, "Iterative model")
 
@@ -299,23 +308,55 @@ of extra driving on Lausanne at 20,000 trips. It costs one extra run, on the
 first request at that pair count.
 
 The map gets the **averaged volumes**, the impact table the routes of the last
-pass, the only thing a per-trip comparison can be made on.
+pass, the only thing a per-trip comparison can be made on. With elastic demand
+the loop runs on the redrawn trips.
 
 ### Elastic demand
 
-Trips keep their origin but draw a **new destination**, with the same rule as
-the initial sample and on the same congested travel times, those of the
-modified network now. A destination behind a closed street is far away, so the
-draw moves off it.
+Trips keep their origin, and a trip the scenario touched may draw a **new
+destination**, with the rule of the initial sample (section 2) on the times of
+the modified network. A destination behind a closed street is far away now, so
+the draw moves off it.
 
 Fixed demand assumes a traveller drives to the same place whatever it costs,
 so a closure shows up as an implausible total travel time. Here it shows up as
 trips getting shorter.
 
-Because the destinations changed, trip *i* of the new run is not trip *i* of
-the old one. No per-trip comparison is meaningful, and the impact panel shows
-totals only. The baseline is still the fixed-demand one, so part of the
-difference is the redraw and not the scenario (section 9).
+**The redraw is paired with the startup draw.** Two draws with other random
+numbers differ even on the same network, so a plain second draw moved traffic
+in an empty scenario (+139 km and +52 kg of CO₂ on Lausanne at 20,000 trips).
+Instead, each trip has two random numbers of its own, `v0` and `v1`, drawn once
+from the area seed. With `p` the probability of its destination `d` on the
+times of the startup draw and `p'` the one on the scenario times:
+
+    keep d     when v0 < p'(d) / p(d)
+    else draw  from max(p' − p, 0), normalised, with v1
+
+The new destinations follow `p'` exactly, and no other pairing moves fewer
+trips. So:
+
+- on the untouched network `p' = p` and nobody moves: the Model state of
+  elastic demand is the startup draw itself, the same map as fixed demand;
+- an origin whose times did not change keeps every destination;
+- a destination made less likely loses trips, one made more likely gains some.
+
+**Which times.** The draw uses the startup traffic estimate with the scenario
+on top: the betweenness the startup draw used, plus the scenario's speeds and
+closures. Not the betweenness of the modified network: that one moves a little
+everywhere (section 9), and a trip across the city would change its
+destination for a reason nobody can see on the map. The routes are still
+chosen on the modified network, as in the other models.
+
+On Lausanne at 20,000 trips, closing the busiest street (2,165 trips use it)
+moves the destination of 192 trips, 5 of which never used it. Fixed demand
+reports −1,347 km, +5,118 min and 20 failed trips; elastic demand −2,425 km,
++4,061 min and none, since the trips cut off from their destination go
+somewhere else.
+
+A trip that moved is not the same trip any more, so no per-trip comparison
+means anything: the impact panel shows totals only, over the trips routed
+again that have a route on both sides. Pairs a client sends keep their
+destinations, since the redraw needs the pool and the draw they came from.
 
 ---
 
@@ -378,12 +419,12 @@ keeps its route; the equilibrium mode does not make the assumption.
 **The equilibrium mode shows two things at once**: the map has the averaged
 volumes, the impact table the routes of the last pass. Close, not identical.
 
-**An elastic run redraws the demand, so an empty scenario is not exactly
-zero.** The baseline keeps the destinations of the startup draw, the run draws
-its own, and two draws from the same distribution differ. On Lausanne at
-20,000 trips, an empty elastic scenario reports about +139 km and +52 kg of
-CO₂, against −1,381 km and −376 kg for a real closure. Read an elastic result
-as a trend, not as a number.
+**Elastic demand only moves the trips the scenario reaches.** The destinations
+are drawn on the startup traffic plus the scenario, not on the traffic of the
+modified network, so an origin whose times did not change keeps all its
+destinations, even when the closure moved traffic, and so congestion, near
+them. This second order effect is left out on purpose: without it, an empty
+scenario is exactly zero and a far trip never moves for no visible reason.
 
 **Only cars.** No buses, bikes, pedestrians or trains; no time of day, no peak
 hour; no traffic lights, no junction delay, no turn restrictions beyond what
