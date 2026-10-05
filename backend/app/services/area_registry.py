@@ -7,13 +7,19 @@ area (Lausanne is pinned, it answers most requests).
 
 Eviction only drops the registry's reference. A request already holding an
 area keeps working on it until it returns, so there is nothing to count.
+
+An area can be built in two phases (see area_builder.start and finish). The
+registry answers with it after the first one and runs the second one in the
+background. Until that is done the area is held like a pinned one: dropping it
+would throw away a baseline the client is waiting for, and the client would
+build the same area again at once.
 """
 
 import logging
 import threading
 from collections import OrderedDict
 from concurrent.futures import Future
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional, Set
 
 from app.services.area_graph import AreaGraph
 
@@ -43,6 +49,11 @@ class AreaRegistry:
         self._areas: "OrderedDict[str, AreaGraph]" = OrderedDict()
         self._lock = threading.Lock()
         self._building: Dict[str, Future] = {}
+        # Areas whose second build phase still runs. Never evicted.
+        self._unfinished: Set[str] = set()
+        # How the second phase is run. A daemon thread, so it does not depend
+        # on the request or on the event loop. Tests swap it.
+        self.spawn: Callable[[Callable[[], None]], None] = _daemon_thread
 
     # ── Lookup ────────────────────────────────────────────────────────────────
 
@@ -71,19 +82,22 @@ class AreaRegistry:
 
     # ── Insert and evict ──────────────────────────────────────────────────────
 
-    def put(self, area: AreaGraph, pin: bool = False) -> AreaGraph:
+    def put(self, area: AreaGraph, pin: bool = False, unfinished: bool = False) -> AreaGraph:
         with self._lock:
             self._areas[area.meta.id] = area
             self._areas.move_to_end(area.meta.id)
             if pin:
                 self.pinned.add(area.meta.id)
+            if unfinished:
+                # in the same lock, or a put in between could drop it
+                self._unfinished.add(area.meta.id)
             self._evict_locked()
         return area
 
     def evict(self, area_id: str) -> bool:
-        """Drop one area. A pinned area is never dropped."""
+        """Drop one area. A pinned or unfinished area is never dropped."""
         with self._lock:
-            if area_id in self.pinned or area_id not in self._areas:
+            if area_id in self.pinned or area_id in self._unfinished or area_id not in self._areas:
                 return False
             del self._areas[area_id]
         logger.info("[AREAS] evicted %s", area_id)
@@ -99,7 +113,14 @@ class AreaRegistry:
         total = sum(a.memory_bytes() for a in self._areas.values())
         newest = next(reversed(self._areas), None)
         while len(self._areas) > self.max_count or total > self.budget_bytes:
-            oldest = next((k for k in self._areas if k not in self.pinned and k != newest), None)
+            oldest = next(
+                (
+                    k
+                    for k in self._areas
+                    if k not in self.pinned and k not in self._unfinished and k != newest
+                ),
+                None,
+            )
             if oldest is None:
                 return
             total -= self._areas[oldest].memory_bytes()
@@ -113,8 +134,18 @@ class AreaRegistry:
 
     # ── Build once ────────────────────────────────────────────────────────────
 
-    def get_or_build(self, area_id: str, build: Callable[[], AreaGraph]) -> AreaGraph:
-        """Return the area, building it once even if several requests ask together."""
+    def get_or_build(
+        self,
+        area_id: str,
+        build: Callable[[], AreaGraph],
+        finish: Optional[Callable[[AreaGraph], object]] = None,
+    ) -> AreaGraph:
+        """Return the area, building it once even if several requests ask together.
+
+        With `finish`, `build` is the first phase only: the area is answered
+        with as soon as it returns, and `finish(area)` runs after, through
+        `spawn`. See `_finish`.
+        """
         area = self.get_optional(area_id)
         if area is not None:
             return area
@@ -140,8 +171,39 @@ class AreaRegistry:
             pending.set_exception(exc)
             raise
         else:
-            self.put(area)
+            self.put(area, unfinished=finish is not None)
             with self._lock:
                 self._building.pop(area_id, None)
             pending.set_result(area)
+            if finish is not None:
+                self.spawn(lambda: self._finish(area, finish))
             return area
+
+    def _finish(self, area: AreaGraph, finish: Callable[[AreaGraph], object]) -> None:
+        """Run the second phase, then let the area be evicted again.
+
+        The area grew by its whole route set, and the budget was only checked
+        when it was small, so it is checked again here. The area moves to the
+        newest place first: the client is polling it and is about to use it.
+        If the phase fails the area is dropped, and the client gets the usual
+        `area_not_loaded` and builds it again.
+        """
+        area_id = area.meta.id
+        try:
+            finish(area)
+        except Exception:  # noqa: BLE001 - nobody waits on this thread
+            logger.exception("[AREAS] could not finish %s, dropping it", area_id)
+            with self._lock:
+                self._unfinished.discard(area_id)
+                if self._areas.get(area_id) is area:
+                    del self._areas[area_id]
+            return
+        with self._lock:
+            self._unfinished.discard(area_id)
+            if self._areas.get(area_id) is area:
+                self._areas.move_to_end(area_id)
+                self._evict_locked()
+
+
+def _daemon_thread(job: Callable[[], None]) -> None:
+    threading.Thread(target=job, name="area-finish", daemon=True).start()

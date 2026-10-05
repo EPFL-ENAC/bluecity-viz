@@ -139,7 +139,7 @@ def generate_research_based_pairs_mirror(
     same for every weighting of one area: pass `betweenness` from an earlier
     draw to skip it.
     """
-    from app.services.betweenness import edge_betweenness
+    from app.services.betweenness import SOURCE_CHUNK, edge_betweenness
     from app.services.bpr import congested_speed, congested_travel_time
     from app.services.sampling.config import SamplingConfig
     from app.services.sampling.node_pool import junction_pool
@@ -180,9 +180,20 @@ def generate_research_based_pairs_mirror(
     )
 
     # 4. how far every junction is from every other one
+    # In chunks of sources, for the same reason as the betweenness: igraph
+    # holds the GIL for the whole call, and an area being finished in the
+    # background must not freeze the requests of the map. Same matrix.
     logger.info("Computing travel-time matrix...")
-    t_matrix = np.asarray(
-        mirror.h.distances(source=nodes_ig, target=nodes_ig, weights=duration_bc), dtype=float
+    t_matrix = np.vstack(
+        [
+            np.asarray(
+                mirror.h.distances(
+                    source=nodes_ig[i : i + SOURCE_CHUNK], target=nodes_ig, weights=duration_bc
+                ),
+                dtype=float,
+            ).reshape(-1, len(nodes_ig))
+            for i in range(0, len(nodes_ig), SOURCE_CHUNK)
+        ]
     )
     row_of = {int(node): i for i, node in enumerate(nodes.index)}
 

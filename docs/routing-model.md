@@ -217,6 +217,15 @@ Computed in chunks of 50 source junctions, targets always the whole pool.
 The sum over (source, target) pairs is the same either way; chunking only
 stops one 500 ms igraph call from holding the GIL and freezing the server.
 
+Since it needs no trip, it is the first thing an area has. A new area is built
+in two phases (`area_builder.start` and `finish`): the first one cuts the
+graph and computes the betweenness, and `POST /api/v1/areas` answers there,
+with `ready: false`. The second one draws the trips on the same pool and
+routes the baseline, in the background. Meanwhile the map shows the
+betweenness from `GET /api/v1/areas/{id}/betweenness`, and a routing request
+answers 409 `area_not_ready`. The two phases give the same trips and the same
+numbers as a build in one go.
+
 ---
 
 ## 6. CO₂

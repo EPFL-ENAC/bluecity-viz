@@ -34,7 +34,7 @@ from app.services.co2_calculator import CO2Calculator
 from app.services.graph_mirror import GraphMirror
 from app.services.payload_cache import PayloadCache
 from app.services.routing_engine import PairArrays, RouteSet, route_pairs
-from app.services.usage_rows import build_edge_usage_rows
+from app.services.usage_rows import build_betweenness_rows, build_edge_usage_rows
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,17 @@ class NoPopulationData(ValueError):
     """The area has no residents and no jobs, so there is nothing to weigh by."""
 
     code = "no_population_data"
+
+
+class AreaNotReady(RuntimeError):
+    """The area still routes its baseline: its trips are not there yet.
+
+    An area is created in two phases (services/area_builder.py). The first one
+    gives the edges and the betweenness, the second one draws the trips and
+    routes them. Anything that needs the trips before that raises this.
+    """
+
+    code = "area_not_ready"
 
 
 @dataclass
@@ -208,6 +219,11 @@ class AreaGraph:
         self.od["uniform"].baseline = value
 
     @property
+    def ready(self) -> bool:
+        """True once the baseline is routed: the area can run a scenario."""
+        return self.od["uniform"].baseline is not None
+
+    @property
     def route_cache_size(self) -> int:
         return DYNAMIC_ROUTE_CACHE_SIZE if self.dynamic else ROUTE_CACHE_SIZE
 
@@ -258,6 +274,43 @@ class AreaGraph:
             self._congested_time = sample.congested_time
             self._bc_vertices = [self.mirror.node_index[int(n)] for n in od.nodes.index]
 
+    def compute_betweenness(self, config, seed: int) -> None:
+        """Steps 1 to 3 of the OD draw on their own, before any trip.
+
+        The betweenness only needs the junction pool, so the map can show it
+        while the trips are drawn and routed. The pool is drawn the way the
+        sampler draws it (same seed, the uniform draw of `junction_pool`), so
+        the draw that follows reuses this betweenness and gives the same pairs
+        as a build in one go.
+        """
+        from app.services.sampling.node_pool import junction_pool
+
+        t0 = time.perf_counter()
+        mirror = self.mirror
+        rng = np.random.RandomState(seed)
+        # the draw is uniform whatever the weighting, so no weight column here
+        nodes = junction_pool(mirror, rng, config.n_nodes_preprocess)
+        vertices = [mirror.node_index[int(n)] for n in nodes.index]
+        bc = edge_betweenness(
+            mirror, mirror.travel_time, vertices, config.daily_km_driven, label="sampling BC"
+        )
+        self._bc_vertices = vertices
+        self._sampled_bc = bc
+        self._congested_time = bpr.congested_travel_time(
+            mirror, bc, mirror.speed_kph, config.betweenness_to_slowdown
+        )
+        logger.info("[AREA %s] betweenness in %.1f s", self.meta.id, time.perf_counter() - t0)
+
+    def betweenness_rows(self) -> List[dict]:
+        """The betweenness of every street, as served by GET /areas/{id}/betweenness."""
+        bc = self._sampled_bc
+        if bc is None and self.baseline is not None:
+            # the random pairs of the tests compute it with the baseline
+            bc = self.baseline.bc
+        if bc is None:
+            raise AreaNotReady(f"area {self.meta.id} has no betweenness yet")
+        return build_betweenness_rows(self.mirror, self.mirror.group_sum(bc))
+
     def od_set(self, node_weighting: NodeWeighting = "uniform") -> OdSet:
         """The OD sample of this weighting, drawn and routed on first use.
 
@@ -271,7 +324,7 @@ class AreaGraph:
         if od is not None and od.baseline is not None:
             return od
         if node_weighting == "uniform":
-            raise RuntimeError("Baseline not computed")
+            raise AreaNotReady(f"area {self.meta.id} is still routing its baseline")
         if self.mirror is None or not self.mirror.has_population:
             raise NoPopulationData(f"area {self.meta.id} has no residents and no jobs")
 
@@ -281,7 +334,7 @@ class AreaGraph:
                 return od
             uniform = self.od["uniform"]
             if uniform.baseline is None or self.sampling_config is None:
-                raise RuntimeError("Baseline not computed")
+                raise AreaNotReady(f"area {self.meta.id} is still routing its baseline")
 
             t0 = time.perf_counter()
             self.sample_research_pairs(
@@ -348,7 +401,9 @@ class AreaGraph:
                 rs._route_of_position,
             )
 
-        for weighting, od in self.od.items():
+        # Snapshots: another thread can add an entry while the registry
+        # counts, and a dict changed during a loop raises.
+        for weighting, od in list(self.od.items()):
             if od.pairs is not None:
                 total += _nbytes(od.pairs.origins, od.pairs.destinations)
             if od.baseline is not None:
@@ -359,18 +414,18 @@ class AreaGraph:
                     # the other samples point at these same arrays
                     total += _nbytes(b.bc, b.bc_group)
                 total += USAGE_ROW_BYTES * len(b.usage_rows)
-            for small in od.by_n.values():
+            for small in list(od.by_n.values()):
                 # the route set is a view on the baseline one, only the rows are new
                 total += _nbytes(small.counts, small.counts_group, small.co2_per_km_group)
                 total += USAGE_ROW_BYTES * len(small.usage_rows)
-            for eq in od.equilibrium.values():
+            for eq in list(od.equilibrium.values()):
                 # a real route set of its own, routed on the congested times
                 total += route_set_bytes(eq.routes)
                 total += _nbytes(eq.counts, eq.counts_group, eq.co2_per_km_group)
                 total += USAGE_ROW_BYTES * len(eq.usage_rows)
-        for rs in self.route_cache.values():
+        for rs in list(self.route_cache.values()):
             total += route_set_bytes(rs)
-        for bc in self._bc_cache.values():
+        for bc in list(self._bc_cache.values()):
             total += _nbytes(bc)
         total += self.payloads.nbytes()
         return int(total)

@@ -101,3 +101,20 @@ def build_edge_usage_rows(
         "[TIMING] edge usage rows | %d rows | %.1f ms", len(rows), (time.perf_counter() - t0) * 1000
     )
     return rows
+
+
+def build_betweenness_rows(mirror, betweenness: np.ndarray) -> List[dict]:
+    """The betweenness of every street, before any trip is routed.
+
+    `betweenness` is indexed by (u, v) group, like the arrays above. Only the
+    groups above 0 give a row, rounded like the usage rows. The frontend shows
+    these while the area is still routing its baseline.
+    """
+    bc = np.round(betweenness, 2)
+    used = np.flatnonzero(bc > 0)
+    us = mirror.uv_u[used]
+    vs = mirror.uv_v[used]
+    return [
+        {"u": int(u), "v": int(v), "betweenness_centrality": float(b)}
+        for u, v, b in zip(us, vs, bc[used])
+    ]

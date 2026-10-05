@@ -138,3 +138,126 @@ def test_a_failed_build_is_raised_to_every_caller_and_not_cached():
     # not remembered as a failure: the second call tried again
     assert len(attempts) == 2
     assert "bad" not in reg
+
+
+# ── Two phases: the area is held until its build is finished ─────────────────
+
+
+def held_registry(budget_mb: int = 1000, max_count: int = 10):
+    """A registry that keeps the second phases instead of running them."""
+    reg = registry(budget_mb=budget_mb, max_count=max_count)
+    jobs = []
+    reg.spawn = jobs.append
+    return reg, jobs
+
+
+def test_the_second_phase_runs_after_the_answer():
+    reg, jobs = held_registry()
+    finished = []
+
+    area = reg.get_or_build("a", lambda: FakeArea("a"), finished.append)
+
+    assert reg.get("a") is area
+    assert finished == []
+    jobs.pop()()
+    assert finished == [area]
+
+
+def test_an_unfinished_area_survives_the_count_limit():
+    reg, jobs = held_registry(max_count=2)
+    reg.get_or_build("a", lambda: FakeArea("a"), lambda area: None)
+    for name in "bc":
+        reg.put(FakeArea(name))
+
+    assert [a.meta.id for a in reg.loaded()] == ["a", "c"]
+
+
+def test_an_unfinished_area_survives_the_budget_and_evict():
+    reg, jobs = held_registry(budget_mb=15)
+    reg.get_or_build("a", lambda: FakeArea("a", mb=10), lambda area: None)
+    reg.put(FakeArea("b", mb=10))
+
+    assert "a" in reg
+    assert reg.evict("a") is False
+
+
+def test_finishing_checks_the_budget_again():
+    reg, jobs = held_registry(budget_mb=25)
+    reg.put(FakeArea("old", mb=10))
+
+    def grow(area):
+        # the baseline route set lands on the area
+        area._bytes = 20 * 1024 * 1024
+
+    reg.get_or_build("a", lambda: FakeArea("a", mb=1), grow)
+    assert [a.meta.id for a in reg.loaded()] == ["old", "a"]
+
+    jobs.pop()()
+
+    # over budget now: the old one goes, the area just finished stays
+    assert [a.meta.id for a in reg.loaded()] == ["a"]
+    assert reg.evict("a") is True
+
+
+def test_a_finished_area_moves_to_the_newest_place():
+    reg, jobs = held_registry(max_count=3)
+    reg.get_or_build("a", lambda: FakeArea("a"), lambda area: None)
+    reg.put(FakeArea("b"))
+    reg.put(FakeArea("c"))
+
+    jobs.pop()()
+    reg.put(FakeArea("d"))
+
+    # the client polls the area it just built, so b goes first
+    assert [a.meta.id for a in reg.loaded()] == ["c", "a", "d"]
+
+
+def test_a_failed_second_phase_drops_the_area():
+    reg, jobs = held_registry()
+
+    def fail(area):
+        raise RuntimeError("no trip could be drawn")
+
+    reg.get_or_build("a", lambda: FakeArea("a"), fail)
+    jobs.pop()()
+
+    assert "a" not in reg
+    # and the next request builds it again
+    again = reg.get_or_build("a", lambda: FakeArea("a"), lambda area: None)
+    assert reg.get("a") is again
+
+
+def test_concurrent_callers_get_one_build_and_one_finish():
+    reg, jobs = held_registry()
+    builds = []
+    start = threading.Barrier(8)
+
+    def build():
+        builds.append(1)
+        time.sleep(0.05)
+        return FakeArea("slow")
+
+    results = []
+
+    def worker():
+        start.wait()
+        results.append(reg.get_or_build("slow", build, lambda area: None))
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(builds) == 1
+    assert len(jobs) == 1
+    assert all(r is results[0] for r in results)
+
+
+def test_the_default_spawn_runs_the_phase_on_a_thread():
+    reg = registry()
+    done = threading.Event()
+
+    reg.get_or_build("a", lambda: FakeArea("a"), lambda area: done.set())
+
+    assert done.wait(timeout=5)
