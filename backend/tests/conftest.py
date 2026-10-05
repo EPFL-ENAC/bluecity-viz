@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from shapely.geometry import LineString, box
 
 from app.config import settings
+from app.services.area_graph import AreaGraph
 from app.services.cvrp_graph import networkx_to_igraph_with_indices
 from app.services.cvrp_service import DEPOT_LAT, DEPOT_LON, CVRPService
 from app.services.graph_service import GraphService
@@ -17,6 +18,8 @@ from app.services.graph_store import distance_m as store_distance
 from app.services.graph_store_writer import write_store
 from app.services.municipalities import Municipalities
 from app.services.municipalities_writer import neighbours_of, write_municipalities
+from app.services.routing_engine import PairArrays
+from app.services.sampling.config import SamplingConfig
 
 # Grid size: 4 columns x 5 rows = 20 nodes.
 GRID_COLS = 4
@@ -116,9 +119,41 @@ def graph_path(synthetic_graph, tmp_path_factory):
 
 @pytest.fixture
 def graph_service(graph_path) -> GraphService:
+    """The synthetic grid as the CVRP graph, and as the default routing area.
+
+    The app cuts its default area from the store. The tests use the whole grid
+    instead, so the hand-checked numbers below stay small and readable.
+    """
     service = GraphService()
     service.load_graph(str(graph_path))
+    service.set_default_area(AreaGraph.from_networkx(service.graph, area_id="grid", name="Grid"))
     return service
+
+
+def start_routing(
+    service: GraphService,
+    seed: int = 42,
+    sampling_method: str = "research",
+    count: int = 100,
+    radius_km: float = 2.0,
+    sampling_config: SamplingConfig | None = None,
+) -> AreaGraph:
+    """Draw the OD pairs of the default area and its baseline, like a build does.
+
+    `research` draws OD_PAIRS_MAX pairs, like the app. `random` draws `count`
+    plain random pairs, which is what most tests on the grid want.
+    """
+    config = sampling_config or SamplingConfig()
+    area = service.default_area
+    area.sampling_config = config
+    if sampling_method == "research":
+        area.sample_research_pairs(settings.od_pairs_max, config, seed)
+    else:
+        area.pairs = PairArrays.from_nodepairs(
+            area.generate_random_pairs(count=count, seed=seed, radius_km=radius_km)
+        )
+    area.build_baseline(config, seed)
+    return area
 
 
 @pytest.fixture

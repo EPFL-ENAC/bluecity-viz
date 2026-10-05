@@ -15,12 +15,12 @@ from app.services import recalculate as pipeline
 from app.services.modifications import build_scenario
 from app.services.routing_engine import route_pairs
 from app.services.sampling.config import SamplingConfig
+from tests.conftest import start_routing
 
 
 @pytest.fixture
 def area(graph_service):
-    graph_service.initialize_default_routes_sync(count=80, sampling_method="random", seed=1)
-    return graph_service.default_area
+    return start_routing(graph_service, count=80, sampling_method="random", seed=1)
 
 
 @pytest.fixture
@@ -36,12 +36,12 @@ def research_area(graph_service):
     """
     old_max, old_default = settings.od_pairs_max, settings.od_pairs
     settings.od_pairs_max, settings.od_pairs = 200, 200
-    graph_service.initialize_default_routes_sync(
+    yield start_routing(
+        graph_service,
         seed=1,
         sampling_method="research",
         sampling_config=SamplingConfig(n_destinations_per_origin=20),
     )
-    yield graph_service.default_area
     settings.od_pairs_max, settings.od_pairs = old_max, old_default
 
 

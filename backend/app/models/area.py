@@ -74,6 +74,8 @@ class AreaInfo(BaseModel):
     od_pairs: int = 0
     od_pairs_default: int = 0
     od_pairs_max: int = 0
+    # Whether the waste tool runs here: most of the area is in its graph.
+    cvrp: bool = False
 
 
 class AreaLimits(BaseModel):

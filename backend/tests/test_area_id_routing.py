@@ -5,23 +5,31 @@ client that comes back with a saved area id must get a clear 404 and create
 it again, not a 500.
 """
 
-from app.services.area_graph import DEFAULT_AREA_ID
 
-
-def test_graph_info_answers_for_the_default_area(client):
+def test_graph_info_answers_for_the_default_area(client, graph_service):
     body = client.get("/api/v1/routes/graph-info").json()
 
-    assert body["area_id"] == DEFAULT_AREA_ID
+    assert body["area_id"] == graph_service.default_area_id
     assert body["node_count"] == 20
     assert body["edge_count"] == 60
     assert body["scc_fraction"] == 1.0
 
 
-def test_naming_the_default_area_is_the_same_as_naming_nothing(client):
+def test_naming_the_default_area_is_the_same_as_naming_nothing(client, graph_service):
     default = client.get("/api/v1/routes/graph-info").json()
-    named = client.get(f"/api/v1/routes/graph-info?area_id={DEFAULT_AREA_ID}").json()
+    named = client.get(f"/api/v1/routes/graph-info?area_id={graph_service.default_area_id}").json()
 
     assert named == default
+
+
+def test_no_default_area_is_a_404_not_a_500(client, graph_service, monkeypatch):
+    """No store at startup means no default area. Routing says so plainly."""
+    monkeypatch.setattr(graph_service, "default_area_id", None)
+
+    response = client.get("/api/v1/routes/graph-info")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "area_not_loaded"
 
 
 def test_unknown_area_is_a_404_with_a_code(client):
@@ -57,7 +65,7 @@ def test_calculate_runs_on_the_named_area(client, graph_service):
     nodes = client.get("/api/v1/routes/graph-info").json()["sample_nodes"]
     body = {
         "pairs": [{"origin": nodes[0], "destination": nodes[-1]}],
-        "area_id": DEFAULT_AREA_ID,
+        "area_id": graph_service.default_area_id,
     }
 
     response = client.post("/api/v1/routes/calculate", json=body)

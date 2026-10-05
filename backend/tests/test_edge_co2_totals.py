@@ -11,6 +11,7 @@ import pytest
 
 from app.models.route import EdgeModification
 from app.services.co2_calculator import CO2Calculator
+from tests.conftest import start_routing
 
 # Rows are rounded to 0.1 g/km, so a row can be off by 0.05 g/km.
 ROUND = 0.05
@@ -33,8 +34,7 @@ def tolerance(mirror, rows):
 
 @pytest.fixture
 def area(graph_service):
-    graph_service.initialize_default_routes_sync(count=60, sampling_method="random", seed=1)
-    return graph_service.default_area
+    return start_routing(graph_service, count=60, sampling_method="random", seed=1)
 
 
 def test_baseline_edges_add_up_to_the_routes(area):

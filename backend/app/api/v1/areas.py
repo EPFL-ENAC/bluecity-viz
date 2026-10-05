@@ -16,7 +16,7 @@ from app.models.area import (
 )
 from app.services import area_builder
 from app.services.area_builder import AreaRejected, AreaSpec, CircleSpec, MunicipalitySpec
-from app.services.area_graph import DEFAULT_AREA_ID, AreaGraph
+from app.services.area_graph import AreaGraph
 from app.services.area_registry import AreaNotLoaded
 from app.services.sampling.config import SamplingConfig
 
@@ -88,6 +88,7 @@ def _info(area: AreaGraph) -> dict:
         "od_pairs": len(area.pairs) if area.pairs else 0,
         "od_pairs_default": settings.od_pairs,
         "od_pairs_max": settings.od_pairs_max,
+        "cvrp": _service().runs_cvrp(area),
     }
 
 
@@ -168,14 +169,11 @@ def get_area_edges(area_id: str, request: Request):
         ) from exc
 
     def missing():
-        # Every drawn area gets its rows at build time, so reaching this is a
-        # bug and an empty network on screen would hide it.
+        # Every area gets its rows at build time, the default one too, so
+        # reaching this is a bug and an empty network on screen would hide it.
         raise HTTPException(status_code=500, detail=f"area {area_id!r} has no edge payload")
 
-    # The default city has no store behind it: its geometry still comes from
-    # the NetworkX graph.
-    build = service.get_edge_geometries if area.meta.id == DEFAULT_AREA_ID else missing
-    data, etag = area.payloads.get_or_build("edges", build)
+    data, etag = area.payloads.get_or_build("edges", missing)
     return _json_or_304(request, data, etag, "public, max-age=86400")
 
 

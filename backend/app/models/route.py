@@ -268,30 +268,6 @@ class BaselineResponse(BaseModel):
     edge_usage: List[EdgeUsageStats] = Field(..., description="Edge usage without modifications")
 
 
-class GraphEdge(BaseModel):
-    """Graph edge with geometry and metadata."""
-
-    u: int = Field(..., description="Start node ID")
-    v: int = Field(..., description="End node ID")
-    geometry: PathGeometry = Field(..., description="Edge geometry")
-    name: Optional[str] = Field(None, description="Street name")
-    highway: Optional[str] = Field(None, description="Highway type")
-    speed_kph: Optional[float] = Field(None, description="Speed limit in km/h")
-    length: Optional[float] = Field(None, description="Length in meters")
-    travel_time: Optional[float] = Field(None, description="Travel time in seconds")
-    bus_route_count: int = Field(0, description="Number of bus lines using this edge")
-    bus_route_refs: str = Field("", description="Comma-separated bus route references")
-    habitat_area_m2: float = Field(0.0, description="Total habitat area within 10m buffer (m²)")
-
-
-class GraphData(BaseModel):
-    """Complete graph data for visualization."""
-
-    edges: List[GraphEdge] = Field(..., description="All graph edges")
-    node_count: int = Field(..., description="Total number of nodes")
-    edge_count: int = Field(..., description="Total number of edges")
-
-
 class RandomPairsRequest(BaseModel):
     """Request to generate random node pairs."""
 
