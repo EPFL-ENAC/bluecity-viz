@@ -151,15 +151,13 @@ function visLabel(mode: string, fallback: string) {
 }
 
 /**
- * The baseline and the run, both on the area the store points at.
- *
- * The equilibrium model is compared with a baseline run the same way, which
- * the answer carries, so GET /baseline is not asked in that mode.
+ * The Model state and the run, both on the area the store points at. The
+ * Model state is the left side of the comparison, whatever the model: the
+ * same options on the untouched network.
  */
 function runOnce(odPairs: number | undefined) {
-  const ownBaseline = trafficStore.useCongestionModel
   return Promise.all([
-    ownBaseline ? Promise.resolve(null) : trafficStore.getBaseline(odPairs),
+    trafficStore.loadModelState(),
     recalculateRoutes(scenarioStore.wire, {
       useCongestionModel: trafficStore.useCongestionModel,
       congestionIterations: trafficStore.congestionIterations,
@@ -190,8 +188,8 @@ async function calculateRoutes() {
     await trafficStore.ensureArea()
     loadingMessage.value = baseMessage
 
-    // The baseline is the same for every run at that count, so it comes from
-    // the store cache after the first time.
+    // The Model state is the same for every run with these options, so it
+    // comes from the store cache after the first time.
     let answer
     try {
       answer = await runOnce(odPairs)
@@ -204,17 +202,17 @@ async function calculateRoutes() {
       loadingMessage.value = baseMessage
       answer = await runOnce(odPairs)
     }
-    const [baseline, result] = answer
+    const [model, result] = answer
 
-    // The count changed while we were waiting, this answer is for the old one.
-    if (odPairs !== chosenOdPairs()) return
+    // The options changed while we were waiting, this answer is for the old ones.
+    if (!model || odPairs !== chosenOdPairs()) return
 
-    if (baseline && baseline.odPairs !== result.od_pairs) {
-      console.warn(`Baseline is on ${baseline.odPairs} pairs, the run on ${result.od_pairs}`)
+    if (model.odPairs !== result.od_pairs) {
+      console.warn(`The Model state is on ${model.odPairs} pairs, the run on ${result.od_pairs}`)
     }
 
     trafficStore.setEdgeUsage(
-      baseline?.rows ?? result.original_edge_usage ?? [],
+      model.rows,
       result.new_edge_usage,
       result.impact_statistics,
       result.od_pairs,
@@ -266,8 +264,8 @@ async function calculateRoutes() {
                 <strong>On:</strong> every trip is re-routed, and the simulated volumes are
                 normalised to daily vehicle-km and fed back into the BPR speed-reduction formula,
                 repeating for the chosen number of iterations, converging toward a
-                <em>Wardrop user equilibrium</em>. Slower, and the right choice when the
-                travel-time numbers themselves matter.
+                <em>Wardrop user equilibrium</em>. Slower, and the right choice when the travel-time
+                numbers themselves matter.
               </div>
             </div>
           </v-tooltip>
@@ -292,11 +290,11 @@ async function calculateRoutes() {
             <div>
               <div class="font-weight-bold mb-1">Elastic demand</div>
               <div>
-                When on, trip destinations are drawn again, to reflect that travellers adapt to
-                new travel times: closing a major road shifts trips to closer destinations rather
-                than spiking total travel time. Origins stay put, only the destination responds.
-                Because the destinations moved, no trip can be compared with itself, so the impact
-                panel shows totals only.
+                When on, trip destinations are drawn again, to reflect that travellers adapt to new
+                travel times: closing a major road shifts trips to closer destinations rather than
+                spiking total travel time. Origins stay put, only the destination responds. Because
+                the destinations moved, no trip can be compared with itself, so the impact panel
+                shows totals only.
               </div>
             </div>
           </v-tooltip>
