@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import EffectRow, { type EffectState } from '@/components/dock/EffectRow.vue'
+import LayerRows, { visLabel } from '@/components/dock/LayerRows.vue'
 import ScenarioEdges from '@/components/dock/ScenarioEdges.vue'
 import StoryStep from '@/components/dock/StoryStep.vue'
 import ImpactStatistics from '@/components/ImpactStatistics.vue'
@@ -9,6 +10,7 @@ import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
 import { useDeltaBars } from '@/composables/useDeltaBars'
 import { useMapView } from '@/composables/useMapView'
+import { useModelPreview } from '@/composables/useModelPreview'
 import { ApiError, recalculateRoutes, type NodeWeighting } from '@/services/trafficAnalysis'
 import { useScenarioStore, type StreetRef } from '@/stores/scenario'
 import { useStorylineStore } from '@/stores/storyline'
@@ -31,6 +33,9 @@ const { absorbers, barWidth, deltaText } = useDeltaBars()
 // The dock shows the tool whose row is picked in the sidebar, so the open step
 // of the view is this tab's.
 const { step } = useMapView()
+
+// The Model step draws the routing of the chosen options, and follows them.
+useModelPreview()
 
 /** The wheel while the routes run, the tick once the result matches the scenario. */
 const effectState = computed<EffectState>(() => {
@@ -135,20 +140,16 @@ const resultsSummary = computed(() => {
   return parts.filter(Boolean).join(' · ')
 })
 
-// Sentence-case labels, per the design. Falls back to the store label.
-const VIS_LABELS: Record<string, string> = {
-  frequency: 'Edge usage frequency',
-  co2: 'CO₂ emissions',
-  delta: 'Traffic change (Δ)',
-  delta_relative: 'Traffic change (Δ, relative %)',
-  co2_delta: 'CO₂ emissions change',
-  betweenness: 'Betweenness centrality',
-  betweenness_delta: 'Betweenness change'
-}
-
-function visLabel(mode: string, fallback: string) {
-  return VIS_LABELS[mode] ?? fallback
-}
+/** One line under the Model layers: what the map waits for, or why it did not come. */
+const modelStatus = computed(() => {
+  // the dock head already says the area is being built
+  if (trafficStore.isBuildingArea) return ''
+  if (trafficStore.modelLoading) {
+    const odPairs = chosenOdPairs()
+    return odPairs ? `Routing ${formatTrips(odPairs)} trips…` : 'Routing the trips…'
+  }
+  return trafficStore.modelError ? `The model did not load: ${trafficStore.modelError}` : ''
+})
 
 /**
  * The Model state and the run, both on the area the store points at. The
@@ -290,16 +291,20 @@ async function calculateRoutes() {
             <div>
               <div class="font-weight-bold mb-1">Elastic demand</div>
               <div>
-                When on, trip destinations are drawn again, to reflect that travellers adapt to new
-                travel times: closing a major road shifts trips to closer destinations rather than
-                spiking total travel time. Origins stay put, only the destination responds. Because
-                the destinations moved, no trip can be compared with itself, so the impact panel
+                When on, the scenario draws the trip destinations again on its own travel times:
+                travellers adapt, so closing a major road shifts trips to closer destinations rather
+                than spiking total travel time. Origins stay put. Only the trips the scenario
+                reaches move, the others keep their destination, so a scenario that changes nothing
+                moves nothing. A moved trip cannot be compared with itself, so the impact panel
                 shows totals only.
               </div>
             </div>
           </v-tooltip>
         </template>
       </BcRow>
+      <p v-if="trafficStore.elasticDemand" class="trips__warning">
+        It changes how the scenario is routed, not this map.
+      </p>
 
       <div class="trips">
         <div class="bc-micro trips__label">Node weights</div>
@@ -319,6 +324,16 @@ async function calculateRoutes() {
           (frequency correlation 0.96).
         </p>
       </div>
+    </div>
+
+    <!-- The routing of these options on the untouched network: what the
+         scenario is compared with. -->
+    <div class="dock-section">
+      <template v-if="trafficStore.hasModelState">
+        <div class="bc-micro dock-section__title">Layers</div>
+        <LayerRows />
+      </template>
+      <p v-if="modelStatus" class="bc-empty model-status">{{ modelStatus }}</p>
 
       <button class="bc-btn bc-btn--primary calculate" @click="storyline.validate('routing')">
         Validate initial model
@@ -382,17 +397,7 @@ async function calculateRoutes() {
       <div class="bc-micro dock-section__title">
         Layers<template v-if="resultTrips"> · {{ resultTrips }} trips</template>
       </div>
-      <BcRow
-        v-for="vis in trafficStore.availableVisualizations"
-        :key="vis.value"
-        :check="false"
-        :on="trafficStore.activeVisualization === vis.value"
-        :active="trafficStore.activeVisualization === vis.value"
-        class="vis-row"
-        @click="trafficStore.setActiveVisualization(vis.value)"
-      >
-        {{ visLabel(vis.value, vis.label) }}
-      </BcRow>
+      <LayerRows />
 
       <div class="clip">
         <span class="clip__label">Clip to</span>
@@ -690,8 +695,8 @@ async function calculateRoutes() {
   margin-top: 6px;
 }
 
-.vis-row {
-  padding-left: 12px;
+.model-status {
+  margin-top: 8px;
 }
 
 .clip {

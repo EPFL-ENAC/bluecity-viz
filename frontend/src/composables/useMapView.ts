@@ -3,14 +3,15 @@
  * be edited.
  *
  * Each tool is a storyline of three steps: Model, Scenario, Results. Only one
- * is open, and the map draws what that step is about: the base network, the
- * ink scenario, or the tool's result.
+ * is open, and the map draws what that step is about: the model (the routing
+ * it gives on the untouched network), the ink scenario, or the tool's result.
  *
  * Two pieces of state decide it. The phase (stores/storyline.ts): in `init`
- * the user sets the model, the graph is read only and no result is drawn. In
- * `simulation` the network opens for editing. Then `scenarioStore.mapMode`
- * says whether the Scenario or the Results step is open. Everything else here
- * is derived, so there is one place to ask "what is on the map".
+ * the user sets the model, the graph is read only, and the routing tool draws
+ * its Model state once it is loaded. In `simulation` the network opens for
+ * editing. Then `scenarioStore.mapMode` says whether the Scenario or the
+ * Results step is open. Everything else here is derived, so there is one
+ * place to ask "what is on the map".
  */
 import { useCVRPStore } from '@/stores/cvrp'
 import { useScenarioStore } from '@/stores/scenario'
@@ -28,6 +29,7 @@ export interface MapView {
   activeHasResult: ComputedRef<boolean>
   phase: ComputedRef<StoryPhase>
   editable: ComputedRef<boolean>
+  inspectable: ComputedRef<boolean>
   shown: ComputedRef<ShownResult>
   step: ComputedRef<StoryStepName>
 }
@@ -56,14 +58,22 @@ export function useMapView(): MapView {
   // Closing the workbench takes the overlay off the map, so nothing is shown
   // and the legend has nothing to explain. Picking an area does the same: the
   // map is the whole country then, and the result belongs to the old one.
-  const shown = computed<ShownResult>(() =>
-    scenarioStore.isOpen &&
-    !trafficStore.pickMode &&
-    phase.value === 'simulation' &&
-    scenarioStore.mapMode === 'result' &&
-    activeHasResult.value
+  const shown = computed<ShownResult>(() => {
+    if (!scenarioStore.isOpen || trafficStore.pickMode) return null
+    // The Model step draws the routing of the chosen model. The waste tool
+    // has no such state, its Model step stays the base network.
+    if (phase.value === 'init') {
+      return scenarioStore.activeTab === 'routing' && trafficStore.hasModelState ? 'routing' : null
+    }
+    return scenarioStore.mapMode === 'result' && activeHasResult.value
       ? scenarioStore.activeTab
       : null
+  })
+
+  // The pointer may read a street without editing it: in the Model step the
+  // user checks the model on a street they know. Hover only, no click.
+  const inspectable = computed(
+    () => editable.value || (phase.value === 'init' && shown.value === 'routing')
   )
 
   // The Results step opens only when there is a result to read. Without one
@@ -73,5 +83,5 @@ export function useMapView(): MapView {
     return scenarioStore.mapMode === 'result' && activeHasResult.value ? 'results' : 'scenario'
   })
 
-  return { activeHasResult, phase, editable, shown, step }
+  return { activeHasResult, phase, editable, inspectable, shown, step }
 }
