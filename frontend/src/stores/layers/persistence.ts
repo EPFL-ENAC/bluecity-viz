@@ -1,4 +1,4 @@
-import { normaliseIds } from '@/services/trafficAnalysis'
+import { NODE_WEIGHTINGS, normaliseIds } from '@/services/trafficAnalysis'
 import type {
   CircleArea,
   Investigation,
@@ -20,9 +20,9 @@ const STORAGE_KEY = 'bluecity-layers-store'
 // count (odPairs), missing in older entries and read back as null. v5 moves the
 // edge modifications out of the traffic tool into a scenario both tools share,
 // keyed by street instead of by directed edge, and adds the area the scenario
-// runs on, missing in older entries and read back as null, the default city.
+// runs on, missing in older entries and read back as null, the default area.
 // A set of communes is a second kind of area. It needs no new version: an
-// older client reads the kind it does not know as null, the default city.
+// older client reads the kind it does not know as null, the default area.
 export const SCHEMA_VERSION = 5
 
 // The area must sit inside the country and stay in the range the backend
@@ -82,6 +82,7 @@ export function defaultTrafficInputs(): TrafficAnalysisInputs {
     nodeWeighting: 'uniform',
     filterBusRoutes: false,
     odPairs: null,
+    // the default circle, see DEFAULT_AREA
     area: null
   }
 }
@@ -161,12 +162,13 @@ export function pickTrafficInputs(raw: any): TrafficAnalysisInputs {
     useCongestionModel: !!raw.useCongestionModel,
     congestionIterations: Number(raw.congestionIterations) || 1,
     elasticDemand: !!raw.elasticDemand,
-    // missing (older saves) or unknown reads back as uniform
-    nodeWeighting: raw.nodeWeighting === 'population' ? 'population' : 'uniform',
+    // missing (older saves) or unknown reads back as uniform. "population" is
+    // the daily average, the same id since before the weekday ones.
+    nodeWeighting: NODE_WEIGHTINGS.includes(raw.nodeWeighting) ? raw.nodeWeighting : 'uniform',
     filterBusRoutes: !!raw.filterBusRoutes,
     // missing (v2 and older) or broken reads back as null, the server default
     odPairs: Number.isInteger(raw.odPairs) && raw.odPairs > 0 ? raw.odPairs : null,
-    // missing (v3 and older) or broken reads back as null, the default city
+    // missing (v3 and older) or broken reads back as null, the default area
     area: pickArea(raw.area)
   }
 }

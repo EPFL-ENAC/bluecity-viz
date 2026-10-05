@@ -39,7 +39,7 @@ wtx in `.env.worktree` (see `wtx.toml` at the repo root).
 ```
 src/
 ├── components/
-│   ├── dock/        # TrafficDock, CvrpDock: one per analytics tool
+│   ├── dock/        # RoutingTab, CvrpTab: one per analytics tool
 │   ├── sidebar/     # investigation tree, datasets, layers, tools
 │   ├── panels/      # VisualizationsPanel, the map stage
 │   ├── dialogs/     # add source, share, delete

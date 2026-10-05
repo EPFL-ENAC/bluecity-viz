@@ -1,14 +1,15 @@
 import { resetGraphEdges, useGraphEdges } from '@/composables/useGraphEdges'
-import { fetchAreaEdges, fetchEdgeGeometries } from '@/services/trafficAnalysis'
+import { areaKey, DEFAULT_AREA, fetchAreaEdges } from '@/services/trafficAnalysis'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/services/trafficAnalysis', async () => ({
   ...(await vi.importActual<typeof import('@/services/trafficAnalysis')>(
     '@/services/trafficAnalysis'
   )),
-  fetchEdgeGeometries: vi.fn(),
   fetchAreaEdges: vi.fn()
 }))
+
+const DEFAULT_KEY = areaKey(DEFAULT_AREA)
 
 function edges(u: number) {
   return [{ u, v: u + 1, coordinates: [[6, 46]] as [number, number][] }]
@@ -31,11 +32,9 @@ function deferred<T>() {
 describe('useGraphEdges', () => {
   beforeEach(() => {
     resetGraphEdges()
-    vi.mocked(fetchEdgeGeometries).mockReset()
     vi.mocked(fetchAreaEdges).mockReset()
-    vi.mocked(fetchEdgeGeometries).mockResolvedValue(edges(1))
     vi.mocked(fetchAreaEdges).mockImplementation(async (areaId: string) =>
-      edges(areaId === 'area-a' ? 10 : 20)
+      edges(areaId === DEFAULT_KEY ? 1 : areaId === 'area-a' ? 10 : 20)
     )
   })
 
@@ -43,19 +42,31 @@ describe('useGraphEdges', () => {
     vi.restoreAllMocks()
   })
 
-  it('reads the static city file when no area is named', async () => {
+  it('gets the default area from the server like any other', async () => {
     const { edges: shown, showArea, currentAreaId } = useGraphEdges()
     const { build, rebuild } = server()
 
-    await showArea('lausanne', build, rebuild)
+    await showArea(DEFAULT_KEY, build, rebuild)
+    // no key is the default one, and it is cached by now
     await showArea('', build, rebuild)
 
-    expect(fetchEdgeGeometries).toHaveBeenCalledTimes(1)
-    expect(fetchAreaEdges).not.toHaveBeenCalled()
-    // the city is always there, nothing to build
-    expect(build).not.toHaveBeenCalled()
-    expect(currentAreaId.value).toBe('lausanne')
+    expect(build).toHaveBeenCalledTimes(1)
+    expect(fetchAreaEdges).toHaveBeenCalledTimes(1)
+    expect(fetchAreaEdges).toHaveBeenCalledWith(DEFAULT_KEY)
+    expect(currentAreaId.value).toBe(DEFAULT_KEY)
     expect(shown.value[0].u).toBe(1)
+  })
+
+  it('says if the network has bus data', async () => {
+    const { hasBus, showArea } = useGraphEdges()
+    const { build, rebuild } = server()
+
+    await showArea('area-a', build, rebuild)
+    expect(hasBus.value).toBe(false)
+
+    vi.mocked(fetchAreaEdges).mockResolvedValueOnce([{ ...edges(30)[0], bus_route_count: 2 }])
+    await showArea('area-b', build, rebuild)
+    expect(hasBus.value).toBe(true)
   })
 
   it('builds an area on the server before asking for its streets', async () => {
@@ -175,17 +186,19 @@ describe('useGraphEdges', () => {
     const { showArea } = useGraphEdges()
     const { build, rebuild } = server()
 
-    await showArea('lausanne', build, rebuild)
+    const callsFor = (id: string) => vi.mocked(fetchAreaEdges).mock.calls.filter((c) => c[0] === id)
+
+    await showArea(DEFAULT_KEY, build, rebuild)
     await showArea('area-a', build, rebuild)
     await showArea('area-b', build, rebuild)
-    // the city is the oldest, back to it and it is the newest again
-    await showArea('lausanne', build, rebuild)
+    // the default is the oldest, back to it and it is the newest again
+    await showArea(DEFAULT_KEY, build, rebuild)
     await showArea('area-c', build, rebuild)
 
-    // area-a was dropped, the city was not
-    await showArea('lausanne', build, rebuild)
-    expect(fetchEdgeGeometries).toHaveBeenCalledTimes(1)
+    // area-a was dropped, the default was not
+    await showArea(DEFAULT_KEY, build, rebuild)
+    expect(callsFor(DEFAULT_KEY)).toHaveLength(1)
     await showArea('area-a', build, rebuild)
-    expect(vi.mocked(fetchAreaEdges).mock.calls.filter((c) => c[0] === 'area-a')).toHaveLength(2)
+    expect(callsFor('area-a')).toHaveLength(2)
   })
 })

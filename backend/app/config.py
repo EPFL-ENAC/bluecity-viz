@@ -27,15 +27,24 @@ class Settings(BaseSettings):
 
     # Areas kept in memory at the same time. One area is its mirror, its OD
     # pairs, its baseline and its payloads: about 25 MB at 76,400 pairs on a
-    # Lausanne-sized graph. The budget counts what an area holds; the process
-    # RSS runs higher because the allocator keeps the routing buffers, so
-    # leave headroom. The default area (Lausanne) is pinned and never dropped.
+    # Lausanne-sized graph. Each node weighting a user asks for adds its own
+    # sample and baseline, 15 to 25 MB more, so all four come near 100 MB.
+    # The budget counts what an area holds; the process RSS runs higher
+    # because the allocator keeps the routing buffers, so leave headroom.
+    # The default area (Lausanne) is pinned and never dropped.
     area_memory_budget_mb: int = 1024
     area_max_count: int = 20
 
-    # The Swiss road graph, cut in cells. Empty or missing means the /areas
-    # endpoints answer 503 and only the default city works.
+    # The Swiss road graph, cut in cells. Every routing area is cut from it,
+    # the default one too. Missing means no routing at all, only CVRP.
     swiss_graph_dir: str = "data/swiss_graph"
+    # The default area: a circle on Lausanne, built and pinned at startup, and
+    # what a request with no area_id runs on. 6 km holds 75 % of the old
+    # city graph and 90 to 100 % of the waste points. The frontend has the
+    # same circle (DEFAULT_AREA in services/trafficAnalysis.ts).
+    default_area_lon: float = 6.633
+    default_area_lat: float = 46.52
+    default_area_radius_m: float = 6000.0
     # The Swiss municipalities (swissBOUNDARIES3D, simplified). Missing means
     # an area can only be a circle.
     municipalities_path: str = "data/swiss_communes.parquet"

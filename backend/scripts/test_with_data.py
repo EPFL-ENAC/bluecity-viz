@@ -114,8 +114,8 @@ def test_recalculate_routes():
         f"  routes:          {stats['total_routes']} total, "
         f"{stats['affected_routes']} affected, {stats['failed_routes']} failed"
     )
-    print(f"  extra time:      {stats['total_time_increase_minutes']:.2f} min")
-    print(f"  extra distance:  {stats['total_distance_increase_km']:.3f} km")
+    print(f"  time change:     {stats['total_time_change_minutes']:+.2f} min")
+    print(f"  distance change: {stats['total_distance_change_km']:+.3f} km")
     print(
         f"  edge usage rows: {len(data['original_edge_usage'])} before, "
         f"{len(data['new_edge_usage'])} after"

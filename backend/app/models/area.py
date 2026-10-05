@@ -59,7 +59,11 @@ class AreaPreview(AreaCounts):
 
 
 class AreaInfo(BaseModel):
-    """An area that is loaded and ready to answer routing requests."""
+    """An area that is loaded.
+
+    `ready` is False while its trips are still drawn and routed: the streets
+    and the betweenness are there, a routing request answers 409.
+    """
 
     id: str
     kind: Literal["circle", "municipalities"] = "circle"
@@ -74,6 +78,10 @@ class AreaInfo(BaseModel):
     od_pairs: int = 0
     od_pairs_default: int = 0
     od_pairs_max: int = 0
+    # Whether the waste tool runs here: most of the area is in its graph.
+    cvrp: bool = False
+    # False while the trips of the area are drawn and routed in the background.
+    ready: bool = True
 
 
 class AreaLimits(BaseModel):

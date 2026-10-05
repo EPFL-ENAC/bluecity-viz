@@ -118,6 +118,15 @@ describe('storyline store', () => {
     expect(store.phaseOf('cvrp')).toBe('init')
   })
 
+  it('stays on the initial model when the Model state lands', async () => {
+    const store = useStorylineStore()
+    // the Model step draws the routing, it is not a result
+    useTrafficAnalysisStore().modelUsage = ROWS
+    await nextTick()
+    expect(useTrafficAnalysisStore().hasModelState).toBe(true)
+    expect(store.phaseOf('routing')).toBe('init')
+  })
+
   it('reads a result that is already there when it starts', () => {
     useTrafficAnalysisStore().originalEdgeUsage = ROWS
     expect(useStorylineStore().phaseOf('routing')).toBe('simulation')

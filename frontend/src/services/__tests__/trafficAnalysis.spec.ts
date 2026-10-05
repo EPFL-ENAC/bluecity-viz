@@ -2,6 +2,8 @@ import {
   ApiError,
   areaKey,
   createArea,
+  fetchArea,
+  fetchAreaBetweenness,
   fetchAreaEdges,
   fetchBaseline,
   fetchGraphInfo,
@@ -45,7 +47,7 @@ describe('traffic analysis service', () => {
     vi.unstubAllGlobals()
   })
 
-  it('asks recalculate for a pair count and without the baseline', async () => {
+  it('asks recalculate for a pair count, never for the baseline', async () => {
     fetchMock().mockResolvedValue(okResponse({ od_pairs: 20000, new_edge_usage: [] }))
 
     await recalculateRoutes([{ u: 1, v: 2, action: 'remove' }], {
@@ -60,13 +62,13 @@ describe('traffic analysis service', () => {
     expect(calledBody()).toEqual({
       area_id: null,
       edge_modifications: [{ u: 1, v: 2, action: 'remove' }],
-      weight: 'travel_time',
-      include_geometry: true,
       use_congestion: true,
       congestion_iterations: 3,
       resample_destinations: true,
       node_weighting: 'population',
       od_pairs: 20000,
+      // The baseline is the Model state, GET /baseline gives it for every
+      // model, the equilibrium one too.
       include_baseline: false
     })
   })
@@ -81,6 +83,14 @@ describe('traffic analysis service', () => {
     expect(body.include_baseline).toBe(false)
     expect(body.resample_destinations).toBe(false)
     expect(body.node_weighting).toBe('uniform')
+  })
+
+  it('sends a weekday weighting as it is', async () => {
+    fetchMock().mockResolvedValue(okResponse({ od_pairs: 20000, new_edge_usage: [] }))
+
+    await recalculateRoutes([], { nodeWeighting: 'weekday_evening' })
+
+    expect(calledBody().node_weighting).toBe('weekday_evening')
   })
 
   it('puts the pair count in the baseline query, and omits it when there is none', async () => {
@@ -154,6 +164,28 @@ describe('traffic analysis service', () => {
 
     await fetchBaseline(100, null, 'uniform')
     expect(calledUrl(2)).toBe('/api/v1/routes/baseline?od_pairs=100')
+
+    await fetchBaseline(100, null, 'weekday_morning')
+    expect(calledUrl(3)).toBe('/api/v1/routes/baseline?od_pairs=100&node_weighting=weekday_morning')
+  })
+
+  it('asks for the equilibrium Model state only when the model is on', async () => {
+    fetchMock().mockResolvedValue(okResponse({ od_pairs: 100, edge_usage: [] }))
+
+    await fetchBaseline(100, null, 'uniform', 2)
+    expect(calledUrl()).toBe(
+      '/api/v1/routes/baseline?od_pairs=100&use_congestion=true&congestion_iterations=2'
+    )
+
+    await fetchBaseline(100, 'c_7.4400_46.9500_3000', 'population', 1)
+    expect(calledUrl(1)).toBe(
+      '/api/v1/routes/baseline?od_pairs=100&area_id=c_7.4400_46.9500_3000' +
+        '&node_weighting=population&use_congestion=true&congestion_iterations=1'
+    )
+
+    // free flow keeps the URL the browser cache already knows
+    await fetchBaseline(100, null, 'uniform', null)
+    expect(calledUrl(2)).toBe('/api/v1/routes/baseline?od_pairs=100')
   })
 
   it('sends the area in the recalculate body', async () => {
@@ -178,6 +210,32 @@ describe('traffic analysis service', () => {
     fetchMock().mockResolvedValue(okResponse([]))
     await fetchAreaEdges('c_7.4400_46.9500_3000')
     expect(calledUrl()).toBe('/api/v1/areas/c_7.4400_46.9500_3000/edges')
+  })
+
+  it('asks for the state of an area and for its betweenness by id', async () => {
+    fetchMock()
+      .mockResolvedValueOnce(okResponse({ id: 'c_7.4400_46.9500_3000', ready: false }))
+      .mockResolvedValueOnce(okResponse([{ u: 1, v: 2, betweenness_centrality: 12.5 }]))
+
+    const info = await fetchArea('c_7.4400_46.9500_3000')
+    const rows = await fetchAreaBetweenness('c_7.4400_46.9500_3000')
+
+    expect(calledUrl(0)).toBe('/api/v1/areas/c_7.4400_46.9500_3000')
+    expect(calledUrl(1)).toBe('/api/v1/areas/c_7.4400_46.9500_3000/betweenness')
+    expect(info.ready).toBe(false)
+    expect(rows).toEqual([{ u: 1, v: 2, betweenness_centrality: 12.5 }])
+  })
+
+  it('keeps the 404 of an area the server dropped', async () => {
+    fetchMock().mockResolvedValue(
+      errorResponse(404, { detail: { code: 'area_not_loaded', message: 'gone' } })
+    )
+
+    const failure = await fetchArea('c_1').catch((error) => error)
+
+    expect(failure).toBeInstanceOf(ApiError)
+    expect(failure.status).toBe(404)
+    expect(failure.code).toBe('area_not_loaded')
   })
 
   it('keeps the rejection code of a preview error', async () => {
@@ -208,7 +266,8 @@ describe('traffic analysis service', () => {
     expect(areaKey({ kind: 'circle', lon: 7.44001, lat: 46.95, radiusM: 3000.4 })).toBe(
       'c_7.4400_46.9500_3000'
     )
-    expect(areaKey(null)).toBe('lausanne')
+    // a project saved with no area opens on the default circle
+    expect(areaKey(null)).toBe('c_6.6330_46.5200_6000')
   })
 
   it('posts the municipalities sorted and without repeats', async () => {

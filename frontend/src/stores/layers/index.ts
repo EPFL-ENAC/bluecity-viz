@@ -111,7 +111,7 @@ export const useLayersStore = defineStore('layers', () => {
       nodeWeighting: trafficStore.nodeWeighting,
       filterBusRoutes: trafficStore.filterBusRoutes,
       odPairs: trafficStore.odPairs,
-      area: trafficStore.area ? { ...trafficStore.area } : null
+      area: { ...trafficStore.area }
     }
   }
 

@@ -1,4 +1,14 @@
-import { ApiError, createArea, fetchBaseline, fetchGraphInfo } from '@/services/trafficAnalysis'
+import {
+  ApiError,
+  areaKey,
+  createArea,
+  DEFAULT_AREA,
+  fetchArea,
+  fetchAreaBetweenness,
+  fetchBaseline,
+  fetchGraphInfo,
+  type AreaSelection
+} from '@/services/trafficAnalysis'
 import {
   EXPECTED_PUBLIC_KEYS,
   EXPECTED_SCALES,
@@ -6,9 +16,9 @@ import {
   makeUsage
 } from '@/stores/__tests__/fixtures/trafficScales'
 import { useScenarioStore } from '@/stores/scenario'
-import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
+import { AREA_POLL_MS, useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // vi.mock is hoisted above the imports, so the factory cannot use anything
 // declared here. importActual keeps the rest of the module real.
@@ -19,11 +29,14 @@ vi.mock('@/services/trafficAnalysis', async () => ({
   fetchBaseline: vi.fn(),
   fetchGraphInfo: vi.fn(),
   createArea: vi.fn(),
+  fetchArea: vi.fn(),
+  fetchAreaBetweenness: vi.fn(),
   fetchAreaLimits: vi.fn().mockRejectedValue(new Error('not in this test'))
 }))
 
 const BERN = { kind: 'circle' as const, lon: 7.44, lat: 46.95, radiusM: 3000 }
 const BERN_ID = 'c_7.4400_46.9500_3000'
+const DEFAULT_ID = 'c_6.6330_46.5200_6000'
 
 function areaInfo(id: string) {
   return {
@@ -39,6 +52,11 @@ function areaInfo(id: string) {
   }
 }
 
+/** The server mints the same id as areaKey, the default area included. */
+function serverMintsAreaKey() {
+  vi.mocked(createArea).mockImplementation(async (area: AreaSelection) => areaInfo(areaKey(area)))
+}
+
 function baselineRows(count: number) {
   return Array.from({ length: count }, (_, i) => ({
     u: i,
@@ -50,6 +68,19 @@ function baselineRows(count: number) {
 
 type Mode = (typeof EXPECTED_SCALES.modes)[number]
 
+/** The rows of a Model state: the plain quantities, no delta. */
+function modelRows(count: number) {
+  return baselineRows(count).map((row) => ({
+    ...row,
+    co2_g_per_km: 10 + row.count,
+    betweenness_centrality: 100 + row.count
+  }))
+}
+
+function modelAnswer(count = 4, odPairs = 20000) {
+  return { total_routes: odPairs, od_pairs: odPairs, edge_usage: modelRows(count) }
+}
+
 describe('traffic analysis store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -57,6 +88,7 @@ describe('traffic analysis store', () => {
     vi.mocked(fetchGraphInfo).mockReset()
 
     vi.mocked(createArea).mockReset()
+    serverMintsAreaKey()
   })
 
   it('offers the same modes and picks delta when the routes moved', () => {
@@ -293,7 +325,7 @@ describe('traffic analysis store', () => {
   it('reads the pair counts from the server once', async () => {
     const store = useTrafficAnalysisStore()
     vi.mocked(fetchGraphInfo).mockResolvedValue({
-      area_id: 'lausanne',
+      area_id: DEFAULT_ID,
       bbox: null,
       scc_fraction: 1,
       node_count: 1,
@@ -307,6 +339,8 @@ describe('traffic analysis store', () => {
     await store.loadGraphInfo()
 
     expect(fetchGraphInfo).toHaveBeenCalledTimes(1)
+    // asked about the default circle by its id, like any area
+    expect(fetchGraphInfo).toHaveBeenCalledWith(DEFAULT_ID)
     expect(store.odPairsDefault).toBe(20000)
     expect(store.odPairsMax).toBe(76400)
     // the full choice sends what was really sampled, the server clamps anyway
@@ -447,10 +481,24 @@ describe('traffic analysis store', () => {
     expect(store.areaError).toBeNull()
   })
 
-  it('needs no area for the default city', async () => {
+  it('opens on the default circle and builds it like any area', async () => {
     const store = useTrafficAnalysisStore()
-    expect(await store.ensureArea()).toBeNull()
-    expect(createArea).not.toHaveBeenCalled()
+    expect(store.area).toEqual(DEFAULT_AREA)
+    expect(store.graphKey).toBe(DEFAULT_ID)
+
+    expect(await store.ensureArea()).toBe(DEFAULT_ID)
+    expect(createArea).toHaveBeenCalledWith(DEFAULT_AREA)
+  })
+
+  it('opens a project saved with no area on the default circle', () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+
+    store.restoreState({ isOpen: true, activeVisualization: 'none', area: null })
+
+    expect(store.area).toEqual(DEFAULT_AREA)
+    // a copy, the default itself stays frozen
+    expect(store.area).not.toBe(DEFAULT_AREA)
   })
 
   it('restores an area without dropping the restored results', () => {
@@ -481,15 +529,6 @@ describe('traffic analysis store', () => {
     expect(store.draftArea).not.toBe(store.area)
   })
 
-  it('opens the picker where the map looks when there is no circle yet', () => {
-    const store = useTrafficAnalysisStore()
-
-    store.enterPickMode({ lon: 8.54, lat: 47.37 })
-
-    expect(store.draftArea).toEqual({ kind: 'circle', lon: 8.54, lat: 47.37, radiusM: 3000 })
-    expect(store.area).toBeNull()
-  })
-
   it('keeps the draft out of the scenario until it is confirmed', () => {
     const store = useTrafficAnalysisStore()
     store.enterPickMode()
@@ -500,7 +539,7 @@ describe('traffic analysis store', () => {
 
     expect(store.pickMode).toBe(false)
     expect(store.draftArea).toBeNull()
-    expect(store.area).toBeNull()
+    expect(store.area).toEqual(DEFAULT_AREA)
   })
 
   it('makes the draft the area when it is confirmed', () => {
@@ -512,18 +551,170 @@ describe('traffic analysis store', () => {
     store.exitPickMode(true)
 
     expect(store.pickMode).toBe(false)
-    expect(store.area).toEqual(BERN)
+    // the name the draft had is the picker's job, it renames on every drag
+    expect(store.area).toMatchObject(BERN)
   })
 
-  it('goes back to the default city and closes the picker', () => {
+  it('puts the draft back on the default circle, the user confirms it', () => {
     const store = useTrafficAnalysisStore()
     store.setArea(BERN)
     store.enterPickMode()
 
     store.useDefaultArea()
 
-    expect(store.area).toBeNull()
-    expect(store.pickMode).toBe(false)
+    expect(store.draftArea).toEqual(DEFAULT_AREA)
+    expect(store.pickMode).toBe(true)
+    expect(store.area).toEqual(BERN)
+
+    store.exitPickMode(true)
+    expect(store.area).toEqual(DEFAULT_AREA)
+  })
+})
+
+describe('the Model state', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.mocked(fetchBaseline).mockReset()
+    vi.mocked(createArea).mockReset()
+    serverMintsAreaKey()
+  })
+
+  it('draws the chosen model with the plain layers only', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValue(modelAnswer())
+
+    await store.loadModelState()
+
+    expect(store.hasModelState).toBe(true)
+    expect(store.hasCalculatedRoutes).toBe(false)
+    expect(store.displayedUsage).toBe(store.modelUsage)
+    expect(store.availableVisualizations.map((m) => m.value)).toEqual([
+      'frequency',
+      'co2',
+      'betweenness'
+    ])
+    expect(store.activeVisualization).toBe('frequency')
+    expect(store.legendMode).toBe('frequency')
+  })
+
+  it('keeps one Model state per model, and elastic demand is not one', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValue(modelAnswer())
+    store.setOdPairs(20000)
+
+    await store.loadModelState()
+    store.useCongestionModel = true
+    store.congestionIterations = 2
+    await store.loadModelState()
+
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(fetchBaseline).mock.calls[0][3]).toBeNull()
+    expect(vi.mocked(fetchBaseline).mock.calls[1][3]).toBe(2)
+
+    const key = store.modelOptionsKey
+    store.elasticDemand = true
+    expect(store.modelOptionsKey).toBe(key)
+    expect(store.modelStale).toBe(false)
+
+    // back to free flow: the first one is still in the cache
+    store.useCongestionModel = false
+    expect(store.modelStale).toBe(true)
+    await store.loadModelState()
+    expect(fetchBaseline).toHaveBeenCalledTimes(2)
+    expect(store.modelStale).toBe(false)
+  })
+
+  it('drops an answer that lands after the options moved', async () => {
+    const store = useTrafficAnalysisStore()
+    let release!: (value: ReturnType<typeof modelAnswer>) => void
+    vi.mocked(fetchBaseline)
+      .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+      .mockResolvedValueOnce(modelAnswer(4))
+
+    const slow = store.loadModelState()
+    await vi.waitFor(() => expect(fetchBaseline).toHaveBeenCalledTimes(1))
+    store.useCongestionModel = true
+    await expect(store.loadModelState()).resolves.not.toBeNull()
+
+    release(modelAnswer(2))
+    await expect(slow).resolves.toBeNull()
+
+    expect(store.modelUsage).toHaveLength(4)
+    expect(store.modelStale).toBe(false)
+    expect(store.modelLoading).toBe(false)
+  })
+
+  it('keeps the old rows and says why when the server fails', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValueOnce(modelAnswer(4))
+    await store.loadModelState()
+
+    vi.mocked(fetchBaseline).mockRejectedValueOnce(new Error('server down'))
+    store.useCongestionModel = true
+    await expect(store.loadModelState()).rejects.toThrow('server down')
+
+    expect(store.modelError).toBe('server down')
+    expect(store.modelLoading).toBe(false)
+    expect(store.modelUsage).toHaveLength(4)
+    expect(store.modelStale).toBe(true)
+  })
+
+  it('shows the Model state again when the result goes, in the same layer', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValue(modelAnswer())
+    await store.loadModelState()
+
+    const usage = makeUsage()
+    store.setEdgeUsage(store.modelUsage, usage)
+    expect(store.displayedUsage).toBe(usage)
+    store.setActiveVisualization('co2_delta')
+
+    store.clearResults()
+
+    expect(store.displayedUsage).toBe(store.modelUsage)
+    expect(store.activeVisualization).toBe('co2')
+    expect(store.legendMode).toBe('co2')
+    expect(store.colorScale).not.toBeNull()
+  })
+
+  it('does not draw over a result that is on screen', async () => {
+    const store = useTrafficAnalysisStore()
+    const usage = makeUsage()
+    store.setEdgeUsage(usage, usage)
+    vi.mocked(fetchBaseline).mockResolvedValue(modelAnswer())
+
+    await store.loadModelState()
+
+    expect(store.displayedUsage).toBe(usage)
+    expect(store.activeVisualization).toBe(EXPECTED_SCALES.autoSelected)
+  })
+
+  it('goes with the area', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockResolvedValue(modelAnswer())
+    await store.loadModelState()
+
+    store.setArea(BERN)
+
+    expect(store.hasModelState).toBe(false)
+    expect(store.modelStale).toBe(false)
+    expect(store.activeVisualization).toBe('none')
+  })
+
+  it('keeps the eight Model states used last', async () => {
+    const store = useTrafficAnalysisStore()
+    vi.mocked(fetchBaseline).mockImplementation(async (odPairs?: number) =>
+      modelAnswer(2, odPairs ?? 20000)
+    )
+
+    for (let count = 1; count <= 9; count++) await store.getBaseline(count)
+    expect(fetchBaseline).toHaveBeenCalledTimes(9)
+
+    // the first one went out to make room, the last one is still there
+    await store.getBaseline(9)
+    expect(fetchBaseline).toHaveBeenCalledTimes(9)
+    await store.getBaseline(1)
+    expect(fetchBaseline).toHaveBeenCalledTimes(10)
   })
 })
 
@@ -716,5 +907,185 @@ describe('an area made of municipalities', () => {
 
     expect(vi.mocked(createArea)).toHaveBeenCalledWith(LAUSANNE_PULLY)
     expect(store.areaOutline).toEqual(OUTLINE)
+  })
+})
+
+describe('an area the server is still building', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.useFakeTimers()
+    vi.mocked(createArea).mockReset()
+    vi.mocked(fetchArea).mockReset()
+    vi.mocked(fetchAreaBetweenness).mockReset()
+    vi.mocked(fetchGraphInfo).mockReset()
+    vi.mocked(fetchGraphInfo).mockResolvedValue(areaInfo(BERN_ID) as never)
+    vi.mocked(fetchAreaBetweenness).mockResolvedValue([
+      { u: 1, v: 2, betweenness_centrality: 30 },
+      { u: 2, v: 1, betweenness_centrality: 10 }
+    ])
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const building = () => ({ ...areaInfo(BERN_ID), od_pairs: 0, ready: false })
+  const ready = () => ({ ...areaInfo(BERN_ID), ready: true })
+
+  /** One street, both directions, so the preview has something to join to. */
+  function oneStreet() {
+    useScenarioStore().setStreets(
+      new Map([
+        [
+          '1-2',
+          {
+            key: '1-2',
+            lo: 1,
+            hi: 2,
+            name: 'Rue de Bourg',
+            fwdId: 0,
+            bwdId: 1,
+            oneway: false,
+            at: [0, 0] as [number, number],
+            cls: 3,
+            bus: false
+          }
+        ]
+      ])
+    )
+  }
+
+  it('shows the betweenness, polls until ready, then asks the graph info again', async () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    oneStreet()
+    vi.mocked(createArea).mockResolvedValue(building())
+    vi.mocked(fetchGraphInfo)
+      .mockResolvedValueOnce({ ...areaInfo(BERN_ID), od_pairs: 0 } as never)
+      .mockResolvedValueOnce(areaInfo(BERN_ID) as never)
+    vi.mocked(fetchArea).mockResolvedValueOnce(building()).mockResolvedValueOnce(ready())
+
+    await store.ensureArea()
+    await store.loadGraphInfo()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetchAreaBetweenness).toHaveBeenCalledWith(BERN_ID)
+    expect(store.areaReady).toBe(false)
+    // both directions summed on the street, like a result
+    expect(store.previewTotals).toHaveLength(1)
+    expect(store.previewTotals[0].betweenness_centrality).toBe(40)
+    expect(store.previewScale?.max).toBe(30)
+    expect(store.odPairsFull).toBe(0)
+
+    await vi.advanceTimersByTimeAsync(AREA_POLL_MS)
+    expect(fetchArea).toHaveBeenCalledTimes(1)
+    expect(store.areaReady).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(AREA_POLL_MS)
+    expect(fetchArea).toHaveBeenCalledTimes(2)
+    expect(store.areaReady).toBe(true)
+    expect(store.areaBetweenness).toHaveLength(0)
+    expect(store.previewTotals).toHaveLength(0)
+    expect(fetchGraphInfo).toHaveBeenCalledTimes(2)
+    expect(store.odPairsFull).toBe(40000)
+
+    // done: no poll left
+    await vi.advanceTimersByTimeAsync(AREA_POLL_MS * 3)
+    expect(fetchArea).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops following when the area changes', async () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    vi.mocked(createArea).mockResolvedValue(building())
+    vi.mocked(fetchArea).mockResolvedValue(building())
+
+    await store.ensureArea()
+    store.setArea({ ...DEFAULT_AREA })
+    await vi.advanceTimersByTimeAsync(AREA_POLL_MS * 3)
+
+    expect(fetchArea).not.toHaveBeenCalled()
+    expect(store.areaBetweenness).toHaveLength(0)
+    expect(store.areaReady).toBe(true)
+  })
+
+  it('drops rows that come back after the area changed', async () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    vi.mocked(createArea).mockResolvedValue(building())
+    let answer: (
+      rows: { u: number; v: number; betweenness_centrality: number }[]
+    ) => void = () => {}
+    vi.mocked(fetchAreaBetweenness).mockReturnValue(new Promise((resolve) => (answer = resolve)))
+
+    await store.ensureArea()
+    store.setArea({ ...DEFAULT_AREA })
+    answer([{ u: 1, v: 2, betweenness_centrality: 5 }])
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.areaBetweenness).toHaveLength(0)
+  })
+
+  it('builds a dropped area again once, then gives up with an error', async () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    vi.mocked(createArea).mockResolvedValue(building())
+    vi.mocked(fetchArea).mockRejectedValue(new ApiError('gone', 404, 'area_not_loaded'))
+
+    await store.ensureArea()
+    await vi.advanceTimersByTimeAsync(AREA_POLL_MS)
+    expect(createArea).toHaveBeenCalledTimes(2)
+    expect(store.areaError).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(AREA_POLL_MS)
+    expect(createArea).toHaveBeenCalledTimes(2)
+    expect(store.areaError?.code).toBe('area_not_loaded')
+    // nothing says "building" any more, so the next Calculate builds it again
+    expect(store.areaReady).toBe(true)
+    expect(store.areaId).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(AREA_POLL_MS * 3)
+    expect(fetchArea).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps polling through a network error', async () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    vi.mocked(createArea).mockResolvedValue(building())
+    vi.mocked(fetchArea).mockRejectedValueOnce(new Error('offline')).mockResolvedValue(ready())
+
+    await store.ensureArea()
+    await vi.advanceTimersByTimeAsync(AREA_POLL_MS * 2)
+
+    expect(fetchArea).toHaveBeenCalledTimes(2)
+    expect(store.areaReady).toBe(true)
+  })
+
+  it('asks no Model state while the area builds, and keeps no error', async () => {
+    const store = useTrafficAnalysisStore()
+    store.setArea(BERN)
+    vi.mocked(createArea).mockResolvedValue(building())
+    vi.mocked(fetchArea).mockResolvedValue(building())
+    vi.mocked(fetchBaseline).mockReset()
+
+    await expect(store.loadModelState()).resolves.toBeNull()
+
+    expect(fetchBaseline).not.toHaveBeenCalled()
+    expect(store.modelError).toBeNull()
+    expect(store.modelLoading).toBe(false)
+  })
+
+  it('does not follow a ready area, nor an answer without the flag', async () => {
+    const store = useTrafficAnalysisStore()
+    expect(store.areaReady).toBe(true)
+
+    store.setArea(BERN)
+    vi.mocked(createArea).mockResolvedValue(areaInfo(BERN_ID))
+    await store.ensureArea()
+    await vi.advanceTimersByTimeAsync(AREA_POLL_MS * 2)
+
+    expect(store.areaReady).toBe(true)
+    expect(fetchAreaBetweenness).not.toHaveBeenCalled()
+    expect(fetchArea).not.toHaveBeenCalled()
   })
 })

@@ -5,13 +5,14 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.config import settings
+from app.services.sampling.config import SamplingConfig
 
-# Re-export SamplingConfig from node_sampling_service for API use
-try:
-    from app.services.node_sampling_service import SamplingConfig
-except ImportError:
-    # Fallback if service not available
-    SamplingConfig = None
+# How the OD sampler weighs the junctions, see docs/routing-model.md.
+# "uniform" is every junction alike. The three others read the residents and
+# jobs of the graph store: "population" (the "Daily average" of the UI) weighs
+# both ends the same, the weekday ones put residents at one end and jobs at
+# the other.
+NodeWeighting = Literal["uniform", "population", "weekday_morning", "weekday_evening"]
 
 
 class NodePair(BaseModel):
@@ -71,7 +72,6 @@ class RouteRequest(BaseModel):
 
     pairs: List[NodePair] = Field(..., description="List of origin-destination pairs")
     weight: str = Field(default="travel_time", description="Edge weight attribute")
-    include_geometry: bool = Field(default=False, description="Include path geometry")
     area_id: Optional[str] = Field(
         default=None,
         description=(
@@ -106,8 +106,6 @@ class RecalculateRequest(BaseModel):
         max_length=500,
         description="Edge modifications (remove or change speed)",
     )
-    weight: str = Field(default="travel_time", description="Edge weight attribute")
-    include_geometry: bool = Field(default=False, description="Include path geometry")
     use_congestion: bool = Field(
         default=False, description="Use iterative congestion-aware routing on modified graph"
     )
@@ -142,13 +140,15 @@ class RecalculateRequest(BaseModel):
             "Resample trip destinations using travel times on the modified graph (elastic demand)"
         ),
     )
-    node_weighting: Literal["uniform", "population"] = Field(
+    node_weighting: NodeWeighting = Field(
         default="uniform",
         description=(
             "How the OD pairs are drawn. 'uniform': every junction alike. "
-            "'population': junctions weighted by their residents and jobs "
-            "(422 no_population_data on an area without them). Each weighting "
-            "has its own OD sample and baseline."
+            "'population' (daily average): both ends weighted by residents and jobs. "
+            "'weekday_morning': origins by residents, destinations by jobs. "
+            "'weekday_evening': origins by jobs, destinations by residents. "
+            "The last three answer 422 no_population_data on an area without "
+            "residents and jobs. Each weighting has its own OD sample and baseline."
         ),
     )
 
@@ -162,34 +162,6 @@ class RecalculateRequest(BaseModel):
                 f"(OD_PAIRS_MAX, the set sampled at startup)"
             )
         return value
-
-
-class RouteComparison(BaseModel):
-    """Comparison between original and recalculated route."""
-
-    origin: int
-    destination: int
-    original_route: Route
-    new_route: Route
-    modified_edge_on_path: Optional[EdgeModification] = None
-    distance_delta: Optional[float] = Field(
-        None, description="Additional distance in meters (new - original)"
-    )
-    distance_delta_percent: Optional[float] = Field(
-        None, description="Percentage increase in distance"
-    )
-    time_delta: Optional[float] = Field(
-        None, description="Additional travel time in seconds (new - original)"
-    )
-    time_delta_percent: Optional[float] = Field(
-        None, description="Percentage increase in travel time"
-    )
-    is_affected: bool = Field(
-        False, description="Whether this route was affected by edge modifications"
-    )
-    route_failed: bool = Field(
-        False, description="Whether route calculation failed (no path found)"
-    )
 
 
 class EdgeUsageStats(BaseModel):
@@ -215,48 +187,49 @@ class EdgeUsageStats(BaseModel):
 
 
 class ImpactStatistics(BaseModel):
-    """Aggregate statistics about the impact of removed edges."""
+    """What the scenario did to the trips, against the untouched network.
 
-    total_routes: int = Field(..., description="Total number of routes analyzed")
-    affected_routes: int = Field(..., description="Number of routes impacted by removed edges")
-    failed_routes: int = Field(0, description="Number of routes that became impossible")
-    total_distance_increase_km: float = Field(
-        0.0, description="Total additional distance across all routes (km)"
+    Every change is new minus old and carries a sign: a closed street makes
+    trips longer, a raised speed limit makes them shorter. The averages and
+    the totals cover the affected trips only. See docs/routing-model.md.
+    """
+
+    total_routes: int = Field(..., description="Trips routed on the untouched network")
+    affected_routes: int = Field(..., description="Trips whose route changed, in either direction")
+    failed_routes: int = Field(
+        0, description="Trips that had a route and have none now; not in the totals"
     )
-    total_time_increase_minutes: float = Field(
-        0.0, description="Total additional travel time across all routes (minutes)"
+    total_distance_change_km: float = Field(
+        0.0, description="Distance of the affected trips, new minus old (km)"
     )
-    avg_distance_increase_km: float = Field(
-        0.0, description="Average additional distance per affected route (km)"
+    total_time_change_minutes: float = Field(
+        0.0, description="Travel time of the affected trips, new minus old (minutes)"
     )
-    avg_time_increase_minutes: float = Field(
-        0.0, description="Average additional travel time per affected route (minutes)"
+    total_co2_change_grams: float = Field(
+        0.0, description="CO2 of the affected trips, new minus old (grams)"
     )
+    avg_distance_change_km: float = Field(0.0, description="Distance change per affected trip (km)")
+    avg_time_change_minutes: float = Field(
+        0.0, description="Travel time change per affected trip (minutes)"
+    )
+    avg_co2_change_grams: float = Field(0.0, description="CO2 change per affected trip (grams)")
     max_distance_increase_km: float = Field(
-        0.0, description="Maximum additional distance for a single route (km)"
+        0.0, description="Largest increase on a single trip, 0 when none got longer (km)"
     )
     max_time_increase_minutes: float = Field(
-        0.0, description="Maximum additional travel time for a single route (minutes)"
-    )
-    avg_distance_increase_percent: float = Field(
-        0.0, description="Average percentage increase in distance for affected routes"
-    )
-    avg_time_increase_percent: float = Field(
-        0.0,
-        description="Average percentage increase in travel time for affected routes",
-    )
-    total_co2_increase_grams: float = Field(
-        0.0, description="Total additional CO2 emissions across all routes (grams)"
-    )
-    avg_co2_increase_grams: float = Field(
-        0.0, description="Average additional CO2 emissions per affected route (grams)"
+        0.0, description="Largest increase on a single trip, 0 when none got slower (minutes)"
     )
     max_co2_increase_grams: float = Field(
-        0.0, description="Maximum additional CO2 emissions for a single route (grams)"
+        0.0, description="Largest increase on a single trip, 0 when none emitted more (grams)"
     )
-    avg_co2_increase_percent: float = Field(
-        0.0,
-        description="Average percentage increase in CO2 emissions for affected routes",
+    avg_distance_change_percent: float = Field(
+        0.0, description="Mean relative distance change over the affected trips (%)"
+    )
+    avg_time_change_percent: float = Field(
+        0.0, description="Mean relative travel time change over the affected trips (%)"
+    )
+    avg_co2_change_percent: float = Field(
+        0.0, description="Mean relative CO2 change over the affected trips (%)"
     )
 
 
@@ -264,7 +237,6 @@ class TimingStats(BaseModel):
     """Per-phase timing breakdown for a recalculate request (all values in ms)."""
 
     cache_lookup_ms: float = Field(..., description="Original route lookup or computation")
-    graph_copy_ms: float = Field(..., description="Graph deep-copy")
     apply_modifications_ms: float = Field(..., description="Applying edge modifications")
     od_resampling_ms: Optional[float] = Field(
         None, description="OD destination resampling (elastic demand mode only)"
@@ -298,35 +270,11 @@ class RecalculateResponse(BaseModel):
 
 
 class BaselineResponse(BaseModel):
-    """Edge usage of the unmodified network, for a given number of OD pairs."""
+    """Edge usage of the unmodified network under one model: the "Model" state."""
 
     total_routes: int = Field(..., description="Number of routed OD pairs")
     od_pairs: int = Field(..., description="Number of OD pairs used")
     edge_usage: List[EdgeUsageStats] = Field(..., description="Edge usage without modifications")
-
-
-class GraphEdge(BaseModel):
-    """Graph edge with geometry and metadata."""
-
-    u: int = Field(..., description="Start node ID")
-    v: int = Field(..., description="End node ID")
-    geometry: PathGeometry = Field(..., description="Edge geometry")
-    name: Optional[str] = Field(None, description="Street name")
-    highway: Optional[str] = Field(None, description="Highway type")
-    speed_kph: Optional[float] = Field(None, description="Speed limit in km/h")
-    length: Optional[float] = Field(None, description="Length in meters")
-    travel_time: Optional[float] = Field(None, description="Travel time in seconds")
-    bus_route_count: int = Field(0, description="Number of bus lines using this edge")
-    bus_route_refs: str = Field("", description="Comma-separated bus route references")
-    habitat_area_m2: float = Field(0.0, description="Total habitat area within 10m buffer (m²)")
-
-
-class GraphData(BaseModel):
-    """Complete graph data for visualization."""
-
-    edges: List[GraphEdge] = Field(..., description="All graph edges")
-    node_count: int = Field(..., description="Total number of nodes")
-    edge_count: int = Field(..., description="Total number of edges")
 
 
 class RandomPairsRequest(BaseModel):

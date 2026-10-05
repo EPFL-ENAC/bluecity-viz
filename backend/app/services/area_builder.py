@@ -397,7 +397,20 @@ def preview(store: GraphStore, spec: AreaSpec) -> dict:
 
 
 def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> AreaGraph:
-    """Cut the area, sample its OD pairs and compute its baseline."""
+    """Cut the area, sample its OD pairs and compute its baseline, in one go."""
+    from app.services.sampling.config import SamplingConfig
+
+    config = config or SamplingConfig()
+    return finish(start(store, spec, config, seed), config, seed)
+
+
+def start(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> AreaGraph:
+    """Phase 1: cut the area, serialise its edges, compute its betweenness.
+
+    The area comes back not ready (`AreaGraph.ready` is False): the map can
+    show its streets and their betweenness, but it has no trips yet. `finish`
+    draws and routes them. The two phases give the same area as `build`.
+    """
     from app.services.sampling.config import SamplingConfig
 
     config = config or SamplingConfig()
@@ -438,7 +451,7 @@ def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> Are
         edge_key=edges["key"],
         length=edges["length"],
         travel_time=edges["travel_time"],
-        speed_raw=edges["speed_kph"],
+        speed_kph=edges["speed_kph"],
         lanes=edges["lanes"],
         elev_gain=edges["elev_gain"],
         node_x=selection.x,
@@ -454,18 +467,42 @@ def build(store: GraphStore, spec: AreaSpec, config=None, seed: int = 42) -> Are
     # registry budget counts.
     area.payloads.get_or_build("edges", lambda: _edge_rows(selection))
 
-    n_pairs = settings.od_pairs_max
-    area_config = _scaled_config(config, mirror)
-    area.sample_research_pairs(n_pairs, area_config, seed)
-    area.build_baseline(area_config, seed)
+    # The betweenness needs no trip, so the map can show it right away.
+    area.compute_betweenness(_scaled_config(config, mirror), seed)
+    area.payloads.get_or_build("betweenness", area.betweenness_rows)
 
     meta.build_ms = round((time.perf_counter() - started) * 1000, 1)
     logger.info(
-        "[AREA %s] built in %.1f s: %d nodes, %d edges, %d pairs",
+        "[AREA %s] streets and betweenness in %.1f s: %d nodes, %d edges",
         spec.id,
         meta.build_ms / 1000,
         counts["node_count"],
         counts["edge_count"],
+    )
+    return area
+
+
+def finish(area: AreaGraph, config=None, seed: int = 42) -> AreaGraph:
+    """Phase 2: draw the trips of an area from `start` and route its baseline.
+
+    The slow part. The API runs it in the background, and the area is ready
+    when it returns. `config` and `seed` must be the ones `start` got, or the
+    trips are not drawn on the same pool as the betweenness.
+    """
+    from app.services.sampling.config import SamplingConfig
+
+    config = config or SamplingConfig()
+    started = time.perf_counter()
+
+    area_config = _scaled_config(config, area.mirror)
+    area.sample_research_pairs(settings.od_pairs_max, area_config, seed)
+    area.build_baseline(area_config, seed)
+
+    area.meta.build_ms = round(area.meta.build_ms + (time.perf_counter() - started) * 1000, 1)
+    logger.info(
+        "[AREA %s] built in %.1f s: %d pairs",
+        area.meta.id,
+        area.meta.build_ms / 1000,
         len(area.pairs),
     )
     return area

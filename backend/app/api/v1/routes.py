@@ -2,7 +2,7 @@
 
 import logging
 import traceback
-from typing import Callable, List, Literal, Optional
+from typing import Callable, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import ORJSONResponse
@@ -11,17 +11,17 @@ from pydantic import BaseModel
 from app.config import settings
 from app.models.route import (
     BaselineResponse,
-    GraphData,
     NodePair,
+    NodeWeighting,
     RandomPairsRequest,
     RecalculateRequest,
     RecalculateResponse,
     RouteRequest,
     RouteResponse,
 )
-from app.services.area_graph import NoPopulationData
+from app.services.area_graph import AreaNotReady, NoPopulationData
 from app.services.area_registry import AreaNotLoaded
-from app.services.graph_helpers import habitat_geojson
+from app.services.graph_export import habitat_geojson
 from app.services.graph_service import GraphService
 from app.services.payload_cache import PayloadCache
 
@@ -32,8 +32,8 @@ router = APIRouter(prefix="/routes", tags=["routes"])
 # Initialize graph service (will be properly initialized with graph data)
 graph_service = GraphService()
 
-# Payloads of the NetworkX graph: built once, then served from bytes with an
-# ETag. That graph never changes while the process runs. Payloads that belong
+# Payloads of the NetworkX graph (the habitat layer): built once, then served
+# from bytes with an ETag. That graph never changes while the process runs. Payloads that belong
 # to an area live on the area, so evicting it frees them too.
 _payload_cache = PayloadCache()
 STATIC_CACHE_CONTROL = "public, max-age=86400"
@@ -61,6 +61,22 @@ def _area(area_id: Optional[str]):
         ) from exc
 
 
+def _not_ready(exc: AreaNotReady) -> HTTPException:
+    """The area still routes its baseline. Answered at once, never waited on.
+
+    409 and not 503: the server is fine, the request comes too early for this
+    area. GET /api/v1/areas/{id} says when it is ready.
+    """
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": exc.code,
+            "message": f"{exc}. Try again when GET /api/v1/areas/{{id}} says ready.",
+        },
+        headers={"Retry-After": "1"},
+    )
+
+
 def _no_population(exc: NoPopulationData) -> HTTPException:
     """An area without residents or jobs cannot be weighted by them."""
     return HTTPException(
@@ -68,8 +84,9 @@ def _no_population(exc: NoPopulationData) -> HTTPException:
         detail={
             "code": exc.code,
             "message": (
-                f"{exc}. The population weighting needs the graph store residents "
-                "and jobs; use node_weighting=uniform here."
+                f"{exc}. The population, weekday_morning and weekday_evening "
+                "weightings need the graph store residents and jobs; use "
+                "node_weighting=uniform here."
             ),
         },
     )
@@ -163,7 +180,6 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
         result = _area(request.area_id).recalculate_with_modifications(
             pairs=request.pairs,
             edge_modifications=request.edge_modifications,
-            weight=request.weight,
             use_congestion=request.use_congestion,
             congestion_iterations=request.congestion_iterations,
             resample_destinations=request.resample_destinations,
@@ -180,6 +196,8 @@ def recalculate_routes(request: RecalculateRequest) -> dict:
         return ORJSONResponse(result, headers=headers)
     except HTTPException:
         raise
+    except AreaNotReady as e:
+        raise _not_ready(e) from e
     except NoPopulationData as e:
         raise _no_population(e) from e
     except Exception as e:
@@ -202,17 +220,31 @@ def get_baseline(
     area_id: Optional[str] = Query(
         None, description="Which area to read. None means the default one."
     ),
-    node_weighting: Literal["uniform", "population"] = Query(
+    node_weighting: NodeWeighting = Query(
         "uniform",
-        description="Which OD sample: uniform, or weighted by residents and jobs.",
+        description=(
+            "Which OD sample: uniform, population (daily average, residents and jobs "
+            "at both ends), weekday_morning or weekday_evening."
+        ),
+    ),
+    use_congestion: bool = Query(
+        False, description="The equilibrium model (MSA with BPR) instead of the targeted one."
+    ),
+    congestion_iterations: int = Query(
+        1, ge=1, le=3, description="MSA iterations, read only with use_congestion."
     ),
 ):
     """
-    Edge usage of the unmodified network, for a given number of OD pairs.
+    Edge usage of the unmodified network under a model: the "Model" state.
+
+    It is the left side of every /recalculate with the same options, so a
+    scenario that changes nothing gives these numbers back. Elastic demand is
+    not a parameter: on the untouched network it draws the same trips.
 
     It does not change until the server restarts, so it is served with an
-    ETag, one per pair count. Fetch it once, then call /recalculate with the
-    same od_pairs and include_baseline=false.
+    ETag, one per option set. The equilibrium model costs one MSA run the
+    first time (`iterations + 1` routings), then it is cached. Fetch it once,
+    then call /recalculate with the same options and include_baseline=false.
     """
     if od_pairs is not None and od_pairs > settings.od_pairs_max:
         raise HTTPException(
@@ -225,37 +257,21 @@ def get_baseline(
     try:
         area = _area(area_id)
         n = min(od_pairs or settings.od_pairs, settings.od_pairs_max)
+        iterations = congestion_iterations if use_congestion else None
+        model = f"eq{iterations}" if iterations else "ff"
         # The cache lives on the area, so two areas never share an ETag and
         # evicting an area frees its payloads.
         data, etag = area.payloads.get_or_build(
-            f"baseline:{node_weighting}:{n}",
-            lambda: area.baseline_payload(n, node_weighting),
+            f"baseline:{node_weighting}:{n}:{model}",
+            lambda: area.baseline_payload(n, node_weighting, iterations),
         )
         return _json_or_304(request, data, etag, "no-cache")
     except HTTPException:
         raise
+    except AreaNotReady as e:
+        raise _not_ready(e) from e
     except NoPopulationData as e:
         raise _no_population(e) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get(
-    "/graph",
-    response_model=None,
-    responses={200: {"model": GraphData}},
-    deprecated=True,
-)
-def get_graph(request: Request):
-    """
-    Get complete graph data for visualization.
-
-    Deprecated: the frontend loads /geodata/lausanne.geojson instead. Kept for
-    scripts and notebooks. Served from a cached payload with an ETag.
-    """
-    try:
-        data, etag = _cached_json("graph", graph_service.get_graph_data)
-        return _json_or_304(request, data, etag, STATIC_CACHE_CONTROL)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -292,7 +308,7 @@ def generate_random_pairs(request: RandomPairsRequest):
                 n_pairs=request.count,
                 config=config,
                 seed=request.seed or 42,
-            ).to_nodepairs()
+            ).pairs.to_nodepairs()
         else:
             pairs = _area(request.area_id).generate_random_pairs(
                 count=request.count,
@@ -323,36 +339,6 @@ def clear_cache(
         return {"status": "ok", "message": "Cache cleared"}
     except AreaNotLoaded:
         raise HTTPException(status_code=404, detail={"code": "area_not_loaded"}) from None
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-class EdgeGeometry(BaseModel):
-    """Edge geometry for frontend visualization."""
-
-    u: int
-    v: int
-    coordinates: List[List[float]]
-    travel_time: Optional[float] = None
-    length: Optional[float] = None
-    name: Optional[str] = None
-    highway: Optional[str] = None
-
-
-@router.get("/edge-geometries", deprecated=True)
-def get_edge_geometries(request: Request, limit: Optional[int] = None):
-    """
-    Get all edge geometries from the graph for Deck.gl visualization.
-
-    Deprecated: the frontend loads /geodata/lausanne.geojson instead. The full
-    payload is built once and served from bytes with an ETag. A `limit` is only
-    for quick tests, so it is built on the fly and not cached.
-    """
-    try:
-        if limit is not None:
-            return ORJSONResponse(graph_service.get_edge_geometries(limit=limit))
-        data, etag = _cached_json("edge-geometries", graph_service.get_edge_geometries)
-        return _json_or_304(request, data, etag, STATIC_CACHE_CONTROL)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

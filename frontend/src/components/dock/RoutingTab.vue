@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import EffectRow, { type EffectState } from '@/components/dock/EffectRow.vue'
+import LayerRows, { visLabel } from '@/components/dock/LayerRows.vue'
 import ScenarioEdges from '@/components/dock/ScenarioEdges.vue'
 import StoryStep from '@/components/dock/StoryStep.vue'
 import ImpactStatistics from '@/components/ImpactStatistics.vue'
@@ -8,8 +9,15 @@ import BcRow from '@/components/ui/BcRow.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
 import { useDeltaBars } from '@/composables/useDeltaBars'
+import { useGraphEdges } from '@/composables/useGraphEdges'
 import { useMapView } from '@/composables/useMapView'
-import { ApiError, recalculateRoutes, type NodeWeighting } from '@/services/trafficAnalysis'
+import { useModelPreview } from '@/composables/useModelPreview'
+import {
+  ApiError,
+  NODE_WEIGHTINGS,
+  recalculateRoutes,
+  type NodeWeighting
+} from '@/services/trafficAnalysis'
 import { useScenarioStore, type StreetRef } from '@/stores/scenario'
 import { useStorylineStore } from '@/stores/storyline'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
@@ -24,6 +32,7 @@ const emit = defineEmits<{
 }>()
 
 const trafficStore = useTrafficAnalysisStore()
+const { hasBus } = useGraphEdges()
 const scenarioStore = useScenarioStore()
 const storyline = useStorylineStore()
 const { absorbers, barWidth, deltaText } = useDeltaBars()
@@ -31,6 +40,9 @@ const { absorbers, barWidth, deltaText } = useDeltaBars()
 // The dock shows the tool whose row is picked in the sidebar, so the open step
 // of the view is this tab's.
 const { step } = useMapView()
+
+// The Model step draws the routing of the chosen options, and follows them.
+useModelPreview()
 
 /** The wheel while the routes run, the tick once the result matches the scenario. */
 const effectState = computed<EffectState>(() => {
@@ -45,6 +57,8 @@ function focus(key: string): void {
 }
 
 const loadingMessage = ref('')
+// Why the last run did not go through, when the user can do something about it.
+const calculateError = ref<string | null>(null)
 
 // The pair counts come from the server, not from a constant here. Each area
 // has its own, so we ask again when the area changes.
@@ -60,11 +74,18 @@ function formatTrips(count: number): string {
   return count.toLocaleString('en-US')
 }
 
-// The two choices, hidden until we know the numbers.
-const nodeWeightingOptions = [
-  { value: 'uniform', label: 'Uniform' },
-  { value: 'population', label: 'Population + jobs' }
-]
+// How the trips start and end. "population" is the daily average, the id is
+// older than its label.
+const nodeWeightingLabels: Record<NodeWeighting, string> = {
+  uniform: 'Uniform',
+  population: 'Daily average',
+  weekday_morning: 'Weekday morning',
+  weekday_evening: 'Weekday evening'
+}
+const nodeWeightingOptions = NODE_WEIGHTINGS.map((value) => ({
+  value,
+  label: nodeWeightingLabels[value]
+}))
 // BcSeg speaks plain strings
 const nodeWeighting = computed({
   get: () => trafficStore.nodeWeighting,
@@ -113,7 +134,9 @@ const modelSummary = computed(() => {
       : 'static betweenness'
   )
   if (trafficStore.elasticDemand) parts.push('elastic demand')
-  if (trafficStore.nodeWeighting === 'population') parts.push('population + jobs')
+  if (trafficStore.nodeWeighting !== 'uniform') {
+    parts.push(nodeWeightingLabels[trafficStore.nodeWeighting].toLowerCase())
+  }
   return parts.join(' · ')
 })
 
@@ -135,25 +158,25 @@ const resultsSummary = computed(() => {
   return parts.filter(Boolean).join(' · ')
 })
 
-// Sentence-case labels, per the design. Falls back to the store label.
-const VIS_LABELS: Record<string, string> = {
-  frequency: 'Edge usage frequency',
-  co2: 'CO₂ emissions',
-  delta: 'Traffic change (Δ)',
-  delta_relative: 'Traffic change (Δ, relative %)',
-  co2_delta: 'CO₂ emissions change',
-  betweenness: 'Betweenness centrality',
-  betweenness_delta: 'Betweenness change'
-}
+/** One line under the Model layers: what the map waits for, or why it did not come. */
+const modelStatus = computed(() => {
+  // the dock head already says the area is being built
+  if (trafficStore.isBuildingArea) return ''
+  if (trafficStore.modelLoading) {
+    const odPairs = chosenOdPairs()
+    return odPairs ? `Routing ${formatTrips(odPairs)} trips…` : 'Routing the trips…'
+  }
+  return trafficStore.modelError ? `The model did not load: ${trafficStore.modelError}` : ''
+})
 
-function visLabel(mode: string, fallback: string) {
-  return VIS_LABELS[mode] ?? fallback
-}
-
-/** The baseline and the run, both on the area the store points at. */
+/**
+ * The Model state and the run, both on the area the store points at. The
+ * Model state is the left side of the comparison, whatever the model: the
+ * same options on the untouched network.
+ */
 function runOnce(odPairs: number | undefined) {
   return Promise.all([
-    trafficStore.getBaseline(odPairs),
+    trafficStore.loadModelState(),
     recalculateRoutes(scenarioStore.wire, {
       useCongestionModel: trafficStore.useCongestionModel,
       congestionIterations: trafficStore.congestionIterations,
@@ -177,15 +200,17 @@ async function calculateRoutes() {
 
   trafficStore.isCalculating = true
   loadingMessage.value = baseMessage
+  calculateError.value = null
   try {
-    // A custom area may not be on the server any more (restart, eviction). This
-    // builds it back before we ask anything about it.
-    if (trafficStore.area) loadingMessage.value = 'Building the network for this area…'
+    // A picked area may not be on the server any more (restart, eviction). This
+    // builds it back before we ask anything about it. The default one is
+    // always there, so this is one quick round trip.
+    if (!trafficStore.areaId) loadingMessage.value = 'Building the network for this area…'
     await trafficStore.ensureArea()
     loadingMessage.value = baseMessage
 
-    // The baseline is the same for every run at that count, so it comes from
-    // the store cache after the first time.
+    // The Model state is the same for every run with these options, so it
+    // comes from the store cache after the first time.
     let answer
     try {
       answer = await runOnce(odPairs)
@@ -198,24 +223,30 @@ async function calculateRoutes() {
       loadingMessage.value = baseMessage
       answer = await runOnce(odPairs)
     }
-    const [baseline, result] = answer
+    const [model, result] = answer
 
-    // The count changed while we were waiting, this answer is for the old one.
-    if (odPairs !== chosenOdPairs()) return
+    // The options changed while we were waiting, this answer is for the old ones.
+    if (!model || odPairs !== chosenOdPairs()) return
 
-    if (baseline.odPairs !== result.od_pairs) {
-      console.warn(`Baseline is on ${baseline.odPairs} pairs, the run on ${result.od_pairs}`)
+    if (model.odPairs !== result.od_pairs) {
+      console.warn(`The Model state is on ${model.odPairs} pairs, the run on ${result.od_pairs}`)
     }
 
     trafficStore.setEdgeUsage(
-      baseline.rows,
+      model.rows,
       result.new_edge_usage,
       result.impact_statistics,
       result.od_pairs,
       scenarioStore.hash
     )
   } catch (error) {
-    console.error('Failed to calculate routes:', error)
+    // The area answered but its trips are not routed yet: the button waits
+    // for it now, say so instead of failing quietly.
+    if (error instanceof ApiError && error.code === 'area_not_ready') {
+      calculateError.value = 'This area is still routing its trips. Calculate again in a moment.'
+    } else {
+      console.error('Failed to calculate routes:', error)
+    }
   } finally {
     trafficStore.isCalculating = false
   }
@@ -251,16 +282,17 @@ async function calculateRoutes() {
             <div>
               <div class="font-weight-bold mb-1">Static betweenness vs. iterative volumes</div>
               <div class="mb-2">
-                <strong>Off (static betweenness):</strong> BC is computed once on the modified graph
-                to derive congested travel times (<em>duration_bc</em>), then all affected routes
-                are re-run with those weights. Roads that structurally attract more flow appear
-                slower, discouraging over-assignment without any iteration.
+                <strong>Off:</strong> only the trips that used a modified street are re-routed, on
+                travel times derived from the betweenness of the modified network. Roads that
+                structurally attract more flow appear slower, so the displaced traffic spreads
+                instead of piling onto the one next-fastest street.
               </div>
               <div>
-                <strong>On (iterative volumes):</strong> actual simulated route volumes are counted,
-                normalised to daily vehicle-km, and fed into the BPR speed-reduction formula. Routes
-                are then re-run with the updated weights, repeating for the chosen number of
-                iterations, converging toward a <em>Wardrop user equilibrium</em>.
+                <strong>On:</strong> every trip is re-routed, and the simulated volumes are
+                normalised to daily vehicle-km and fed back into the BPR speed-reduction formula,
+                repeating for the chosen number of iterations, converging toward a
+                <em>Wardrop user equilibrium</em>. Slower, and the right choice when the travel-time
+                numbers themselves matter.
               </div>
             </div>
           </v-tooltip>
@@ -285,19 +317,24 @@ async function calculateRoutes() {
             <div>
               <div class="font-weight-bold mb-1">Elastic demand</div>
               <div>
-                When on, trip destinations are resampled to reflect that travellers adapt to new
-                travel times. Closing a major road shifts trips to closer destinations rather than
-                spiking total travel time. Origins remain unchanged; only destination choice
-                responds to the modified network.
+                When on, the scenario draws the trip destinations again on its own travel times:
+                travellers adapt, so closing a major road shifts trips to closer destinations rather
+                than spiking total travel time. Origins stay put. Only the trips the scenario
+                reaches move, the others keep their destination, so a scenario that changes nothing
+                moves nothing. A moved trip cannot be compared with itself, so the impact panel
+                shows totals only.
               </div>
             </div>
           </v-tooltip>
         </template>
       </BcRow>
+      <p v-if="trafficStore.elasticDemand" class="trips__warning">
+        It changes how the scenario is routed, not this map.
+      </p>
 
       <div class="trips">
         <div class="bc-micro trips__label">Node weights</div>
-        <BcSeg v-model="nodeWeighting" :options="nodeWeightingOptions" equal />
+        <BcSeg v-model="nodeWeighting" :options="nodeWeightingOptions" equal :columns="2" />
       </div>
 
       <div v-if="tripsOptions.length > 0" class="trips">
@@ -313,6 +350,16 @@ async function calculateRoutes() {
           (frequency correlation 0.96).
         </p>
       </div>
+    </div>
+
+    <!-- The routing of these options on the untouched network: what the
+         scenario is compared with. -->
+    <div class="dock-section">
+      <template v-if="trafficStore.hasModelState">
+        <div class="bc-micro dock-section__title">Layers</div>
+        <LayerRows />
+      </template>
+      <p v-if="modelStatus" class="bc-empty model-status">{{ modelStatus }}</p>
 
       <button class="bc-btn bc-btn--primary calculate" @click="storyline.validate('routing')">
         Validate initial model
@@ -335,7 +382,7 @@ async function calculateRoutes() {
 
       <button
         class="bc-btn bc-btn--primary calculate"
-        :disabled="trafficStore.isCalculating"
+        :disabled="trafficStore.isCalculating || !trafficStore.areaReady"
         @click="calculateRoutes"
       >
         {{ trafficStore.isCalculating ? 'Calculating…' : 'Calculate routes' }}
@@ -345,6 +392,12 @@ async function calculateRoutes() {
       </div>
       <div v-if="trafficStore.isCalculating" class="bc-empty calculate__msg">
         {{ loadingMessage }}
+      </div>
+      <div v-else-if="!trafficStore.areaReady" class="bc-empty calculate__msg">
+        The server is still routing the trips of this area. You can calculate once it is done.
+      </div>
+      <div v-else-if="calculateError" class="bc-empty calculate__msg">
+        {{ calculateError }}
       </div>
     </div>
   </StoryStep>
@@ -376,19 +429,9 @@ async function calculateRoutes() {
       <div class="bc-micro dock-section__title">
         Layers<template v-if="resultTrips"> · {{ resultTrips }} trips</template>
       </div>
-      <BcRow
-        v-for="vis in trafficStore.availableVisualizations"
-        :key="vis.value"
-        :check="false"
-        :on="trafficStore.activeVisualization === vis.value"
-        :active="trafficStore.activeVisualization === vis.value"
-        class="vis-row"
-        @click="trafficStore.setActiveVisualization(vis.value)"
-      >
-        {{ visLabel(vis.value, vis.label) }}
-      </BcRow>
+      <LayerRows />
 
-      <div class="clip">
+      <div v-if="hasBus" class="clip">
         <span class="clip__label">Clip to</span>
         <span
           class="clip__chip"
@@ -684,8 +727,8 @@ async function calculateRoutes() {
   margin-top: 6px;
 }
 
-.vis-row {
-  padding-left: 12px;
+.model-status {
+  margin-top: 8px;
 }
 
 .clip {

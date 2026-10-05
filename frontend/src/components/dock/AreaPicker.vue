@@ -3,7 +3,7 @@ import BcRow from '@/components/ui/BcRow.vue'
 import BcSeg from '@/components/ui/BcSeg.vue'
 import BcSlider from '@/components/ui/BcSlider.vue'
 import type { AreaFeedback } from '@/composables/useAreaFeedback'
-import type { AreaOutline } from '@/services/trafficAnalysis'
+import { areaKey, DEFAULT_AREA, type AreaOutline } from '@/services/trafficAnalysis'
 import { useScenarioStore } from '@/stores/scenario'
 import { useTrafficAnalysisStore } from '@/stores/trafficAnalysis'
 import { communeName, type CommuneIndex } from '@/utils/municipalities'
@@ -36,6 +36,11 @@ const map = computed(() => mapComponentRef?.value?.map)
 type Kind = 'circle' | 'municipalities'
 
 const kind = computed<Kind>(() => trafficStore.draftArea?.kind ?? 'circle')
+
+const DEFAULT_KEY = areaKey(DEFAULT_AREA)
+const isDefault = computed(
+  () => !!trafficStore.draftArea && areaKey(trafficStore.draftArea) === DEFAULT_KEY
+)
 
 // Hidden only when the server says it has no boundaries, not while it has
 // not answered yet.
@@ -125,7 +130,7 @@ const STATUS_HINT: Record<Kind, Record<string, string>> = {
     too_large: 'More streets than the tool can route. Make the circle smaller.',
     disconnected: 'The streets here are in separate pieces. Move the circle a little.',
     outside_coverage: 'The road network only covers Switzerland.',
-    unavailable: 'This server only has the default city, it cannot build another area.'
+    unavailable: 'This server has no road network, it cannot build an area.'
   },
   municipalities: {
     ok: 'The tool can route inside these municipalities.',
@@ -270,7 +275,7 @@ const sourceShape = computed(() => {
     </div>
 
     <div class="dock-section">
-      <BcRow :check="false" :on="trafficStore.area === null" @click="trafficStore.useDefaultArea()">
+      <BcRow :check="false" :on="isDefault" @click="trafficStore.useDefaultArea()">
         Lausanne (default)
       </BcRow>
     </div>

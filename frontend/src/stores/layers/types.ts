@@ -1,3 +1,5 @@
+import type { NodeWeighting } from '@/services/trafficAnalysis'
+
 // One row of edge usage stats, same shape as EdgeUsageStats in the traffic store.
 export interface EdgeUsageRow {
   u: number
@@ -49,11 +51,11 @@ export interface TrafficAnalysisInputs {
   congestionIterations: number
   elasticDemand: boolean
   /** how the OD sampler weighs the nodes, see NodeWeighting */
-  nodeWeighting: 'uniform' | 'population'
+  nodeWeighting: NodeWeighting
   filterBusRoutes: boolean
   /** how many OD pairs to route, null for the server default */
   odPairs: number | null
-  /** the area the scenario runs on, null for the default city */
+  /** the area the scenario runs on. null (saved before v0.6) opens on the default circle */
   area: TrafficAreaSelection | null
 }
 

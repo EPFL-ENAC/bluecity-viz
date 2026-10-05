@@ -1,29 +1,13 @@
-import { baseUrl } from '@/config/layerTypes'
-import { useApiKeyStore } from '@/stores/apiKey'
 import type { EdgeUsageStats } from '@/stores/trafficAnalysis'
-
-const isDev = import.meta.env.DEV
 
 // Relative in dev too: vite proxies /api to this checkout's own backend, whose
 // port changes per git worktree (wtx writes the ports in .env.worktree).
 const API_BASE_URL = '/api/v1/routes'
 const AREAS_BASE_URL = '/api/v1/areas'
 
-/** The default area: the city the server loaded at startup. */
-export const DEFAULT_AREA_ID = 'lausanne'
-
 /** `null` means the default area, so the query stays out of the URL. */
 function areaQuery(areaId?: string | null, separator = '?'): string {
   return areaId ? `${separator}area_id=${encodeURIComponent(areaId)}` : ''
-}
-
-function getGeojsonUrl(): string {
-  const url = `${baseUrl}/lausanne.geojson`
-  if (!isDev) {
-    const apiKeyStore = useApiKeyStore()
-    return `${url}?apikey=${apiKeyStore.apiKey}`
-  }
-  return url
 }
 
 export interface EdgeGeometry {
@@ -41,56 +25,26 @@ export interface EdgeGeometry {
 }
 
 /**
- * Fetch edge geometries from pre-generated GeoJSON file
+ * What the scenario did to the trips. Every `change` is new minus old over
+ * the affected trips, so a scenario that shortens trips reads negative; every
+ * `increase` is the worst single trip, 0 when nothing got worse.
  */
-export async function fetchEdgeGeometries(limit?: number): Promise<EdgeGeometry[]> {
-  try {
-    const response = await fetch(getGeojsonUrl())
-
-    if (!response.ok) {
-      console.warn('GeoJSON file not available, using empty dataset')
-      return []
-    }
-
-    const geojson = await response.json()
-
-    // Convert GeoJSON features to EdgeGeometry format
-    const edges: EdgeGeometry[] = geojson.features.map((feature: any) => ({
-      u: feature.properties.u,
-      v: feature.properties.v,
-      coordinates: feature.geometry.coordinates,
-      travel_time: feature.properties.travel_time,
-      length: feature.properties.length,
-      name: feature.properties.name,
-      highway: feature.properties.highway,
-      speed_kph: feature.properties.speed_kph,
-      bus_route_count: feature.properties.bus_route_count ?? 0,
-      bus_route_refs: feature.properties.bus_route_refs ?? ''
-    }))
-
-    if (limit) {
-      edges.splice(limit)
-    }
-
-    return edges
-  } catch (error) {
-    console.warn('Failed to fetch edge geometries:', error)
-    return []
-  }
-}
-
 export interface ImpactStatistics {
   total_routes: number
   affected_routes: number
   failed_routes: number
-  total_distance_increase_km: number
-  total_time_increase_minutes: number
-  avg_distance_increase_km: number
-  avg_time_increase_minutes: number
+  total_distance_change_km: number
+  total_time_change_minutes: number
+  total_co2_change_grams: number
+  avg_distance_change_km: number
+  avg_time_change_minutes: number
+  avg_co2_change_grams: number
+  avg_distance_change_percent: number
+  avg_time_change_percent: number
+  avg_co2_change_percent: number
   max_distance_increase_km: number
   max_time_increase_minutes: number
-  avg_distance_increase_percent: number
-  avg_time_increase_percent: number
+  max_co2_increase_grams: number
 }
 
 export interface EdgeModification {
@@ -102,7 +56,6 @@ export interface EdgeModification {
 
 export interface TimingStats {
   cache_lookup_ms: number
-  graph_copy_ms: number
   apply_modifications_ms: number
   od_resampling_ms?: number
   affected_routes_ms?: number
@@ -200,21 +153,33 @@ export async function fetchGraphInfo(areaId?: string | null): Promise<GraphInfo>
 }
 
 /**
- * Edge usage of the unmodified network. It never changes while the server
- * runs, so it is served with an ETag: a plain fetch does the conditional
- * request by itself and gets a 304 on the second load.
+ * The Model state: edge usage of the unmodified network under one model. It
+ * is what the Model step draws and the left side of every run with the same
+ * options. It never changes while the server runs, so it is served with an
+ * ETag: a plain fetch does the conditional request by itself and gets a 304
+ * on the second load.
+ *
+ * `congestionIterations` asks for the equilibrium model (null is the targeted
+ * one). The equilibrium one costs an MSA run on the server the first time.
+ * Elastic demand is not a parameter: on the untouched network it draws the
+ * same trips.
  */
 export async function fetchBaseline(
   odPairs?: number,
   areaId?: string | null,
-  nodeWeighting: NodeWeighting = 'uniform'
+  nodeWeighting: NodeWeighting = 'uniform',
+  congestionIterations: number | null = null
 ): Promise<BaselineResponse> {
   const params = new URLSearchParams()
   if (odPairs !== undefined && odPairs !== null) params.set('od_pairs', String(odPairs))
   if (areaId) params.set('area_id', areaId)
-  // uniform is the server default, left out so the URL stays the one the
-  // browser cache already knows
+  // uniform and free flow are the server defaults, left out so the URL stays
+  // the one the browser cache already knows
   if (nodeWeighting !== 'uniform') params.set('node_weighting', nodeWeighting)
+  if (congestionIterations !== null) {
+    params.set('use_congestion', 'true')
+    params.set('congestion_iterations', String(congestionIterations))
+  }
   const query = params.toString()
   const url = `${API_BASE_URL}/baseline${query ? `?${query}` : ''}`
 
@@ -224,10 +189,19 @@ export async function fetchBaseline(
 }
 
 /**
- * How the OD sampler weighs the nodes: every junction the same, or by the
- * residents and jobs around it (federal statistics, per area percentiles).
+ * How the OD sampler weighs the nodes (federal statistics, per area
+ * percentiles). `uniform` is every junction the same. `population` is the
+ * "Daily average": residents and jobs at both ends of a trip. The weekday
+ * ones put residents at one end and jobs at the other: from home to work in
+ * the morning, back in the evening. See docs/routing-model.md.
  */
-export type NodeWeighting = 'uniform' | 'population'
+export const NODE_WEIGHTINGS = [
+  'uniform',
+  'population',
+  'weekday_morning',
+  'weekday_evening'
+] as const
+export type NodeWeighting = (typeof NODE_WEIGHTINGS)[number]
 
 export async function recalculateRoutes(
   edgeModifications: EdgeModification[],
@@ -250,15 +224,13 @@ export async function recalculateRoutes(
     body: JSON.stringify({
       area_id: options?.areaId ?? null,
       edge_modifications: edgeModifications,
-      weight: 'travel_time',
-      include_geometry: true,
       use_congestion: options?.useCongestionModel ?? false,
       congestion_iterations: options?.congestionIterations ?? 1,
       resample_destinations: options?.elasticDemand ?? false,
       node_weighting: options?.nodeWeighting ?? 'uniform',
       od_pairs: options?.odPairs ?? null,
-      // the baseline is the same for every run, we fetch it once from
-      // GET /baseline instead of carrying it in every answer
+      // The baseline is the Model state, the same for every run with these
+      // options: GET /baseline gives it once instead of every answer.
       include_baseline: false
     })
   })
@@ -272,6 +244,19 @@ export async function recalculateRoutes(
 // lives with the store, this name is kept for the callers of this module.
 import type { TrafficAreaSelection as AreaSelection } from '@/stores/layers/types'
 export type { AreaSelection }
+
+/**
+ * The area the app opens on: a circle on Lausanne. The server builds the same
+ * one at startup and keeps it (default_area_* in config.py), so asking for it
+ * costs nothing. If the two ever differ, this is just one more circle.
+ */
+export const DEFAULT_AREA: Readonly<AreaSelection> = Object.freeze({
+  kind: 'circle',
+  lon: 6.633,
+  lat: 46.52,
+  radiusM: 6000,
+  name: 'Lausanne'
+})
 
 /** Where a set of communes is, as the server gives it. EPSG:4326. */
 export type AreaOutline =
@@ -294,6 +279,19 @@ export interface AreaInfo {
   od_pairs: number
   od_pairs_default: number
   od_pairs_max: number
+  /** the waste tool runs here; missing from an older server */
+  cvrp?: boolean
+  // False while the server draws and routes the trips of the area: the
+  // streets and their betweenness are there, a routing request answers 409.
+  // Missing from an older server, which only answers once the area is ready.
+  ready?: boolean
+}
+
+/** The betweenness of one street, served before the area has any trip. */
+export interface AreaBetweennessRow {
+  u: number
+  v: number
+  betweenness_centrality: number
 }
 
 export type AreaRejectionCode =
@@ -352,7 +350,8 @@ function areaBody(area: AreaSelection): string {
  * ask for an area by its shape without keeping a server id around.
  */
 export function areaKey(area: AreaSelection | null): string {
-  if (!area) return DEFAULT_AREA_ID
+  // A project saved before the default was a circle has no area.
+  if (!area) return areaKey(DEFAULT_AREA)
   if (area.kind === 'municipalities') return municipalityKey(area.ofsIds)
   return `c_${area.lon.toFixed(4)}_${area.lat.toFixed(4)}_${Math.round(area.radiusM)}`
 }
@@ -385,7 +384,21 @@ export async function createArea(area: AreaSelection): Promise<AreaInfo> {
   return response.json()
 }
 
-/** The streets of an area, same shape as the static city file. */
+/** One loaded area. Polled until `ready`, a 404 means it was evicted. */
+export async function fetchArea(areaId: string): Promise<AreaInfo> {
+  const response = await fetch(`${AREAS_BASE_URL}/${encodeURIComponent(areaId)}`)
+  if (!response.ok) await throwHttpError(response, 'Failed to fetch the area')
+  return response.json()
+}
+
+/** The betweenness of every street of an area, there before its trips. */
+export async function fetchAreaBetweenness(areaId: string): Promise<AreaBetweennessRow[]> {
+  const response = await fetch(`${AREAS_BASE_URL}/${encodeURIComponent(areaId)}/betweenness`)
+  if (!response.ok) await throwHttpError(response, 'Failed to fetch the area betweenness')
+  return response.json()
+}
+
+/** The streets of an area. */
 export async function fetchAreaEdges(areaId: string): Promise<EdgeGeometry[]> {
   const response = await fetch(`${AREAS_BASE_URL}/${encodeURIComponent(areaId)}/edges`)
   if (!response.ok) await throwHttpError(response, 'Failed to fetch the area streets')

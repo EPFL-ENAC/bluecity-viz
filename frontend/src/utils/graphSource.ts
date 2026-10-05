@@ -98,6 +98,8 @@ export interface GraphSource {
   nodeStreets: Map<number, string[]>
   /** the corners of everything it draws, [[west, south], [east, north]] */
   bounds: [[number, number], [number, number]]
+  /** at least one street carries a bus line */
+  hasBus: boolean
 }
 
 function sameCoordinates(a: [number, number][], b: [number, number][]): boolean {
@@ -133,6 +135,7 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
   let south = Infinity
   let east = -Infinity
   let north = -Infinity
+  let hasBus = false
 
   edges.forEach((edge, index) => {
     const { u, v } = edge
@@ -150,6 +153,8 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
 
     const name = edge.name && edge.name !== 'Unknown' ? edge.name : ''
     const cls = classFactor(edge.highway)
+    const bus = (edge.bus_route_count ?? 0) > 0
+    if (bus) hasBus = true
 
     for (const [lon, lat] of edge.coordinates) {
       if (lon < west) west = lon
@@ -171,7 +176,7 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
         two: oneway ? 0 : 1,
         side,
         speed: edge.speed_kph ?? null,
-        bus: (edge.bus_route_count ?? 0) > 0 ? 1 : 0,
+        bus: bus ? 1 : 0,
         len: edge.length ?? 0
       }
     })
@@ -191,7 +196,7 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
         at: pathMidpoint(edge.coordinates),
         cls,
         speed: edge.speed_kph,
-        bus: (edge.bus_route_count ?? 0) > 0
+        bus
       })
     } else {
       // the other direction of a street we have already seen
@@ -199,7 +204,7 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
       if (!forward && street.bwdId === undefined) street.bwdId = index
       street.oneway = street.fwdId === undefined || street.bwdId === undefined
       if (!street.name && name) street.name = name
-      if ((edge.bus_route_count ?? 0) > 0) street.bus = true
+      if (bus) street.bus = true
     }
 
     if (name) {
@@ -224,7 +229,7 @@ export function buildGraphSource(edges: EdgeGeometry[]): GraphSource {
         [east, north]
       ]
 
-  return { collection, streets, edgeById, nodeStreets, bounds }
+  return { collection, streets, edgeById, nodeStreets, bounds, hasBus }
 }
 
 /**

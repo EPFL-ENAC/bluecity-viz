@@ -12,9 +12,10 @@ marked `active` while the tool is open and the dock opens on the right of the
 map.
 
 Opening it loads the graph edges as a grey base layer and the pre-generated
-OD pairs. The backend samples 500 pairs at startup, weighted by betweenness
-centrality with a lognormal distance distribution, so the same pairs are used
-for every scenario and two runs stay comparable.
+trips. The backend draws 76,400 of them at startup, weighted by betweenness
+centrality with a lognormal trip-length distribution, and a run uses the first
+20,000 by default. The same trips serve every scenario, which is what makes
+two runs comparable. See [the routing model](./routing-model.md).
 
 ## 2. Modify edges
 
@@ -37,17 +38,15 @@ The cycle order lives in `MODIFICATION_CYCLE` in
 
 Two options above the calculate button.
 
-**Iterative model (BPR congestion)**, off by default. When it is off, the
-betweenness centrality is computed once on the modified graph to derive
-congested travel times (`duration_bc`), then the affected routes are re-run
-with those weights. Roads that structurally attract flow look slower, which
-spreads the traffic without any iteration.
+**Iterative model (BPR congestion)**, off by default. When it is off, only
+the trips that used a modified street are re-routed, on travel times derived
+from the betweenness of the modified network. Roads that structurally attract
+flow look slower, which spreads the displaced traffic without any iteration.
 
-When it is on, the simulated route volumes are counted, normalised to daily
-vehicle-km and fed into the BPR speed reduction formula. The routes are re-run
-with the new weights, for the number of iterations you pick with the slider
-(1 to 5, count about 10 seconds each). More iterations converge toward a
-Wardrop user equilibrium.
+When it is on, every trip is re-routed and the simulated volumes are fed back
+into the BPR speed reduction formula, for the number of iterations you pick
+with the slider (1 to 3, count about 10 seconds each). More iterations
+converge toward a Wardrop user equilibrium.
 
 **Elastic demand**, off by default. When it is on, trip destinations are
 resampled, because travellers adapt to the new travel times. Closing a major
@@ -57,10 +56,11 @@ travel time. Origins never change, only the destination choice.
 ## 4. Calculate
 
 **Calculate routes** posts the modification list to
-`POST /api/v1/routes/recalculate`. The backend applies the modifications,
-re-routes every OD pair with igraph Dijkstra, computes CO₂ and betweenness
-centrality, then restores the graph. The response carries per-edge usage
-statistics, which the store turns into the D3 colour scales.
+`POST /api/v1/routes/recalculate`. The backend builds this request's own copy
+of the network weights, re-routes with igraph Dijkstra, and computes CO₂ and
+betweenness centrality; the shared graph is never touched. The response
+carries per-street usage statistics, which the store turns into the D3 colour
+scales.
 
 A first run with no modification gives you the baseline.
 
@@ -89,10 +89,11 @@ which is the useful view when the question is about public transport.
 ## 6. Impact statistics
 
 Once a scenario has run, the impact panel appears under the visualisation
-list. It compares the modified network with the baseline: how many routes
-were affected and how many failed outright, the total extra distance, time
-and CO₂, the average detour per affected route with the percentage increases,
-and the worst single route.
+list. It compares the modified network with the baseline: how many trips
+changed route and how many failed outright, then the change in distance, time
+and CO₂. Those changes are signed, so a scenario that shortens trips shows a
+saving. The Max column is the worst single trip. A failed trip has no finite
+cost, so it never enters the totals.
 
 With elastic demand on, the panel says so, because the numbers then mix a
 routing effect with a demand effect and are not comparable with a fixed
@@ -103,7 +104,7 @@ demand run.
 | Part | File |
 |---|---|
 | State, scales, cycle order | `frontend/src/stores/trafficAnalysis.ts` |
-| Dock UI | `frontend/src/components/dock/TrafficDock.vue` |
-| Map layers | `frontend/src/composables/useDeckGLTrafficAnalysis.ts` |
+| Dock UI | `frontend/src/components/dock/RoutingTab.vue` |
+| Map layers | `frontend/src/composables/useGraphOverlay.ts` |
 | HTTP client | `frontend/src/services/trafficAnalysis.ts` |
-| Routing, CO₂, BPR | `backend/app/services/` |
+| Routing, CO₂, BPR | `backend/app/services/`, see [the model](./routing-model.md) |

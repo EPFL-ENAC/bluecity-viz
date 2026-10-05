@@ -1,12 +1,15 @@
-import { streetTotals, type StreetTotals } from '@/composables/useResultStates'
+import { streetTotals, type StreetTotals, type UsageRow } from '@/composables/useResultStates'
 import {
   ApiError,
   areaKey,
   createArea,
-  DEFAULT_AREA_ID,
+  DEFAULT_AREA,
+  fetchArea,
+  fetchAreaBetweenness,
   fetchAreaLimits,
   fetchBaseline,
   fetchGraphInfo,
+  type AreaBetweennessRow,
   type AreaInfo,
   type AreaLimits,
   type AreaOutline,
@@ -23,10 +26,12 @@ import { interpolateSpectral, interpolateViridis } from 'd3-scale-chromatic'
 import { defineStore } from 'pinia'
 import { computed, markRaw, ref, shallowRef } from 'vue'
 
-// Where the picker opens when the scenario has no area yet, and how big the
-// circle starts. The map centre wins when the caller knows it.
+// Where a fresh circle of the picker starts, and how big. The map centre wins
+// when the caller knows it.
 const DEFAULT_CENTRE = { lon: 6.6323, lat: 46.5197 }
 const DEFAULT_RADIUS_M = 3000
+// How often we ask the server if an area it builds is ready, in ms.
+export const AREA_POLL_MS = 1000
 
 /** A copy the picker can change without touching the area behind it. */
 function copyArea(area: AreaSelection): AreaSelection {
@@ -96,6 +101,20 @@ function emptyScales(): ModeScales {
   }
 }
 
+// A delta layer compares a run with the Model state. The Model state alone has
+// no delta, so it shows the plain layer of the same quantity.
+const PLAIN_TWIN: Partial<Record<VisualizationMode, ScaledMode>> = {
+  none: 'frequency',
+  delta: 'frequency',
+  delta_relative: 'frequency',
+  co2_delta: 'co2',
+  betweenness_delta: 'betweenness'
+}
+
+// One Model state is about 0.6 MB of rows, and an area has 16 option sets
+// (2 weightings, 2 trip counts, free flow or 1 to 3 iterations).
+const BASELINE_CACHE_SIZE = 8
+
 /** 98th percentile max, so a few very busy edges (the ring road, a bridge) do
  *  not push every other street to the bottom of the colour scale. */
 function robustMax(values: number[], percentile = 0.98, fallback = 1): number {
@@ -126,14 +145,17 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // How many OD pairs to route. null means the server default.
   const odPairs = ref<number | null>(null)
 
-  // The area the workbench runs on. null means the default city, which is
-  // what every investigation saved before this feature has.
-  const area = ref<AreaSelection | null>(null)
+  // The area the workbench runs on. Never empty: the app opens on the default
+  // circle, and a project saved with no area opens there too.
+  const area = ref<AreaSelection>({ ...DEFAULT_AREA })
   // Derived, never persisted: what the server told us about that area.
   const areaId = ref<string | null>(null)
   const areaInfo = shallowRef<AreaInfo | null>(null)
   const isBuildingArea = ref(false)
   const areaError = shallowRef<{ code?: string; message: string } | null>(null)
+  // The betweenness of an area the server is still building, shown until its
+  // trips are routed. Never saved, it comes back with the area.
+  const areaBetweenness = shallowRef<AreaBetweennessRow[]>([])
   // The outline of a set of communes, for the ring on the map. Never saved:
   // the picker hands over the one it previewed, and the server gives it back
   // when the area is built, so a shared link draws it too.
@@ -169,13 +191,30 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   // The count that produced the results on screen.
   const resultOdPairs = ref<number | null>(null)
 
-  // The baseline never changes while the server runs, so one fetch per count is
-  // enough. Not reactive, nothing renders from it. Inside the setup so a fresh
-  // pinia (the tests, a reload) starts with an empty cache.
+  // The Model state: the chosen model on the untouched network, what the
+  // Model step draws and what every run is compared with. `modelUsageKey`
+  // says which options these rows are for, so the map can fade them while
+  // the rows for new options are on their way.
+  const modelUsage = shallowRef<EdgeUsageStats[]>([])
+  const modelUsageKey = ref<string | null>(null)
+  const modelLoading = ref(false)
+  const modelError = ref<string | null>(null)
+  let modelRequest = 0
+
+  // The Model state never changes while the server runs, so one fetch per
+  // option set is enough. Not reactive, nothing renders from it. Inside the
+  // setup so a fresh pinia (the tests, a reload) starts with an empty cache.
   const baselineCache = new Map<string, EdgeUsageStats[]>()
   const baselinePending = new Map<string, Promise<BaselineResult>>()
   const graphInfoPromises = new Map<string, Promise<void>>()
   let areaPromise: Promise<string | null> | null = null
+  // The area whose build we follow, and the poll that asks if it is done.
+  let followedId: string | null = null
+  let pollTimer: ReturnType<typeof setTimeout> | null = null
+  // An area can vanish while it builds (an error, a restart). We build it
+  // again once, a second loss is an error, so a build that always fails does
+  // not loop.
+  let rebuiltOnce = false
 
   // Visualization state. Only the active scale is reactive; the per-mode scales
   // live in a plain object because switching mode only reads one of them.
@@ -200,14 +239,61 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   const hasCalculatedRoutes = computed(() => originalEdgeUsage.value.length > 0)
 
+  const hasModelState = computed(() => modelUsage.value.length > 0)
+
+  /** The model part of an option set: free flow, or the equilibrium with n iterations. */
+  function modelPart(): string {
+    return useCongestionModel.value ? `eq${congestionIterations.value}` : 'ff'
+  }
+
   /**
-   * The result per street, both directions summed. The map colours from it and
-   * the dock lists from it, so the sum runs once per result, not once per view.
+   * Which Model state the options ask for. Elastic demand is not in it: on
+   * the untouched network it draws the same trips, so it changes the
+   * scenario run and not this map.
+   */
+  const modelOptionsKey = computed(
+    () => `${graphKey.value}:${nodeWeighting.value}:${odPairs.value ?? 'default'}:${modelPart()}`
+  )
+
+  /** The Model state on screen was computed with other options. */
+  const modelStale = computed(
+    () => hasModelState.value && modelUsageKey.value !== modelOptionsKey.value
+  )
+
+  /** What the map and the layers show: the result, or else the Model state. */
+  const displayedUsage = computed(() =>
+    hasCalculatedRoutes.value ? newEdgeUsage.value : modelUsage.value
+  )
+
+  /**
+   * False while the server routes the trips of the area. The streets and their
+   * betweenness are there, a routing request is not possible yet. An answer
+   * without the flag (an older server) means ready.
+   */
+  const areaReady = computed(() => areaInfo.value?.ready !== false)
+
+  /** The betweenness shown while the area builds, per street like a result. */
+  const previewTotals = computed<StreetTotals[]>(() => {
+    const streets = useScenarioStore().streets
+    if (areaBetweenness.value.length === 0 || streets.size === 0) return []
+    return streetTotals(areaBetweenness.value, streets)
+  })
+
+  /** The same scale as the betweenness mode of a result, so the colours match. */
+  const previewScale = computed<ModeScale | null>(
+    () => buildScales(areaBetweenness.value).betweenness
+  )
+
+  /**
+   * The result per street, both directions summed, or the Model state when
+   * there is no result. The map colours from it and the dock lists from it,
+   * so the sum runs once per result, not once per view.
    */
   const resultTotals = computed<StreetTotals[]>(() => {
     const streets = useScenarioStore().streets
-    if (newEdgeUsage.value.length === 0 || streets.size === 0) return []
-    return streetTotals(newEdgeUsage.value, streets)
+    const usage = displayedUsage.value
+    if (usage.length === 0 || streets.size === 0) return []
+    return streetTotals(usage, streets)
   })
 
   /**
@@ -220,22 +306,23 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     return resultScenarioHash.value !== scenario.hash
   })
 
-  // Available visualization modes based on calculated data
+  // The layers the rows on screen can draw. The Model state has no delta, so
+  // it offers the plain layers only.
   const availableVisualizations = computed(() => {
     const modes: Array<{
       value: Exclude<VisualizationMode, 'none'>
       label: string
     }> = []
-    if (hasCalculatedRoutes.value) {
+    const usage = displayedUsage.value
+    const hasRows = usage.length > 0
+    if (hasRows) {
       modes.push({ value: 'frequency', label: 'Edge Usage Frequency' })
     }
-    const hasCO2 = newEdgeUsage.value.some(
-      (stat) => stat.co2_g_per_km !== undefined && stat.co2_g_per_km > 0
-    )
-    if (hasCO2 && hasCalculatedRoutes.value) {
+    const hasCO2 = usage.some((stat) => stat.co2_g_per_km !== undefined && stat.co2_g_per_km > 0)
+    if (hasCO2 && hasRows) {
       modes.push({ value: 'co2', label: 'CO₂ Emissions' })
     }
-    const hasDelta = newEdgeUsage.value.some(
+    const hasDelta = usage.some(
       (stat) => stat.delta_count !== undefined && Math.abs(stat.delta_count) > 0.001
     )
     if (hasDelta) {
@@ -245,13 +332,13 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     if (hasDelta && hasCO2) {
       modes.push({ value: 'co2_delta', label: 'CO₂ Emissions Change' })
     }
-    const hasBetweenness = newEdgeUsage.value.some(
+    const hasBetweenness = usage.some(
       (stat) => stat.betweenness_centrality !== undefined && stat.betweenness_centrality > 0
     )
-    if (hasBetweenness && hasCalculatedRoutes.value) {
+    if (hasBetweenness && hasRows) {
       modes.push({ value: 'betweenness', label: 'Betweenness Centrality' })
     }
-    const hasBCDelta = newEdgeUsage.value.some(
+    const hasBCDelta = usage.some(
       (stat) => stat.delta_betweenness != null && stat.delta_betweenness !== 0
     )
     if (hasBCDelta) {
@@ -284,7 +371,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
    * modes need. The old code walked the array about ten times and used
    * Math.max(...values), which spreads 10k arguments onto the stack.
    */
-  function buildScales(usage: EdgeUsageStats[]): ModeScales {
+  function buildScales(usage: readonly UsageRow[]): ModeScales {
     const built = emptyScales()
     if (usage.length === 0) return built
 
@@ -301,7 +388,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     let hasBCDelta = false
 
     for (const stat of usage) {
-      const frequency = stat.frequency
+      const frequency = stat.frequency ?? 0
       if (frequency > maxFreq) maxFreq = frequency
 
       const co2 = stat.co2_g_per_km ?? 0
@@ -432,19 +519,43 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     updateActiveColorScale()
   }
 
+  /**
+   * Colour the Model state, keeping the layer the user picked when the Model
+   * state has it: a delta layer becomes the plain layer of the same quantity.
+   * With no Model state there is nothing to colour.
+   */
+  function showModelState(preferred: VisualizationMode) {
+    scales = buildScales(modelUsage.value)
+    if (!hasModelState.value) {
+      activeVisualization.value = 'none'
+    } else {
+      const twin = PLAIN_TWIN[preferred] ?? (preferred as ScaledMode)
+      activeVisualization.value = scales[twin] ? twin : 'frequency'
+    }
+    updateActiveColorScale()
+  }
+
   function clearResults() {
+    const preferred = activeVisualization.value
     originalEdgeUsage.value = []
     newEdgeUsage.value = []
     impactStatistics.value = null
     resultOdPairs.value = null
-    scales = emptyScales()
-    activeVisualization.value = 'none'
     filterBusRoutes.value = false
     resultScenarioHash.value = null
     // Nothing left to read in colour, back to the scenario. Only if the user
     // is looking at this tab, the other tool may still have a result up.
     if (useScenarioStore().activeTab === 'routing') useScenarioStore().mapMode = 'scenario'
-    updateActiveColorScale()
+    showModelState(preferred)
+  }
+
+  /** Drop the Model state: it belongs to a network we are leaving. */
+  function clearModelState() {
+    modelRequest++
+    modelUsage.value = []
+    modelUsageKey.value = null
+    modelLoading.value = false
+    modelError.value = null
   }
 
   /**
@@ -463,10 +574,13 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   /** Read the OD pair counts of an area from the server, once per area. */
   function loadGraphInfo(): Promise<void> {
-    const key = areaId.value ?? DEFAULT_AREA_ID
+    const key = graphKey.value
     let request = graphInfoPromises.get(key)
     if (!request) {
-      request = fetchGraphInfo(areaId.value)
+      // Ask about the area on screen, so make sure the server has it first.
+      // The map asks for the same build, both wait on one request.
+      request = ensureArea()
+        .then((id) => fetchGraphInfo(id))
         .then((info) => {
           odPairsDefault.value = info.od_pairs_default
           odPairsMax.value = info.od_pairs_max
@@ -485,27 +599,43 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
   }
 
   /**
-   * The free-flow usage for a pair count, from the cache or from the server.
-   * Keyed by the count the server used, which is what the results carry.
+   * The Model state for a pair count and the chosen model, from the cache or
+   * from the server. Keyed by the count the server used, which is what the
+   * results carry.
    */
   function getBaseline(count?: number): Promise<BaselineResult> {
     // Every key carries the area: two areas have different numbers for the
-    // same pair count.
-    // The weighting too: another OD sample, other numbers.
-    const scope = areaId.value ?? DEFAULT_AREA_ID
+    // same pair count. The weighting too: another OD sample, other numbers.
+    // And the model: the equilibrium one routes the same trips elsewhere.
+    const scope = graphKey.value
     const weighting = nodeWeighting.value
+    const model = modelPart()
+    const iterations = useCongestionModel.value ? congestionIterations.value : null
+    const prefix = `${scope}:${weighting}:${model}`
     if (count !== undefined) {
-      const cached = baselineCache.get(`${scope}:${weighting}:${count}`)
-      if (cached) return Promise.resolve({ odPairs: count, rows: cached })
+      const cached = baselineCache.get(`${prefix}:${count}`)
+      if (cached) {
+        // used again, so it goes to the back of the eviction queue
+        baselineCache.delete(`${prefix}:${count}`)
+        baselineCache.set(`${prefix}:${count}`, cached)
+        return Promise.resolve({ odPairs: count, rows: cached })
+      }
     }
 
-    const key = `${scope}:${weighting}:${count ?? 'default'}`
+    const key = `${prefix}:${count ?? 'default'}`
     const inFlight = baselinePending.get(key)
     if (inFlight) return inFlight
 
-    const request = fetchBaseline(count, areaId.value, weighting)
+    // The key names the area on screen, so the request must too: build it
+    // first, the default one answers at once.
+    const request = ensureArea()
+      .then((id) => fetchBaseline(count, id, weighting, iterations))
       .then((response) => {
-        baselineCache.set(`${scope}:${weighting}:${response.od_pairs}`, response.edge_usage)
+        baselineCache.set(`${prefix}:${response.od_pairs}`, response.edge_usage)
+        // the oldest entry goes first, a Map keeps the insertion order
+        while (baselineCache.size > BASELINE_CACHE_SIZE) {
+          baselineCache.delete(baselineCache.keys().next().value as string)
+        }
         baselinePending.delete(key)
         return { odPairs: response.od_pairs, rows: response.edge_usage }
       })
@@ -517,6 +647,46 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
     baselinePending.set(key, request)
     return request
+  }
+
+  /**
+   * Load the Model state for the options as they are now, and draw it when
+   * there is no result on screen.
+   *
+   * Gives back null when the options moved while we were waiting: that answer
+   * is for options nobody asked for any more, and the rows already on screen
+   * stay until the right ones land. The error goes to `modelError` and is
+   * thrown again for the caller.
+   *
+   * Null too while the server still routes the trips of the area: there is
+   * no Model state to ask for yet, and asking would only get a 409. The
+   * Model step loads it once the area is ready.
+   */
+  async function loadModelState(): Promise<BaselineResult | null> {
+    const key = modelOptionsKey.value
+    const request = ++modelRequest
+    modelLoading.value = true
+    modelError.value = null
+    try {
+      // The area is built on the server first, the Model state is on it.
+      await ensureArea()
+      if (request !== modelRequest || key !== modelOptionsKey.value) return null
+      if (!areaReady.value) return null
+      const result = await getBaseline(odPairs.value ?? odPairsDefault.value ?? undefined)
+      if (request !== modelRequest || key !== modelOptionsKey.value) return null
+
+      modelUsage.value = markRaw(result.rows)
+      modelUsageKey.value = key
+      if (!hasCalculatedRoutes.value) showModelState(activeVisualization.value)
+      return result
+    } catch (error) {
+      if (request === modelRequest) {
+        modelError.value = error instanceof Error ? error.message : String(error)
+      }
+      throw error
+    } finally {
+      if (request === modelRequest) modelLoading.value = false
+    }
   }
 
   /** Forget everything cached for one area. */
@@ -537,23 +707,26 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
    * means nothing in another area. Both results go too. The stores are read
    * here and not at the top of the file, they need each other.
    */
-  function setArea(selection: AreaSelection | null) {
+  function setArea(selection: AreaSelection) {
     if (areaKey(selection) === areaKey(area.value)) {
       // Same circle: nothing to rebuild, but the picker may have found a name
       // for an area saved before we had one.
-      if (selection && area.value && selection.name !== area.value.name) {
+      if (selection.name !== area.value.name) {
         area.value = { ...area.value, name: selection.name }
       }
       return
     }
 
-    forgetArea(areaId.value ?? DEFAULT_AREA_ID)
+    forgetArea(graphKey.value)
+    stopFollowing()
+    rebuiltOnce = false
     area.value = selection
     areaId.value = null
     areaInfo.value = null
     areaOutline.value = null
     areaError.value = null
     areaPromise = null
+    clearModelState()
     clearResults()
 
     const scenario = useScenarioStore()
@@ -561,10 +734,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     scenario.select(null)
     scenario.hover(null)
     scenario.setStreets(new Map())
-    // The waste routes are on the old streets too, and only the default city
-    // has the waste data, so a drawn area shows the routing tab alone.
+    // The waste routes are on the old streets too. Whether the waste tool runs
+    // on the new area is for the server to say (areaInfo.cvrp).
     useCVRPStore().clearResult()
-    if (selection) scenario.activeTab = 'routing'
   }
 
   /**
@@ -575,7 +747,6 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
    * and the id is minted in one place instead of two.
    */
   function ensureArea(): Promise<string | null> {
-    if (!area.value) return Promise.resolve(null)
     if (areaId.value) return Promise.resolve(areaId.value)
     if (areaPromise) return areaPromise
 
@@ -591,6 +762,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
         areaId.value = info.id
         areaInfo.value = info
         areaOutline.value = info.outline ?? null
+        if (info.ready === false) followBuild(info.id)
         return info.id
       })
       .catch((error: unknown) => {
@@ -610,6 +782,84 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     return request
   }
 
+  function stopFollowing() {
+    if (pollTimer !== null) clearTimeout(pollTimer)
+    pollTimer = null
+    followedId = null
+    areaBetweenness.value = []
+  }
+
+  /** Still the area we follow, and still the one on screen. */
+  function following(id: string): boolean {
+    return followedId === id && areaId.value === id
+  }
+
+  /**
+   * Follow an area the server is still building: show its betweenness, and
+   * ask every second if its trips are routed.
+   */
+  function followBuild(id: string) {
+    if (followedId === id) return
+    stopFollowing()
+    followedId = id
+    fetchAreaBetweenness(id)
+      .then((rows) => {
+        if (following(id)) areaBetweenness.value = markRaw(rows)
+      })
+      .catch((error) => {
+        // the map stays grey until the area is ready, nothing else breaks
+        console.warn('Failed to fetch the area betweenness:', error)
+      })
+    pollTimer = setTimeout(() => pollArea(id), AREA_POLL_MS)
+  }
+
+  async function pollArea(id: string) {
+    pollTimer = null
+    if (!following(id)) return
+
+    let info: AreaInfo
+    try {
+      info = await fetchArea(id)
+    } catch (error) {
+      if (!following(id)) return
+      if (error instanceof ApiError && error.status === 404) {
+        areaLost(error)
+      } else {
+        // a network hiccup, the build goes on: ask again
+        pollTimer = setTimeout(() => pollArea(id), AREA_POLL_MS)
+      }
+      return
+    }
+    if (!following(id)) return
+
+    areaInfo.value = info
+    if (info.ready === false) {
+      pollTimer = setTimeout(() => pollArea(id), AREA_POLL_MS)
+      return
+    }
+
+    stopFollowing()
+    rebuiltOnce = false
+    // graph-info said 0 trips while the area was building, ask again. The
+    // cache is per area shape, and following(id) says it is still this one.
+    graphInfoPromises.delete(graphKey.value)
+    loadGraphInfo().catch((error) => console.warn('Failed to load the graph info:', error))
+  }
+
+  /** The server dropped the area while it was building it. */
+  function areaLost(error: ApiError) {
+    forgetAreaId()
+    if (rebuiltOnce) {
+      // no state saying "building" is left, so the button is not stuck
+      areaInfo.value = null
+      areaError.value = { code: error.code, message: error.message }
+      return
+    }
+    rebuiltOnce = true
+    // ensureArea writes areaError itself when it fails
+    ensureArea().catch(() => undefined)
+  }
+
   /** A circle to start from: the last one, or a fresh one where the map looks. */
   function freshCircle(centre?: { lon: number; lat: number }): CircleArea {
     return {
@@ -620,11 +870,11 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     }
   }
 
-  /** Open the picker on the current area, or on a fresh circle. */
-  function enterPickMode(fallback?: { lon: number; lat: number }) {
+  /** Open the picker on the current area. */
+  function enterPickMode() {
     const current = area.value
-    lastCircle = current?.kind === 'circle' ? { ...current } : null
-    draftArea.value = current ? copyArea(current) : freshCircle(fallback)
+    lastCircle = current.kind === 'circle' ? { ...current } : null
+    draftArea.value = copyArea(current)
     pickMode.value = true
   }
 
@@ -644,9 +894,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     if (draft.kind === 'circle') lastCircle = { ...draft }
     const current = area.value
     draftArea.value =
-      current?.kind === 'municipalities'
-        ? copyArea(current)
-        : { kind: 'municipalities', ofsIds: [] }
+      current.kind === 'municipalities' ? copyArea(current) : { kind: 'municipalities', ofsIds: [] }
   }
 
   /** Add a commune to the draft, or take it out when it is already in. */
@@ -699,11 +947,12 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     draftArea.value = null
   }
 
-  /** Back to the city the server loaded at startup. */
+  /**
+   * Put the draft back on the default circle. The user confirms it like any
+   * other circle, so the picker stays open.
+   */
   function useDefaultArea() {
-    setArea(null)
-    pickMode.value = false
-    draftArea.value = null
+    draftArea.value = copyArea(DEFAULT_AREA)
   }
 
   // Only a circle moves or grows, a set of communes has no centre to drag.
@@ -738,13 +987,14 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
   /** The area is gone from the server: build it again on the next call. */
   function forgetAreaId() {
-    forgetArea(areaId.value ?? DEFAULT_AREA_ID)
+    forgetArea(graphKey.value)
+    stopFollowing()
     areaId.value = null
     areaPromise = null
   }
 
-  function getColor(value: number): [number, number, number] {
-    const scale = colorScale.value
+  /** The colour of a value on the active scale, or on the one given. */
+  function getColor(value: number, scale: ColorScale = colorScale.value): [number, number, number] {
     if (!scale) return [136, 136, 136] // Gray fallback
 
     if (scale !== colorCacheScale) {
@@ -809,15 +1059,20 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     // The area comes first: the scenario and the results below belong to it.
     // setArea would clear them, so we assign instead.
     if (state.area !== undefined) {
-      const next = state.area ?? null
+      // No area is a project saved when the default was the city outline. It
+      // opens on the default circle, the one closest to what it had.
+      const next = state.area ?? copyArea(DEFAULT_AREA)
       if (areaKey(next) !== areaKey(area.value)) {
-        forgetArea(areaId.value ?? DEFAULT_AREA_ID)
+        forgetArea(graphKey.value)
+        stopFollowing()
+        rebuiltOnce = false
         area.value = next
         areaId.value = null
         areaInfo.value = null
         areaOutline.value = null
         areaError.value = null
         areaPromise = null
+        clearModelState()
       }
     }
 
@@ -849,9 +1104,14 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
       newEdgeUsage.value = restored
       impactStatistics.value = impact ? markRaw(impact) : null
       resultOdPairs.value = null
-      scales = emptyScales()
-      activeVisualization.value = state.activeVisualization
-      updateActiveColorScale()
+      if (hasModelState.value) {
+        // no result: the map shows the Model state
+        showModelState(state.activeVisualization)
+      } else {
+        scales = emptyScales()
+        activeVisualization.value = state.activeVisualization
+        updateActiveColorScale()
+      }
     }
 
     isRestoring.value = false
@@ -877,6 +1137,9 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     odPairsMax,
     odPairsFull,
     resultOdPairs,
+    modelUsage,
+    modelLoading,
+    modelError,
     area,
     areaId,
     areaInfo,
@@ -884,6 +1147,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     graphKey,
     isBuildingArea,
     areaError,
+    areaBetweenness,
     pickMode,
     pickTool,
     draftArea,
@@ -898,6 +1162,13 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
 
     // Computed
     hasCalculatedRoutes,
+    hasModelState,
+    modelOptionsKey,
+    modelStale,
+    displayedUsage,
+    areaReady,
+    previewTotals,
+    previewScale,
     resultTotals,
     resultScenarioHash,
     isStale,
@@ -911,6 +1182,7 @@ export const useTrafficAnalysisStore = defineStore('trafficAnalysis', () => {
     setOdPairs,
     loadGraphInfo,
     getBaseline,
+    loadModelState,
     setArea,
     ensureArea,
     forgetAreaId,

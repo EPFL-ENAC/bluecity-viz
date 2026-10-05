@@ -24,21 +24,12 @@ The API will be available at `http://localhost:8000`
 
 API documentation (Swagger UI): `http://localhost:8000/docs`
 
-## OD Pair Sampling
+## The model
 
-The backend supports two methods for generating origin-destination pairs:
-
-1. **Simple Random Sampling** (legacy): Fast uniform random sampling
-2. **Research-Based Sampling** (default): Sophisticated sampling using betweenness centrality and trip distance modeling
-
-See [RESEARCH_SAMPLING.md](./RESEARCH_SAMPLING.md) for detailed documentation on research-based sampling.
-
-### Quick Start
-
-```bash
-# Test the research-based sampling
-uv run python scripts/test_node_sampling.py
-```
+What the backend computes, with the formulas and the limitations, is in
+[docs/routing-model.md](../docs/routing-model.md): the demand sampling, the
+routing, the BPR congestion model, betweenness centrality, the CO₂ model and
+the three scenario modes.
 
 ## API Endpoints
 
@@ -48,8 +39,8 @@ uv run python scripts/test_node_sampling.py
 - `POST /api/v1/routes/calculate` - Calculate shortest paths
 - `POST /api/v1/routes/recalculate` - Recalculate paths with network modifications
 - `POST /api/v1/routes/random-pairs` - Generate random OD pairs (simple or research-based)
-- `GET /api/v1/routes/graph` - Get complete graph data
-- `GET /api/v1/routes/edge-geometries` - Get edge geometries for visualization
+- `POST /api/v1/areas` - Build an area (a circle or communes) from the Swiss store
+- `GET /api/v1/areas/{area_id}/edges` - The streets of an area, for the map
 
 ## Usage Examples
 

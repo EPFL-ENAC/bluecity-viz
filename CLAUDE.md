@@ -47,9 +47,10 @@ uv run python scripts/test_with_data.py        # manual check against a running 
   street (`{lo}-{hi}`) with an action (`remove | 50 | 30 | 10`) and a direction
   (`both | fwd | bwd`). `wire` is the backend format, `hash` says when a result
   went stale.
-- `stores/trafficAnalysis.ts` — OD pair routing results, the per street totals
-  and all D3 color scales for the 6 visualization modes (frequency, delta, CO₂,
-  CO₂-delta, betweenness, betweenness-delta)
+- `stores/trafficAnalysis.ts` — OD pair routing results, the Model state (the
+  chosen model on the untouched network, the left side of every comparison),
+  the per street totals and all D3 color scales for the 6 visualization modes
+  (frequency, delta, CO₂, CO₂-delta, betweenness, betweenness-delta)
 - `stores/cvrp.ts` — the waste collection solver, its result and the viridis
   load scale
 - `stores/layers.ts`, `stores/apiKey.ts`, `stores/theme.ts` — map layer visibility, API key, theme
@@ -59,8 +60,11 @@ uv run python scripts/test_with_data.py        # manual check against a running 
   the pointer (hover, click, shift-click, Esc), fits the camera on streets
   (`focus`) and writes the result and the routes through `feature-state`
 - `composables/useMapView.ts` — what the map draws (`shown`), the open step of
-  the dock (`step`) and whether the graph can be edited (`editable`), derived
-  from the active tool, its phase (`stores/storyline.ts`) and `mapMode`
+  the dock (`step`), whether the graph can be edited (`editable`) and whether
+  the pointer can at least read a street (`inspectable`), derived from the
+  active tool, its phase (`stores/storyline.ts`) and `mapMode`
+- `composables/useModelPreview.ts` — loads the Model state again when an
+  option of the Model step moves
 - `composables/useResultStates.ts` — joins the per edge numbers to the streets
   and sums the two directions
 - `composables/useMapLogic.ts`, `useMapEvents.ts` — MapLibre map setup and event handling
@@ -109,12 +113,17 @@ sources for the badges and the CVRP routes. The vocabulary (Bertin):
 - the accent blue is only the pointer: hover and selection
 The dock says what the map draws, there is no toggle on the map. Each tool is a
 storyline of three steps, Model, Scenario and Results, and only one is open:
-the map shows the base network, the ink scenario, or the tool's result. A
+the map shows the model, the ink scenario, or the tool's result. For routing,
+the Model step draws the routing of the chosen options on the untouched
+network (the Model state), and it redraws when an option moves. Every result
+is compared with that state, so a scenario that changes nothing shows no
+change. CVRP has no Model state, its Model step shows the base network. A
 folded step keeps a one line summary and its head opens it ("Edit" on Model
 goes back to the options and drops the result). The phase of each tool
 (`init` or `simulation`) is saved in localStorage; the graph is read only in
-`init`. `composables/useMapView.ts` is the one place that answers "what is on
-the map". Only the tool you are on ever draws.
+`init`, the pointer only hovers there (the card, no click).
+`composables/useMapView.ts` is the one place that answers "what is on the
+map". Only the tool you are on ever draws.
 Colours and highlights ride `feature-state`, so switching never touches the
 6 MB source.
 
@@ -127,30 +136,63 @@ follows the basemap.
 
 ### Backend (`backend/app/`)
 
-The backend loads a **GraphML road network** (Lausanne) at startup via osmnx, then:
-1. Pre-generates 500 research-sampled OD pairs (betweenness-centrality-weighted, lognormal distance distribution)
-2. Serves routing and impact analysis via `/api/v1/routes/`
+Every routing request runs on an **area**: a circle or a set of communes cut
+from the Swiss road graph store (`data/swiss_graph`, parquet tiles). At
+startup the backend builds the default area, a 6 km circle on Lausanne
+(`default_area_*` in `config.py`), and pins it. A request with no `area_id`
+runs on it. The frontend asks for it like any picked area.
 
-**Service layer** is modular:
-- `services/graph_service.py` — orchestrator; holds all in-memory caches (`_edge_co2_cache`, `_edge_bc_cache`, `_route_edge_index`)
-- `services/routing_engine.py` — igraph one-to-many Dijkstra (much faster than NetworkX for bulk routing)
-- `services/bpr.py` — Bureau of Public Roads congestion model + betweenness centrality computation
+The Lausanne GraphML (`data/lausanne.graphml`) is still loaded, but only for
+the waste tool (CVRP) and the habitat layer. `AreaInfo.cvrp` says if the waste
+tool runs on an area: at least half of its nodes are in that graph.
+
+**Service layer**, one file per step of the model. `docs/routing-model.md` is
+the reference: the formulas, what each number means and what the model does
+not do. Read it before changing anything here.
+- `services/graph_mirror.py` — the network as igraph plus one numpy array per quantity, built once
+- `services/sampling/` — the demand: `node_pool.py` (which junctions, and their weights), `od_sampler.py` (the draw), `config.py` (the calibration)
+- `services/routing_engine.py` — igraph one-to-many Dijkstra, routes as flat arrays
+- `services/bpr.py` — the congestion model (speed form of the BPR curve)
+- `services/betweenness.py` — sampled edge betweenness, normalised to veh/day
 - `services/co2_calculator.py` — grade-aware CO₂/km model
-- `services/graph_helpers.py` — edge modification apply/restore, usage stats aggregation, graph serialization
-- `services/impact_calculator.py` — computes summary statistics comparing before/after routing
-- `services/node_sampling_service.py` + `services/sampling/` — research-based OD pair generation
+- `services/modifications.py` — a scenario, as per-request weight arrays
+- `services/recalculate.py` — one scenario run, end to end, and the three assignment models
+- `services/impact.py` — the signed comparison between the two runs
 
-**Key API endpoints** (`/api/v1/routes/`):
-- `GET /graph` — full graph
-- `GET /edge-geometries` — edge coordinates + travel time (GZip compressed)
-- `POST /recalculate` — apply edge modifications (remove/speed-limit) and re-route all OD pairs, returning per-edge usage stats with delta, CO₂/km, and betweenness centrality
+The rule behind all of it: both sides of a comparison are built the same way.
+Routes are chosen on congested travel times, distances and durations are
+reported free flow, and the trips are the same ones, so a scenario that
+changes nothing changes no number. Each mode has the baseline that matches it
+(the equilibrium model gets its own MSA run on the untouched network).
+- `services/usage_rows.py` — the per-street rows the API returns
+- `services/area_graph.py` — one area: its OD samples, baselines and caches
+- `services/area_builder.py` — cuts an area out of the store and builds it
+- `services/graph_service.py` — the default area, the NetworkX graph (CVRP only) and the area registry
+
+**Key API endpoints**:
+- `POST /api/v1/areas` — build an area (the default one answers at once), `GET /api/v1/areas/{id}/edges` — its streets
+- `GET /api/v1/routes/graph-info` — node, edge and OD pair counts of an area
+- `GET /api/v1/routes/baseline` — the Model state: the chosen model (free flow, or the
+  equilibrium with `use_congestion` and `congestion_iterations`) on the
+  untouched network, one ETag per model
+- `POST /api/v1/routes/recalculate` — apply edge modifications (remove/speed-limit) and re-route all OD pairs, returning per-edge usage stats with delta, CO₂/km, and betweenness centrality
+
+**Area endpoints** (`/api/v1/areas/`): `POST ""` builds an area in two phases
+and answers after the first one (the streets and the betweenness) with
+`ready: false`. The trips are drawn and routed in the background. `GET /{id}`
+says when it is `ready`, `GET /{id}/betweenness` gives the per street
+betweenness meanwhile, and `/recalculate` or `/baseline` on an area that is
+not ready answer 409 `area_not_ready`.
 
 ### Data Flow for Traffic Analysis
 
+0. In the Model step, `useModelPreview` loads the Model state (`GET /baseline`)
+   for the chosen options and the map draws it
 1. User clicks a street on the map (no mode to turn on first, ⇧-click picks one
    lane) → the popover writes `{action, dir}` to the `scenario` store
-2. User triggers recalculate → `RoutingTab` calls backend `POST /recalculate` with `scenario.wire`
-3. Backend applies modifications, re-routes with igraph Dijkstra (optionally with BPR congestion), computes CO₂ and BC
+2. User triggers recalculate → `RoutingTab` calls backend `POST /recalculate` with `scenario.wire`,
+   and takes the Model state from the store cache as the left side
+3. Backend applies modifications (elastic demand first draws the destinations again), re-routes with igraph Dijkstra (optionally with BPR congestion), computes CO₂ and BC
 4. Response `EdgeUsageStats[]` is stored in `trafficAnalysis` store → D3 color scales are recomputed
 5. `useGraphOverlay` reacts to store changes and writes the colours as feature-state
 
@@ -161,7 +203,8 @@ Python notebooks and scripts using GeoPandas/uv for converting raw datasets (sha
 ## Configuration
 
 Backend settings are in `backend/app/config.py` (pydantic-settings, reads `.env`):
-- `GRAPH_PATH` — path to GraphML file (default: `data/lausanne.graphml`)
+- `GRAPH_PATH` — the Lausanne GraphML, for the waste tool only (default: `data/lausanne.graphml`)
+- `SWISS_GRAPH_DIR` — the Swiss road graph store every area is cut from (default: `data/swiss_graph`)
 - `CORS_ORIGINS` — JSON list of allowed browser origins (default: the local dev ones)
 - `API_KEY` — shared key checked on `/api/v1/*` via `X-API-Key` (empty = no auth)
 

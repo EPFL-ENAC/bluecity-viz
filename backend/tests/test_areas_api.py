@@ -1,9 +1,10 @@
 """The /areas endpoints: create a circle, run the workbench on it, lose it."""
 
+import numpy as np
 import pytest
 
 from app.config import settings
-from app.services.area_graph import DEFAULT_AREA_ID
+from tests.conftest import start_routing
 
 CENTRE = {"lon": 7.106, "lat": 46.108}
 
@@ -130,11 +131,80 @@ def test_the_edges_of_an_area_come_back_with_an_etag(areas_client):
     assert again.status_code == 304
 
 
-def test_the_default_area_still_serves_its_own_geometry(areas_client, graph_service):
-    response = areas_client.get(f"/api/v1/areas/{DEFAULT_AREA_ID}/edges")
+# ── The default area ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def default_from_store(areas_client, graph_service, swiss_store, monkeypatch):
+    """The default area built the way startup builds it, on the lattice."""
+    monkeypatch.setattr(settings, "default_area_lon", CENTRE["lon"])
+    monkeypatch.setattr(settings, "default_area_lat", CENTRE["lat"])
+    monkeypatch.setattr(settings, "default_area_radius_m", 2000.0)
+    return graph_service.load_default_area(swiss_store)
+
+
+def test_the_default_area_is_a_circle_from_the_store(default_from_store, graph_service):
+    area = default_from_store
+
+    assert graph_service.default_area_id == area.meta.id == "c_7.1060_46.1080_2000"
+    assert area.meta.name == "Lausanne"
+    assert area.mirror.has_population
+    # pinned, and with the bigger caches the default always had
+    assert area.meta.id in graph_service.registry.pinned
+    assert not area.dynamic
+
+
+def test_a_request_with_no_area_runs_on_the_default_circle(areas_client, default_from_store):
+    info = areas_client.get("/api/v1/routes/graph-info").json()
+
+    assert info["area_id"] == default_from_store.meta.id
+
+
+def test_population_weighting_works_on_the_default_area(areas_client, default_from_store):
+    response = areas_client.post(
+        "/api/v1/routes/recalculate",
+        json={"edge_modifications": [], "node_weighting": "population", "od_pairs": 100},
+    )
+
+    assert response.status_code == 200, response.text
+
+
+def test_creating_the_default_circle_answers_from_memory(areas_client, default_from_store):
+    response = areas_client.post("/api/v1/areas", json=body())
+
+    assert response.json()["id"] == default_from_store.meta.id
+    assert response.json()["name"] == "Lausanne"
+
+
+def test_the_default_area_serves_its_edges_like_any_area(areas_client, default_from_store):
+    response = areas_client.get(f"/api/v1/areas/{default_from_store.meta.id}/edges")
 
     assert response.status_code == 200
-    assert len(response.json()) == len(graph_service.graph.edges)
+    assert len(response.json()) > 0
+
+
+# ── The waste tool flag ───────────────────────────────────────────────────────
+
+
+def test_an_area_off_the_cvrp_graph_has_no_waste_tool(areas_client):
+    # The lattice and the synthetic CVRP grid share no node id.
+    assert areas_client.post("/api/v1/areas", json=body()).json()["cvrp"] is False
+
+
+def test_an_area_on_the_cvrp_graph_has_the_waste_tool(areas_client, graph_service):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    ids = graph_service.registry.get(area_id).mirror.node_ids
+    # Most of the area in the CVRP graph: on. A third of it: off.
+    graph_service.cvrp_node_ids = np.sort(ids[: int(len(ids) * 0.6)])
+    assert areas_client.post("/api/v1/areas", json=body()).json()["cvrp"] is True
+
+    graph_service.cvrp_node_ids = np.sort(ids[: len(ids) // 3])
+    assert areas_client.post("/api/v1/areas", json=body()).json()["cvrp"] is False
+
+
+def test_no_cvrp_graph_means_no_waste_tool(areas_client, graph_service):
+    graph_service.cvrp_node_ids = None
+    assert areas_client.post("/api/v1/areas", json=body()).json()["cvrp"] is False
 
 
 # ── Using an area ─────────────────────────────────────────────────────────────
@@ -198,11 +268,85 @@ def test_the_population_weighting_gives_other_numbers(areas_client):
     assert result.json()["new_edge_usage"]
 
 
-def test_population_on_a_graph_without_it_is_a_422(areas_client):
-    baseline = areas_client.get("/api/v1/routes/baseline?od_pairs=10&node_weighting=population")
+def test_the_model_state_is_what_every_run_compares_with(areas_client):
+    """GET /baseline with the model options is the left side of /recalculate.
+
+    The Model step draws it, and the Results step compares with it, so the
+    two must be the same numbers. With nothing modified, and elastic demand
+    on, every delta is zero.
+    """
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    url = f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100"
+    models = {
+        "targeted": ({"use_congestion": False}, ""),
+        "equilibrium": (
+            {"use_congestion": True, "congestion_iterations": 2},
+            "&use_congestion=true&congestion_iterations=2",
+        ),
+    }
+
+    etags = set()
+    for options, query in models.values():
+        model = areas_client.get(url + query)
+        assert model.status_code == 200
+        etags.add(model.headers["etag"])
+
+        run = areas_client.post(
+            "/api/v1/routes/recalculate",
+            json={
+                "area_id": area_id,
+                "od_pairs": 100,
+                "edge_modifications": [],
+                "resample_destinations": True,
+                **options,
+            },
+        ).json()
+        assert run["original_edge_usage"] == model.json()["edge_usage"]
+        assert all(row["delta_count"] == 0 for row in run["new_edge_usage"])
+
+    assert len(etags) == 2, "the two models must not share an ETag"
+
+
+def test_the_iterations_mean_nothing_without_congestion(areas_client):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    url = f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100"
+
+    plain = areas_client.get(url)
+    with_iterations = areas_client.get(url + "&congestion_iterations=3")
+
+    assert plain.headers["etag"] == with_iterations.headers["etag"]
+
+
+def test_the_four_weightings_give_four_baselines(areas_client):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    url = f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100"
+    weightings = ["uniform", "population", "weekday_morning", "weekday_evening"]
+
+    answers = [areas_client.get(f"{url}&node_weighting={w}") for w in weightings]
+
+    assert [a.status_code for a in answers] == [200] * 4
+    assert len({a.headers["etag"] for a in answers}) == 4
+
+    for weighting in ("weekday_morning", "weekday_evening"):
+        result = areas_client.post(
+            "/api/v1/routes/recalculate",
+            json={
+                "area_id": area_id,
+                "od_pairs": 100,
+                "edge_modifications": [],
+                "node_weighting": weighting,
+            },
+        )
+        assert result.status_code == 200
+        assert result.json()["new_edge_usage"]
+
+
+@pytest.mark.parametrize("weighting", ["population", "weekday_morning", "weekday_evening"])
+def test_population_on_a_graph_without_it_is_a_422(areas_client, weighting):
+    baseline = areas_client.get(f"/api/v1/routes/baseline?od_pairs=10&node_weighting={weighting}")
     result = areas_client.post(
         "/api/v1/routes/recalculate",
-        json={"edge_modifications": [], "od_pairs": 10, "node_weighting": "population"},
+        json={"edge_modifications": [], "od_pairs": 10, "node_weighting": weighting},
     )
 
     for answer in (baseline, result):
@@ -214,6 +358,129 @@ def test_an_unknown_weighting_is_refused(areas_client):
     answer = areas_client.get("/api/v1/routes/baseline?od_pairs=10&node_weighting=cats")
 
     assert answer.status_code == 422
+
+
+# ── Two phases: the betweenness first, the trips after ───────────────────────
+
+
+@pytest.fixture
+def held(graph_service):
+    """Keep the second build phase of every new area until the test runs it."""
+    jobs = []
+    graph_service.registry.spawn = jobs.append
+    return jobs
+
+
+def recalculate(client, area_id):
+    return client.post(
+        "/api/v1/routes/recalculate",
+        json={"area_id": area_id, "od_pairs": 100, "edge_modifications": []},
+    )
+
+
+def test_an_area_answers_with_its_betweenness_before_its_trips(areas_client, held):
+    created = areas_client.post("/api/v1/areas", json=body())
+
+    assert created.status_code == 201
+    info = created.json()
+    area_id = info["id"]
+    assert info["ready"] is False
+    assert info["od_pairs"] == 0
+    assert areas_client.get(f"/api/v1/areas/{area_id}").json()["ready"] is False
+
+    edges = areas_client.get(f"/api/v1/areas/{area_id}/edges")
+    assert edges.status_code == 200 and edges.json()
+
+    bc = areas_client.get(f"/api/v1/areas/{area_id}/betweenness")
+    assert bc.status_code == 200
+    rows = bc.json()
+    assert rows and set(rows[0]) == {"u", "v", "betweenness_centrality"}
+    again = areas_client.get(
+        f"/api/v1/areas/{area_id}/betweenness", headers={"If-None-Match": bc.headers["etag"]}
+    )
+    assert again.status_code == 304
+
+
+def test_routing_on_an_area_that_is_not_ready_is_a_409(areas_client, held):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+
+    too_early = recalculate(areas_client, area_id)
+    baseline = areas_client.get(f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100")
+
+    for answer in (too_early, baseline):
+        assert answer.status_code == 409
+        assert answer.json()["detail"]["code"] == "area_not_ready"
+        assert answer.headers["retry-after"] == "1"
+
+
+def test_a_weekday_sample_waits_for_the_area_too(areas_client, held):
+    """A weekday sample routes on the uniform baseline, so it waits for it."""
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    url = f"/api/v1/routes/baseline?area_id={area_id}&od_pairs=100&node_weighting=weekday_morning"
+
+    too_early = areas_client.get(url)
+    assert too_early.status_code == 409
+    assert too_early.json()["detail"]["code"] == "area_not_ready"
+
+    held.pop()()
+    assert areas_client.get(url).status_code == 200
+
+
+def test_the_area_is_ready_once_its_trips_are_routed(areas_client, held):
+    area_id = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    assert len(held) == 1
+
+    held.pop()()
+
+    info = areas_client.get(f"/api/v1/areas/{area_id}").json()
+    assert info["ready"] is True
+    assert info["od_pairs"] == settings.od_pairs_max
+    assert recalculate(areas_client, area_id).status_code == 200
+    # the betweenness did not move
+    assert areas_client.get(f"/api/v1/areas/{area_id}/betweenness").status_code == 200
+
+
+def test_asking_again_while_it_builds_does_not_build_twice(areas_client, held):
+    first = areas_client.post("/api/v1/areas", json=body()).json()
+    second = areas_client.post("/api/v1/areas", json=body()).json()
+
+    assert second["id"] == first["id"]
+    assert second["ready"] is False
+    assert len(held) == 1
+
+
+def test_an_area_that_is_not_ready_is_not_evicted(areas_client, graph_service, held, monkeypatch):
+    monkeypatch.setattr(graph_service.registry, "max_count", 2)  # the default area + one
+
+    first = areas_client.post("/api/v1/areas", json=body()).json()["id"]
+    second = areas_client.post("/api/v1/areas", json=body(radius_m=2500)).json()["id"]
+
+    assert not graph_service.registry.evict(first)
+    assert areas_client.get(f"/api/v1/areas/{first}").status_code == 200
+
+    # once both are ready, the older one can go again
+    for job in held:
+        job()
+    loaded = [a.meta.id for a in graph_service.registry.loaded()]
+    assert second in loaded
+    assert first not in loaded
+
+
+def test_the_status_of_an_unknown_area_is_a_404(areas_client):
+    for path in ("/api/v1/areas/c_nowhere", "/api/v1/areas/c_nowhere/betweenness"):
+        answer = areas_client.get(path)
+        assert answer.status_code == 404
+        assert answer.json()["detail"]["code"] == "area_not_loaded"
+
+
+def test_the_default_area_has_its_betweenness_too(client, graph_service):
+    area_id = start_routing(graph_service, sampling_method="random", count=60, seed=1).meta.id
+
+    info = client.get(f"/api/v1/areas/{area_id}").json()
+    rows = client.get(f"/api/v1/areas/{area_id}/betweenness").json()
+
+    assert info["ready"] is True
+    assert rows and all(r["betweenness_centrality"] > 0 for r in rows)
 
 
 # ── Losing an area ────────────────────────────────────────────────────────────
@@ -231,20 +498,19 @@ def test_an_evicted_area_is_a_404_and_can_be_created_again(areas_client, graph_s
 
 
 def test_the_default_area_is_never_evicted(areas_client, graph_service):
-    assert not graph_service.registry.evict(DEFAULT_AREA_ID)
-    assert (
-        areas_client.get(f"/api/v1/routes/graph-info?area_id={DEFAULT_AREA_ID}").status_code == 200
-    )
+    default_id = graph_service.default_area_id
+    assert not graph_service.registry.evict(default_id)
+    assert areas_client.get(f"/api/v1/routes/graph-info?area_id={default_id}").status_code == 200
 
 
 def test_the_budget_drops_the_oldest_area(areas_client, graph_service, monkeypatch):
-    monkeypatch.setattr(graph_service.registry, "max_count", 2)  # lausanne + one
+    monkeypatch.setattr(graph_service.registry, "max_count", 2)  # the default + one
 
     first = areas_client.post("/api/v1/areas", json=body()).json()["id"]
     second = areas_client.post("/api/v1/areas", json=body(radius_m=2500)).json()["id"]
 
     loaded = [a.meta.id for a in graph_service.registry.loaded()]
-    assert DEFAULT_AREA_ID in loaded
+    assert graph_service.default_area_id in loaded
     assert second in loaded
     assert first not in loaded
 

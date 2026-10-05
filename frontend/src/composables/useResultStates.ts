@@ -56,13 +56,19 @@ export function valueOf(row: StreetTotals, mode: TrafficLegendMode): number {
 }
 
 /**
+ * One per-edge row. Every number is optional: the betweenness of an area that
+ * is still being built comes as `{u, v, betweenness_centrality}` only.
+ */
+export type UsageRow = Pick<EdgeUsageStats, 'u' | 'v'> & Partial<Omit<EdgeUsageStats, 'u' | 'v'>>
+
+/**
  * Join the per-edge numbers to the streets and sum the two directions.
  *
  * A row whose street is not in the graph is dropped: the backend keys by
  * `(u, v)` and the graph has 71 parallel edges, so a miss is possible.
  */
 export function streetTotals(
-  usage: EdgeUsageStats[],
+  usage: readonly UsageRow[],
   streets: Map<string, Street>
 ): StreetTotals[] {
   const byKey = new Map<string, StreetTotals>()
@@ -98,7 +104,7 @@ export function streetTotals(
     const deltaFrequency = stat.delta_frequency ?? 0
 
     row.count += stat.count ?? 0
-    row.frequency += stat.frequency
+    row.frequency += stat.frequency ?? 0
     row.delta_frequency += deltaFrequency
     row.delta_count += stat.delta_count ?? 0
     row.co2_g_per_km += stat.co2_g_per_km ?? 0
