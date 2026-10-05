@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.6.0](https://github.com/EPFL-ENAC/bluecity-viz/compare/v0.5.2...v0.6.0) (2026-10-05)
+
+
+### Features
+
+* **backend:** answer an area after its betweenness, route its trips after ([c403986](https://github.com/EPFL-ENAC/bluecity-viz/commit/c403986113f65542cc9f8a123eafd7c337d61d2d)), closes [#117](https://github.com/EPFL-ENAC/bluecity-viz/issues/117)
+* **backend:** build the default Lausanne area from the store ([24b2b93](https://github.com/EPFL-ENAC/bluecity-viz/commit/24b2b93f0d0e036b508e4c78670584e1cf50084f)), closes [#106](https://github.com/EPFL-ENAC/bluecity-viz/issues/106)
+* **backend:** pair the elastic redraw with the startup draw ([e6451bc](https://github.com/EPFL-ENAC/bluecity-viz/commit/e6451bc83a899afca10dd5b93ca9ad7bff7ca0b9)), closes [#111](https://github.com/EPFL-ENAC/bluecity-viz/issues/111)
+* **backend:** serve the Model state of each assignment model ([251835a](https://github.com/EPFL-ENAC/bluecity-viz/commit/251835a43a597dfc8d789a72761b52d82a1ef52d))
+* **frontend:** draw the Model state in the Model step ([de17786](https://github.com/EPFL-ENAC/bluecity-viz/commit/de17786dfb8e3a7a8ea82eac24d9c87022258c69)), closes [#111](https://github.com/EPFL-ENAC/bluecity-viz/issues/111)
+* **frontend:** keep the Model state in the traffic store ([dbba34d](https://github.com/EPFL-ENAC/bluecity-viz/commit/dbba34d96a1ffacfac6ae1cf7fb82d0bc312ff21))
+* **frontend:** open on the default circle, like any picked area ([819bee2](https://github.com/EPFL-ENAC/bluecity-viz/commit/819bee22ef4ac3c360b85ab03ee6bca4bc64653a)), closes [#106](https://github.com/EPFL-ENAC/bluecity-viz/issues/106)
+* **frontend:** show the betweenness of an area while it builds ([3c46f75](https://github.com/EPFL-ENAC/bluecity-viz/commit/3c46f75d7817a7e30c59dc164c6641ea796773cf)), closes [#117](https://github.com/EPFL-ENAC/bluecity-viz/issues/117)
+* **routing:** weekday morning and evening node weightings ([e9d4e2a](https://github.com/EPFL-ENAC/bluecity-viz/commit/e9d4e2ad38018b43632c7c272b210f3e04226e2a))
+* **routing:** weekday morning and evening node weightings ([af29da8](https://github.com/EPFL-ENAC/bluecity-viz/commit/af29da83221f463d8df349fe2b7d970a5bc6422e)), closes [#121](https://github.com/EPFL-ENAC/bluecity-viz/issues/121)
+* the default Lausanne area is a circle from the store ([4f15aa4](https://github.com/EPFL-ENAC/bluecity-viz/commit/4f15aa4f621149a9238efa328b463df6bfa6d04a))
+
+
+### Bug Fixes
+
+* **backend:** elastic demand compares Model against Scenario ([19149b8](https://github.com/EPFL-ENAC/bluecity-viz/commit/19149b89b6ce6cc30f23f224f000b3f67f5f7276)), closes [#111](https://github.com/EPFL-ENAC/bluecity-viz/issues/111)
+* **backend:** make a closed street really closed ([fa47dff](https://github.com/EPFL-ENAC/bluecity-viz/commit/fa47dff0902bc2b9d169af76e7b5ed65dc46c93c))
+* **backend:** route both sides of the equilibrium and elastic models the same way ([4a743ad](https://github.com/EPFL-ENAC/bluecity-viz/commit/4a743ad109acec2d70ed6e6d99824c390749a22c))
+* **backend:** route the baseline on the same times as a scenario ([3bdc51d](https://github.com/EPFL-ENAC/bluecity-viz/commit/3bdc51dc871f9ad752200087b59a101b826ca6b8))
+* **frontend:** hover card shows the value of the layer on the map ([2181f9c](https://github.com/EPFL-ENAC/bluecity-viz/commit/2181f9cd34563cbfbbc760eadf2b2ad977d4ed0c))
+* **frontend:** hover card shows the value of the layer on the map ([549b810](https://github.com/EPFL-ENAC/bluecity-viz/commit/549b810c1393f0f449bafc1855797a3000bd2429)), closes [#104](https://github.com/EPFL-ENAC/bluecity-viz/issues/104)
+* **frontend:** readable selected segment in dark ([#120](https://github.com/EPFL-ENAC/bluecity-viz/issues/120)) ([6f31560](https://github.com/EPFL-ENAC/bluecity-viz/commit/6f315605a5303a07594eef2aafa068bcdf4c3b1d))
+* **frontend:** readable selected segment in dark ([#120](https://github.com/EPFL-ENAC/bluecity-viz/issues/120)) ([aa00c42](https://github.com/EPFL-ENAC/bluecity-viz/commit/aa00c42558f53c7144360b8790da96581b566156))
+
 ## [0.5.2](https://github.com/EPFL-ENAC/bluecity-viz/compare/v0.5.1...v0.5.2) (2026-09-16)
 
 
