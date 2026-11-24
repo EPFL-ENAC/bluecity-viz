@@ -5,6 +5,7 @@ name: deploy
 # main is not listed on purpose: the reusable workflow maps no overlay to it,
 # so a push to main would build images and deploy nothing (green but useless).
 "on":
+  workflow_dispatch:
   push:
     branches:
       - dev
